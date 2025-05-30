@@ -1,0 +1,15 @@
+id: CG-AL-001
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a simple AL codeunit that calculates the total value of items in inventory.
+  The codeunit should have a procedure called CalculateInventoryValue that returns a Decimal.
+  Use the Item table to get UnitCost and Inventory fields.
+expected:
+  compile: true
+  testApp: /tests/CG001.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

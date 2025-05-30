@@ -1,0 +1,40 @@
+# Deno
+.deno/
+deno.lock
+
+# Results and reports
+results/
+reports/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Node (for any future tooling)
+node_modules/
+npm-debug.log
+
+# Environment
+.env
+.env.local
+
+# Docker
+docker-compose.override.yml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# AI
+CLAUDE.md
+PLAN.md
+.claude/
