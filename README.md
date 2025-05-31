@@ -105,4 +105,4 @@ We welcome contributions! Check out our [development roadmap](PLAN.md) and submi
 
 ## 📄 License
 
-MIT © [Your Name](https://github.com/your-org)
+MIT © [SShadowS](https://github.com/SShadowS)
