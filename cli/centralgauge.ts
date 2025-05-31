@@ -12,6 +12,8 @@ import type { ContainerConfig } from "../src/container/types.ts";
 import type { TaskExecutionConfig } from "../src/tasks/types.ts";
 import { ModelPresetRegistry, MODEL_PRESETS, MODEL_GROUPS } from "../src/llm/model-presets.ts";
 import { ConfigManager } from "../src/config/config.ts";
+import { EnvLoader } from "../src/utils/env-loader.ts";
+import { SplashScreen } from "../src/utils/splash-screen.ts";
 
 const VERSION = "0.1.0";
 
@@ -92,7 +94,18 @@ function parseProviderAndModel(modelSpec: string): { provider: string; model: st
   return { provider, model: modelSpec };
 }
 
-async function runBenchmark(options: BenchmarkOptions): Promise<void> {
+async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<void> {
+  if (!quiet) {
+    // Load environment and display splash screen
+    await EnvLoader.loadEnvironment();
+    await SplashScreen.display({
+      showEnvironment: true,
+      showConfiguration: true, 
+      showProviders: true,
+      compact: false,
+    });
+  }
+
   console.log("🚀 Starting CentralGauge benchmark...");
   console.log(`Models: ${options.llms.join(", ")}`);
   console.log(`Tasks: ${options.tasks.join(", ")}`);
@@ -577,6 +590,7 @@ const cli = new Command()
   .version(VERSION)
   .description("LLM benchmark for Microsoft Dynamics 365 Business Central AL code")
   .globalOption("-v, --verbose", "Enable verbose output")
+  .globalOption("-q, --quiet", "Disable splash screen and minimize output")
   .example(
     "Basic benchmark with aliases",
     "centralgauge bench --llms sonnet,gpt-4o --tasks tasks/*.yml"
@@ -606,6 +620,7 @@ cli.command("bench", "Run benchmark evaluation")
   .option("-o, --output <dir>", "Output directory", { default: "results/" })
   .option("--temperature <number>", "LLM temperature", { default: 0.1 })
   .option("--max-tokens <number>", "Maximum tokens per request", { default: 4000 })
+  .option("-q, --quiet", "Disable splash screen and verbose output", { default: false })
   .action(async (options) => {
     const benchOptions: BenchmarkOptions = {
       llms: options.llms,
@@ -615,7 +630,7 @@ cli.command("bench", "Run benchmark evaluation")
       temperature: options.temperature,
       maxTokens: options.maxTokens,
     };
-    await runBenchmark(benchOptions);
+    await runBenchmark(benchOptions, options.quiet);
   });
 
 // Report command
@@ -715,14 +730,73 @@ configCmd.command("init", "Generate sample configuration file")
     console.log("Edit this file to customize your default settings.");
   });
 
-configCmd.command("show", "Show current configuration")
+configCmd.command("view", "Show current configuration")
   .action(async () => {
     const config = await ConfigManager.loadConfig();
     console.log("📋 Current Configuration:\n");
     console.log(JSON.stringify(config, null, 2));
   });
 
+// Initialize environment and startup
+async function initializeApp(quiet = false): Promise<void> {
+  // Load environment variables first
+  await EnvLoader.loadEnvironment();
+  
+  // Show startup screen if not quiet
+  if (!quiet && Deno.args.length === 0) {
+    await SplashScreen.display({
+      showEnvironment: true,
+      showConfiguration: true,
+      showProviders: true,
+      compact: false,
+    });
+    SplashScreen.displayStartupTips();
+    return;
+  }
+}
+
+// Add environment command with subcommands
+const envCmd = cli.command("env", "Environment and configuration management");
+
+envCmd.command("show", "Show current environment status")
+  .option("--detailed", "Show detailed environment information")
+  .action(async (options) => {
+    await EnvLoader.loadEnvironment();
+    EnvLoader.displayEnvironmentStatus(options.detailed);
+  });
+
+envCmd.command("create", "Generate sample .env file")
+  .option("--overwrite", "Overwrite existing .env file")
+  .action(async (options) => {
+    if (await exists(".env") && !options.overwrite) {
+      console.log("⚠️  .env file already exists. Use --overwrite to replace it.");
+      return;
+    }
+    
+    const sampleEnv = EnvLoader.generateSampleEnvFile();
+    await Deno.writeTextFile(".env", sampleEnv);
+    console.log("✅ Created .env file with sample configuration");
+    console.log("Edit this file and add your API keys to get started.");
+  });
+
+// Add health check command
+cli.command("health", "Check system health and configuration")
+  .action(async () => {
+    await EnvLoader.loadEnvironment();
+    const isHealthy = await SplashScreen.displayHealthCheck();
+    if (!isHealthy) {
+      Deno.exit(1);
+    }
+  });
+
 // Parse and execute
 if (import.meta.main) {
+  // Check for global quiet flag
+  const isQuiet = Deno.args.includes("--quiet") || Deno.args.includes("-q");
+  
+  // Initialize app
+  await initializeApp(isQuiet);
+  
+  // Parse CLI commands
   await cli.parse(Deno.args);
 }
