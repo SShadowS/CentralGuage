@@ -10,15 +10,38 @@ import { LLMAdapterRegistry } from "../src/llm/registry.ts";
 import { DefaultTaskExecutor, loadTaskManifest } from "../src/tasks/executor.ts";
 import type { ContainerConfig } from "../src/container/types.ts";
 import type { TaskExecutionConfig } from "../src/tasks/types.ts";
+import { ModelPresetRegistry, MODEL_PRESETS, MODEL_GROUPS } from "../src/llm/model-presets.ts";
+import { ConfigManager } from "../src/config/config.ts";
 
 const VERSION = "0.1.0";
 
 /**
- * Parse provider and model from prefixed format: "provider/model"
- * Returns { provider, model } or falls back to pattern detection for backwards compatibility
+ * Parse provider and model from various formats:
+ * - Aliases: "sonnet", "gpt-4o", "haiku" 
+ * - Groups: "flagship", "budget", "coding"
+ * - Provider/model: "openai/gpt-4o", "anthropic/claude-3-5-sonnet-20241022"
+ * - Legacy patterns: "gpt-4", "claude-3-sonnet" (with warnings)
  */
 function parseProviderAndModel(modelSpec: string): { provider: string; model: string } {
-  // Check for provider/model format
+  // First try to resolve through preset system (handles aliases, groups, and provider/model)
+  const resolved = ModelPresetRegistry.resolve(modelSpec);
+  
+  if (resolved.length === 1 && resolved[0] !== modelSpec) {
+    // Successfully resolved to a different spec, parse the resolved spec
+    const resolvedSpec = resolved[0];
+    if (resolvedSpec.includes("/")) {
+      const [provider, ...modelParts] = resolvedSpec.split("/");
+      const model = modelParts.join("/");
+      
+      // Validate provider
+      const validProviders = ["openai", "anthropic", "gemini", "azure-openai", "local", "mock"];
+      if (validProviders.includes(provider)) {
+        return { provider, model };
+      }
+    }
+  }
+  
+  // If not resolved or is already provider/model format, handle directly
   if (modelSpec.includes("/")) {
     const [provider, ...modelParts] = modelSpec.split("/");
     const model = modelParts.join("/"); // Handle models with slashes like "models/gemini-pro"
@@ -34,7 +57,7 @@ function parseProviderAndModel(modelSpec: string): { provider: string; model: st
   }
   
   // Backwards compatibility: detect provider from model name patterns
-  console.warn(`⚠️  Using pattern detection for model: ${modelSpec}. Consider using provider/model format.`);
+  console.warn(`⚠️  Using pattern detection for model: ${modelSpec}. Consider using aliases or provider/model format.`);
   
   let provider: string;
   
@@ -116,17 +139,21 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
     // Initialize task executor
     const executor = new DefaultTaskExecutor();
     
-    // Execute benchmark for each model
+    // Execute benchmark for each model (expanding groups if needed)
     const allResults = [];
     
     for (const llmModelSpec of options.llms) {
       console.log(`\n🤖 Running benchmark with model spec: ${llmModelSpec}`);
       
-      // Parse provider and model from spec
-      const { provider: llmProvider, model: llmModel } = parseProviderAndModel(llmModelSpec);
-      console.log(`🔧 Using provider: ${llmProvider} for model: ${llmModel}`);
+      // Resolve spec to actual models (handles groups, aliases, and provider/model)
+      const resolvedSpecs = ModelPresetRegistry.resolve(llmModelSpec);
       
-      for (const manifest of taskManifests) {
+      for (const resolvedSpec of resolvedSpecs) {
+        // Parse provider and model from resolved spec
+        const { provider: llmProvider, model: llmModel } = parseProviderAndModel(resolvedSpec);
+        console.log(`🔧 Using provider: ${llmProvider} for model: ${llmModel}`);
+        
+        for (const manifest of taskManifests) {
         console.log(`\n📝 Executing task: ${manifest.id}`);
         
         const config: TaskExecutionConfig = {
@@ -142,13 +169,14 @@ async function runBenchmark(options: BenchmarkOptions): Promise<void> {
           maxTokens: options.maxTokens || 4000,
         };
         
-        try {
-          const result = await executor.executeTask(config);
-          allResults.push(result);
-          
-          console.log(`✨ Task ${manifest.id} completed: ${result.finalResult} (score: ${result.aggregateScore.toFixed(3)})`);
-        } catch (error) {
-          console.error(`❌ Task ${manifest.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+          try {
+            const result = await executor.executeTask(config);
+            allResults.push(result);
+            
+            console.log(`✨ Task ${manifest.id} completed: ${result.finalResult} (score: ${result.aggregateScore.toFixed(3)})`);
+          } catch (error) {
+            console.error(`❌ Task ${manifest.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+          }
         }
       }
     }
@@ -369,61 +397,106 @@ async function handleContainerControl(action: string, name: string): Promise<voi
 function handleModelsList(testSpecs?: string[]): void {
   console.log("📋 CentralGauge Model Support\n");
   
-  // Show all available providers
+  // Show model presets (aliases)
+  console.log("🏷️  Model Aliases (Short Names):");
+  const presetsByCategory = ModelPresetRegistry.getPresetsByCategory();
+  
+  // Show flagship models first
+  if (presetsByCategory.flagship) {
+    console.log("   Flagship Models:");
+    presetsByCategory.flagship.forEach(preset => {
+      console.log(`   ${preset.alias.padEnd(12)} → ${preset.displayName} (${preset.costTier})`);
+    });
+  }
+  
+  // Show budget models
+  if (presetsByCategory.budget) {
+    console.log("\n   Budget Models:");
+    presetsByCategory.budget.forEach(preset => {
+      console.log(`   ${preset.alias.padEnd(12)} → ${preset.displayName} (${preset.costTier})`);
+    });
+  }
+  
+  // Show coding-specific models
+  if (presetsByCategory.coding) {
+    console.log("\n   Coding Models:");
+    presetsByCategory.coding.forEach(preset => {
+      console.log(`   ${preset.alias.padEnd(12)} → ${preset.displayName} (${preset.category.join(", ")})`);
+    });
+  }
+  
+  // Show model groups
+  console.log("\n🎯 Model Groups:");
+  const groups = MODEL_GROUPS;
+  console.log("   flagship     → Top-tier models for best quality");
+  console.log("   budget       → Cost-effective models for development"); 
+  console.log("   coding       → Optimized for code generation tasks");
+  console.log("   reasoning    → Advanced reasoning capabilities");
+  console.log("   fast         → Optimized for speed");
+  console.log("   quality      → Optimized for output quality");
+  console.log("   comparison   → Recommended set for model comparison");
+  console.log("   all          → Every available model");
+  
+  // Show cost tiers
+  console.log("\n💰 Cost Tiers:");
+  const costTiers = ModelPresetRegistry.getPresetsByCostTier();
+  Object.entries(costTiers).forEach(([tier, presets]) => {
+    if (presets.length > 0) {
+      const aliases = presets.map(p => p.alias).join(", ");
+      console.log(`   ${tier.padEnd(8)} → ${aliases}`);
+    }
+  });
+  
+  // Show providers for reference
+  console.log("\n🔧 Available Providers:");
   const providers = LLMAdapterRegistry.list();
-  console.log("🔧 Available Providers:");
   providers.forEach(provider => {
     const supportedModels = LLMAdapterRegistry.getSupportedModels(provider);
     console.log(`   ${provider}: ${supportedModels.slice(0, 3).join(", ")}${supportedModels.length > 3 ? "..." : ""}`);
   });
   
-  console.log("\n📝 Provider/Model Format Examples:");
-  console.log("   openai/gpt-4o              → OpenAI GPT-4o");
-  console.log("   anthropic/sonnet-4-think-8k → Anthropic Claude custom model");
-  console.log("   gemini/gemini-1.5-pro      → Google Gemini 1.5 Pro");
-  console.log("   azure-openai/my-deployment → Azure OpenAI custom deployment");
-  console.log("   local/llama3.2:latest      → Local Ollama model");
-  console.log("   mock/test-model            → Mock testing adapter");
+  // Show usage examples
+  console.log("\n📝 Usage Examples:");
+  console.log("   # Use aliases (recommended)");
+  console.log("   centralgauge bench --llms sonnet,gpt-4o");
+  console.log("   \n   # Use groups for comparisons");
+  console.log("   centralgauge bench --llms flagship");
+  console.log("   \n   # Mix aliases and groups");
+  console.log("   centralgauge bench --llms flagship,budget");
+  console.log("   \n   # Traditional provider/model format still works");
+  console.log("   centralgauge bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022");
   
   // Test parsing if specs provided
   if (testSpecs && testSpecs.length > 0) {
     console.log("\n🧪 Testing Model Spec Parsing:");
     testSpecs.forEach(spec => {
       try {
-        const { provider, model } = parseProviderAndModel(spec);
-        console.log(`   "${spec}" → provider: ${provider}, model: ${model}`);
+        const resolved = ModelPresetRegistry.resolve(spec);
+        console.log(`   "${spec}" → resolves to:`);
         
-        // Try to create adapter to test validation
-        try {
-          const adapter = LLMAdapterRegistry.create(provider);
-          console.log(`      ✅ Provider "${provider}" available`);
+        resolved.forEach(resolvedSpec => {
+          const { provider, model } = parseProviderAndModel(resolvedSpec);
+          console.log(`      ${provider}/${model}`);
           
-          // Test if model would be accepted (without requiring API keys)
-          const errors = adapter.validateConfig({ 
-            provider, 
-            model, 
-            apiKey: "test-key" // Fake key for validation test
-          } as any);
-          
-          if (errors.length === 0) {
-            console.log(`      ✅ Model "${model}" would be accepted`);
-          } else {
-            console.log(`      ⚠️  Model validation: ${errors.join(", ")}`);
+          // Check if it's a known preset
+          const preset = Object.values(MODEL_PRESETS).find(p => 
+            `${p.provider}/${p.model}` === resolvedSpec
+          );
+          if (preset) {
+            console.log(`        (${preset.displayName} - ${preset.description})`);
           }
-        } catch (error) {
-          console.log(`      ❌ Provider "${provider}" error: ${error instanceof Error ? error.message : String(error)}`);
-        }
+        });
       } catch (error) {
         console.log(`   "${spec}" → ❌ ${error instanceof Error ? error.message : String(error)}`);
       }
     });
   }
   
-  console.log("\n💡 Usage Tips:");
-  console.log("   • Use provider/model format for explicit control");
-  console.log("   • Legacy auto-detection still works but shows warnings");
-  console.log("   • Custom model names are supported if they follow provider patterns");
-  console.log("   • Set appropriate environment variables for API keys");
+  console.log("\n💡 Pro Tips:");
+  console.log("   • Use aliases like 'sonnet' instead of 'anthropic/claude-3-5-sonnet-20241022'");
+  console.log("   • Use groups like 'flagship' to test multiple top-tier models");
+  console.log("   • Mix aliases, groups, and provider/model formats freely");
+  console.log("   • Set ANTHROPIC_API_KEY, OPENAI_API_KEY etc. for API access");
 }
 
 async function handleCompile(projectPath: string, containerName: string, outputDir?: string): Promise<void> {
@@ -505,12 +578,20 @@ const cli = new Command()
   .description("LLM benchmark for Microsoft Dynamics 365 Business Central AL code")
   .globalOption("-v, --verbose", "Enable verbose output")
   .example(
-    "Basic benchmark",
-    "centralgauge bench --llms openai/gpt-4o --tasks tasks/*.yml"
+    "Basic benchmark with aliases",
+    "centralgauge bench --llms sonnet,gpt-4o --tasks tasks/*.yml"
   )
   .example(
-    "Multi-provider comparison", 
-    "centralgauge bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022 --attempts 2"
+    "Group-based comparison", 
+    "centralgauge bench --llms flagship --attempts 2"
+  )
+  .example(
+    "Mixed aliases and groups",
+    "centralgauge bench --llms coding,budget --tasks tasks/easy/*.yml"
+  )
+  .example(
+    "Traditional provider/model format",
+    "centralgauge bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022"
   )
   .example(
     "Generate HTML report",
@@ -610,6 +691,35 @@ cli.command("test <project-path>", "Run AL tests in container")
 cli.command("models [...specs]", "List supported models and test parsing")
   .action((options, ...specs: string[]) => {
     handleModelsList(specs.length > 0 ? specs : undefined);
+  });
+
+// Config command with subcommands
+const configCmd = cli.command("config", "Manage configuration");
+
+configCmd.command("init", "Generate sample configuration file")
+  .option("--global", "Create in home directory instead of current directory")
+  .action(async (options) => {
+    const configPath = options.global 
+      ? `${Deno.env.get("HOME") || Deno.env.get("USERPROFILE")}/.centralgauge.yml`
+      : ".centralgauge.yml";
+    
+    if (await exists(configPath)) {
+      console.log(`⚠️  Configuration file already exists: ${configPath}`);
+      console.log("Remove it first if you want to regenerate.");
+      return;
+    }
+    
+    const sampleConfig = ConfigManager.generateSampleConfig();
+    await Deno.writeTextFile(configPath, sampleConfig);
+    console.log(`✅ Created configuration file: ${configPath}`);
+    console.log("Edit this file to customize your default settings.");
+  });
+
+configCmd.command("show", "Show current configuration")
+  .action(async () => {
+    const config = await ConfigManager.loadConfig();
+    console.log("📋 Current Configuration:\n");
+    console.log(JSON.stringify(config, null, 2));
   });
 
 // Parse and execute

@@ -41,8 +41,20 @@ deno task lint        # Lint code
 deno task fmt         # Format code  
 deno task test        # Run tests
 
-# Benchmarking
-deno task bench --llms gpt-4o,claude-3-sonnet --tasks tasks/*.yml
+# Benchmarking (NEW: Simple aliases!)
+deno task bench --llms sonnet,gpt-4o --tasks tasks/easy/*.yml  # Use aliases
+deno task bench --llms flagship --tasks tasks/*.yml            # Use groups
+deno task bench --llms coding,budget --attempts 2              # Mix & match
+
+# Traditional syntax still works
+deno task bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022
+
+# Configuration
+deno run --allow-all cli/centralgauge.ts config init           # Create config file
+deno run --allow-all cli/centralgauge.ts models               # List all models
+deno run --allow-all cli/centralgauge.ts models flagship      # Test model resolution
+
+# HTML Reports
 deno task report results/ --html --output reports/
 ```
 
@@ -77,6 +89,10 @@ deno task report results/ --html --output reports/
 - [x] OpenAI, Anthropic, Gemini adapters
 - [x] Azure OpenAI and local model support
 - [x] Provider/model format standardization
+- [x] Model presets and aliases (sonnet, gpt-4o, haiku, etc.)
+- [x] Model groups (flagship, budget, coding, etc.)
+- [x] Configuration file system (.centralgauge.yml)
+- [x] Environment-based defaults and overrides
 
 **Phase 6: Production Ready** 🚧 *Next*
 - [ ] CI/CD pipeline with GitHub Actions
