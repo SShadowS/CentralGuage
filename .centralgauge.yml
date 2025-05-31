@@ -1,0 +1,32 @@
+# CentralGauge Configuration File
+# Place this file as .centralgauge.yml in your project root or home directory
+
+# Default models for different scenarios
+defaultModels:
+  benchmark: [sonnet, gpt-4o]      # Models for production benchmarks
+  development: [mock]              # Models for development/testing
+  comparison: [flagship]           # Models for side-by-side comparison
+
+# LLM provider settings
+llm:
+  temperature: 0.1                 # Lower = more deterministic
+  maxTokens: 4000                  # Maximum response length
+  timeout: 30000                   # Request timeout in milliseconds
+
+# Benchmark execution settings
+benchmark:
+  attempts: 2                      # Number of attempts per task
+  outputDir: results               # Directory for benchmark results
+  templateDir: templates           # Directory for prompt templates
+
+# Container settings
+container:
+  provider: mock                   # Container provider (mock, bc-container)
+  bcVersion: "24.0"               # Business Central version
+  memoryLimit: 8G                  # Container memory limit
+
+# Environment variable overrides (optional)
+# These will be set during execution
+# environment:
+#   ANTHROPIC_API_KEY: sk-ant-...
+#   OPENAI_API_KEY: sk-...
