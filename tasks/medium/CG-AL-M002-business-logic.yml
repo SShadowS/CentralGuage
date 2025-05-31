@@ -1,0 +1,23 @@
+id: CG-AL-M002
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a comprehensive business logic codeunit called "Sales Order Calculator" with ID 70001.
+  The codeunit should implement complex sales calculations including:
+  - CalculateLineTotal(Quantity: Decimal; UnitPrice: Decimal; DiscountPercent: Decimal): Decimal
+  - CalculateOrderTotal(SalesOrderNo: Code[20]): Decimal - sum all line totals
+  - ApplyVolumeDiscount(OrderTotal: Decimal; CustomerType: Enum): Decimal - apply tiered discounts
+  - ValidateOrderLimits(CustomerNo: Code[20]; OrderAmount: Decimal): Boolean - check credit limits
+  - CalculateTaxAmount(NetAmount: Decimal; TaxRate: Decimal): Decimal
+  
+  Include proper error handling with specific error messages, parameter validation,
+  and use of local procedures for code organization. Include logging for audit purposes.
+  Follow Business Central patterns for complex business logic with proper Access = Public.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-M002.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

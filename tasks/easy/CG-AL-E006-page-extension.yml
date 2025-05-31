@@ -1,0 +1,20 @@
+id: CG-AL-E006
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a page extension called "Customer Card Extension" with ID 70000 that extends the Customer Card page (page 21).
+  Add the following controls to the General group:
+  - Preferred Contact Method (Option field with values: Email, Phone, Mail, SMS)
+  - Customer Notes (Text field for internal notes)
+  - VIP Customer (Boolean field to mark important customers)
+  
+  Include proper captions and ensure the extension follows Business Central conventions.
+  The new fields should appear in the existing General group on the Customer Card.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-E006.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

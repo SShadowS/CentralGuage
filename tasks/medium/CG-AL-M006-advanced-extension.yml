@@ -1,0 +1,30 @@
+id: CG-AL-M006
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an advanced table extension called "Advanced Customer Extension" with ID 70001 that extends the Customer table.
+  
+  Add complex fields with business logic:
+  - Credit Score (Integer with validation 300-850)
+  - Risk Level (Option: Low, Medium, High, Critical - calculated based on credit score)
+  - Last Risk Assessment Date (Date)
+  - Payment History Rating (Decimal calculated field)
+  - Preferred Payment Method (Code[10] with TableRelation)
+  
+  Include advanced procedures:
+  - UpdateRiskLevel() - calculate risk based on credit score and payment history
+  - CalculatePaymentHistoryRating(): Decimal - analyze payment patterns
+  - GetCreditLimit(): Decimal - determine credit limit based on risk
+  - ValidateNewOrder(OrderAmount: Decimal): Boolean - check if order within limits
+  - TriggerRiskAssessment() - automated risk evaluation
+  
+  Include field validation triggers, OnValidate events, and integration with existing Customer events.
+  Use proper data classification and include comprehensive validation logic.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-M006.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

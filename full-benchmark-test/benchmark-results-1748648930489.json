@@ -1,0 +1,905 @@
+[
+  {
+    "taskId": "CG-AL-E001",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue)\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 220,
+            "completionTokens": 145,
+            "totalTokens": 365,
+            "estimatedCost": 0
+          },
+          "duration": 956,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue)\n    end;\n}",
+        "compilationResult": {
+          "success": false,
+          "errors": [
+            {
+              "code": "AL0002",
+              "message": "Missing semicolon",
+              "file": "full-benchmark-test/temp/CG-AL-E001_attempt_1/GeneratedCode.al",
+              "line": 17,
+              "column": 24,
+              "severity": "error"
+            }
+          ],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nfull-benchmark-test/temp/CG-AL-E001_attempt_1/GeneratedCode.al(17,24): error AL0002: Missing semicolon\n\nCompilation failed with 1 error(s).\n",
+          "duration": 1506
+        },
+        "passed": false,
+        "score": 0
+      },
+      {
+        "attempt": 2,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 178,
+            "completionTokens": 146,
+            "totalTokens": 324,
+            "estimatedCost": 0
+          },
+          "duration": 1090,
+          "finishReason": "stop"
+        },
+        "generatedCode": "    Access = Public;\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1507,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E001_attempt_2/bin/app.app"
+        },
+        "passed": true,
+        "score": 0.8250000000000001
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 2,
+    "totalDuration": 5521,
+    "aggregateScore": 0.8250000000000001,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 689,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:47:53.957Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E002",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 234,
+            "completionTokens": 242,
+            "totalTokens": 476,
+            "estimatedCost": 0
+          },
+          "duration": 2158,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E002_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2842,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 476,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:47:56.799Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E003",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 208,
+            "completionTokens": 146,
+            "totalTokens": 354,
+            "estimatedCost": 0
+          },
+          "duration": 2184,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E003_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3066,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 354,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:47:59.865Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E004",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ntableextension 70200 \"Customer Extension\" extends Customer\n{\n    fields\n    {\n        field(70200; \"Customer Rating\"; Option)\n        {\n            Caption = 'Customer Rating';\n            OptionMembers = \"Not Rated\",Bronze,Silver,Gold,Platinum;\n            OptionCaption = 'Not Rated,Bronze,Silver,Gold,Platinum';\n            DataClassification = CustomerContent;\n        }\n        field(70201; \"Loyalty Points\"; Integer)\n        {\n            Caption = 'Loyalty Points';\n            DataClassification = CustomerContent;\n            MinValue = 0;\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 251,
+            "completionTokens": 183,
+            "totalTokens": 434,
+            "estimatedCost": 0
+          },
+          "duration": 2298,
+          "finishReason": "stop"
+        },
+        "generatedCode": "tableextension 70200 \"Customer Extension\" extends Customer\n{\n    fields\n    {\n        field(70200; \"Customer Rating\"; Option)\n        {\n            Caption = 'Customer Rating';\n            OptionMembers = \"Not Rated\",Bronze,Silver,Gold,Platinum;\n            OptionCaption = 'Not Rated,Bronze,Silver,Gold,Platinum';\n            DataClassification = CustomerContent;\n        }\n        field(70201; \"Loyalty Points\"; Integer)\n        {\n            Caption = 'Loyalty Points';\n            DataClassification = CustomerContent;\n            MinValue = 0;\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E004_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3117,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 434,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:02.982Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E005",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 268,
+            "completionTokens": 242,
+            "totalTokens": 510,
+            "estimatedCost": 0
+          },
+          "duration": 2611,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1504,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E005_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3175,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 510,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:06.157Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E006",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 261,
+            "completionTokens": 242,
+            "totalTokens": 503,
+            "estimatedCost": 0
+          },
+          "duration": 1531,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E006_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3005,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 503,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:09.162Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E007",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 238,
+            "completionTokens": 146,
+            "totalTokens": 384,
+            "estimatedCost": 0
+          },
+          "duration": 1469,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1505,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E007_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3214,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 384,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:12.376Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E008",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 249,
+            "completionTokens": 146,
+            "totalTokens": 395,
+            "estimatedCost": 0
+          },
+          "duration": 1870,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1505,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E008_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3082,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 395,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:15.458Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E009",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 245,
+            "completionTokens": 146,
+            "totalTokens": 391,
+            "estimatedCost": 0
+          },
+          "duration": 2052,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1505,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E009_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2963,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 391,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:18.421Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-E010",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    \n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 260,
+            "completionTokens": 142,
+            "totalTokens": 402,
+            "estimatedCost": 0
+          },
+          "duration": 2048,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    \n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [
+            {
+              "code": "AL0486",
+              "message": "Access property should be specified for public objects",
+              "file": "full-benchmark-test/temp/CG-AL-E010_attempt_1/GeneratedCode.al",
+              "line": 1,
+              "column": 0,
+              "severity": "warning"
+            }
+          ],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\nfull-benchmark-test/temp/CG-AL-E010_attempt_1/GeneratedCode.al(1,0): warning AL0486: Access property should be specified for public objects\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-E010_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2801,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 402,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:21.222Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M001",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 309,
+            "completionTokens": 242,
+            "totalTokens": 551,
+            "estimatedCost": 0
+          },
+          "duration": 2378,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M001_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2946,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 551,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:24.168Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M002",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 344,
+            "completionTokens": 146,
+            "totalTokens": 490,
+            "estimatedCost": 0
+          },
+          "duration": 1950,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M002_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2980,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 490,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:27.148Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M003",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 333,
+            "completionTokens": 146,
+            "totalTokens": 479,
+            "estimatedCost": 0
+          },
+          "duration": 2568,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1504,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M003_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2837,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 479,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:29.985Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M004",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 344,
+            "completionTokens": 242,
+            "totalTokens": 586,
+            "estimatedCost": 0
+          },
+          "duration": 2575,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M004_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2837,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 586,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:32.822Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M005",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 350,
+            "completionTokens": 242,
+            "totalTokens": 592,
+            "estimatedCost": 0
+          },
+          "duration": 2245,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M005_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2777,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 592,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:35.599Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M006",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ntableextension 70200 \"Customer Extension\" extends Customer\n{\n    fields\n    {\n        field(70200; \"Customer Rating\"; Option)\n        {\n            Caption = 'Customer Rating';\n            OptionMembers = \"Not Rated\",Bronze,Silver,Gold,Platinum;\n            OptionCaption = 'Not Rated,Bronze,Silver,Gold,Platinum';\n            DataClassification = CustomerContent;\n        }\n        field(70201; \"Loyalty Points\"; Integer)\n        {\n            Caption = 'Loyalty Points';\n            DataClassification = CustomerContent;\n            MinValue = 0;\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 379,
+            "completionTokens": 183,
+            "totalTokens": 562,
+            "estimatedCost": 0
+          },
+          "duration": 1216,
+          "finishReason": "stop"
+        },
+        "generatedCode": "tableextension 70200 \"Customer Extension\" extends Customer\n{\n    fields\n    {\n        field(70200; \"Customer Rating\"; Option)\n        {\n            Caption = 'Customer Rating';\n            OptionMembers = \"Not Rated\",Bronze,Silver,Gold,Platinum;\n            OptionCaption = 'Not Rated,Bronze,Silver,Gold,Platinum';\n            DataClassification = CustomerContent;\n        }\n        field(70201; \"Loyalty Points\"; Integer)\n        {\n            Caption = 'Loyalty Points';\n            DataClassification = CustomerContent;\n            MinValue = 0;\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1505,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M006_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2884,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 562,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:38.483Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M007",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 367,
+            "completionTokens": 242,
+            "totalTokens": 609,
+            "estimatedCost": 0
+          },
+          "duration": 1341,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1505,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M007_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3242,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 609,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:41.725Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M008",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 383,
+            "completionTokens": 146,
+            "totalTokens": 529,
+            "estimatedCost": 0
+          },
+          "duration": 1562,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1504,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M008_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2843,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 529,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:44.568Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M009",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 391,
+            "completionTokens": 146,
+            "totalTokens": 537,
+            "estimatedCost": 0
+          },
+          "duration": 1560,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    Access = Public;\n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1505,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M009_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3062,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 537,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:47.630Z"
+    }
+  },
+  {
+    "taskId": "CG-AL-M010",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\npage 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 438,
+            "completionTokens": 242,
+            "totalTokens": 680,
+            "estimatedCost": 0
+          },
+          "duration": 1697,
+          "finishReason": "stop"
+        },
+        "generatedCode": "page 70100 \"Customer API\"\n{\n    PageType = API;\n    APIPublisher = 'mycompany';\n    APIGroup = 'customers';\n    APIVersion = 'v1.0';\n    EntityName = 'customer';\n    EntitySetName = 'customers';\n    SourceTable = Customer;\n    DelayedInsert = true;\n    ODataKeyFields = SystemId;\n\n    layout\n    {\n        area(Content)\n        {\n            repeater(Records)\n            {\n                field(id; Rec.SystemId)\n                {\n                    Caption = 'Id';\n                    Editable = false;\n                }\n                field(number; Rec.\"No.\")\n                {\n                    Caption = 'Number';\n                }\n                field(displayName; Rec.Name)\n                {\n                    Caption = 'Display Name';\n                }\n            }\n        }\n    }\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "full-benchmark-test/temp/CG-AL-M010_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 2859,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 680,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:48:50.489Z"
+    }
+  }
+]

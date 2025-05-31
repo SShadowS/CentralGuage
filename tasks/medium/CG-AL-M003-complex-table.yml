@@ -1,0 +1,28 @@
+id: CG-AL-M003
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a complex table called "Sales Contract" with ID 70002 that includes comprehensive validation.
+  Fields should include:
+  - Contract No. (Code[20], primary key, auto-generated)
+  - Customer No. (Code[20], with TableRelation to Customer)
+  - Start Date and End Date (Date fields with validation)
+  - Contract Value (Decimal with minimum value validation)
+  - Status (Option: Draft, Active, Suspended, Terminated)
+  - Payment Terms (Code[10] with TableRelation)
+  
+  Include complex validation in triggers:
+  - OnValidate for dates (End Date must be after Start Date)
+  - OnValidate for Contract Value (must be positive, warn if over threshold)
+  - OnInsert trigger to auto-generate Contract No.
+  - OnDelete trigger to prevent deletion of Active contracts
+  
+  Include proper captions, data classification, and field validation patterns.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-M003.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

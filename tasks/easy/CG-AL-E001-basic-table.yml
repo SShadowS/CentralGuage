@@ -1,0 +1,21 @@
+id: CG-AL-E001
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a simple AL table called "Product Category" with ID 70000.
+  The table should have the following fields:
+  - Code (Code[20], primary key)
+  - Description (Text[100])
+  - Active (Boolean, default true)
+  - Created Date (Date)
+  
+  Include proper captions and data classification.
+  Set appropriate primary key and ensure the table follows Business Central conventions.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-E001.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

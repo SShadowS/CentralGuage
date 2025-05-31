@@ -1,0 +1,20 @@
+id: CG-AL-E005
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a simple AL codeunit called "Text Utilities" with ID 70000.
+  The codeunit should have the following public procedures:
+  - CapitalizeFirstLetter(InputText: Text): Text - capitalizes the first letter of input text
+  - CountWords(InputText: Text): Integer - counts the number of words in the input text
+  - IsValidEmail(EmailAddress: Text): Boolean - basic validation to check if text contains @ and .
+  
+  Include proper Access property and ensure all procedures have appropriate parameter and return types.
+  Follow Business Central codeunit conventions.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-E005.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,30 @@
+id: CG-AL-M008
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a workflow implementation codeunit called "Purchase Approval Workflow" with ID 70003.
+  
+  Implement a complete approval workflow system:
+  - InitiateApprovalProcess(PurchaseHeaderNo: Code[20]): Boolean - start approval workflow
+  - ProcessApprovalRequest(RequestId: Integer; Action: Enum): Boolean - handle approval actions
+  - NotifyApprovers(PurchaseAmount: Decimal; RequesterUserId: Code[50]) - send notifications
+  - EscalateApproval(RequestId: Integer) - escalate to higher authority
+  - CompleteApprovalProcess(PurchaseHeaderNo: Code[20]; Approved: Boolean) - finalize workflow
+  
+  Include complex business logic:
+  - Dynamic approver determination based on amount thresholds
+  - Approval history tracking and audit trail
+  - Timeout handling for pending approvals
+  - Email notifications and reminders
+  - Integration with user permissions and approval hierarchies
+  
+  Use event subscribers for Purchase Header events, proper error handling,
+  and comprehensive logging. Include approval status management and state transitions.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-M008.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

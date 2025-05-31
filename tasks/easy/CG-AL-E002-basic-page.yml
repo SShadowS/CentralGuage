@@ -1,0 +1,22 @@
+id: CG-AL-E002
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a simple AL card page called "Product Category Card" with ID 70001.
+  The page should be based on a table called "Product Category" and display the following fields:
+  - Code
+  - Description  
+  - Active
+  - Created Date
+  
+  Use proper page layout with a Content area and repeater group.
+  Include appropriate captions and ensure the page follows Business Central conventions.
+  The page should allow editing of all fields.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-E002.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

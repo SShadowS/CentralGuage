@@ -1,0 +1,35 @@
+id: CG-AL-M007
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a complex report called "Sales Performance Analysis" with ID 70001 that performs advanced data processing.
+  
+  The report should include multiple data items with complex relationships:
+  - Customer (grouped by region and category)
+  - Sales Header (filtered by date range)
+  - Sales Line (with calculations and aggregations)
+  
+  Include advanced calculations:
+  - Running totals by customer and region
+  - Year-over-year comparison calculations
+  - Average order value and frequency metrics
+  - Top performing products analysis
+  - Customer ranking by sales volume
+  
+  Implement complex dataset logic:
+  - OnPreDataItem triggers for initialization
+  - OnAfterGetRecord triggers for calculations
+  - Group headers and footers with subtotals
+  - Conditional formatting and grouping
+  - Request page with date filters and options
+  
+  Include proper report layout structure, variables for calculations,
+  and comprehensive data processing logic. Use ApplicationArea and UsageCategory.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-M007.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

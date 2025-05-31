@@ -1,0 +1,29 @@
+id: CG-AL-M004
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an interactive page called "Sales Order Workspace" with ID 70101 that provides comprehensive order management.
+  The page should be based on Sales Header table and include:
+  
+  Layout with multiple FastTabs:
+  - General information (Order No, Customer, Dates, Status)
+  - Financial summary (Subtotal, Tax, Total calculated fields)
+  - Lines subpage for order details
+  
+  Custom Actions in the ribbon:
+  - "Calculate Totals" - recalculate order totals and refresh display
+  - "Apply Discount" - open dialog to apply percentage discount
+  - "Export to PDF" - generate order confirmation
+  - "Send Email" - email order to customer
+  
+  Include proper action triggers with business logic, confirmation dialogs,
+  error handling, and user feedback messages. Use ApplicationArea and Promoted properties.
+  Include field validations and dynamic enable/disable of actions based on status.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-M004.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

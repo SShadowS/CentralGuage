@@ -1,0 +1,22 @@
+id: CG-AL-E007
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a simple AL report called "Customer List Report" with ID 70000.
+  The report should use the Customer table as its data source and display:
+  - Customer No.
+  - Customer Name
+  - City
+  - Phone No.
+  
+  Include proper dataset structure with a single data item for Customer.
+  Add appropriate column captions and ensure the report follows Business Central conventions.
+  Include basic report properties like UsageCategory and ApplicationArea.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-E007.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

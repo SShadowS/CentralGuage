@@ -1,0 +1,32 @@
+{
+  "id": "12345678-1234-1234-1234-123456789012",
+  "name": "CentralGauge Test Codeunit",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "brief": "Simple codeunit for testing AL compilation",
+  "description": "Test fixture for CentralGauge benchmark",
+  "privacyStatement": "",
+  "EULA": "",
+  "help": "",
+  "url": "",
+  "logo": "",
+  "dependencies": [],
+  "screenshots": [],
+  "platform": "24.0.0.0",
+  "application": "24.0.0.0",
+  "idRanges": [
+    {
+      "from": 70000,
+      "to": 70099
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": false,
+    "includeSourceInSymbolFile": false
+  },
+  "runtime": "13.0",
+  "features": [
+    "NoImplicitWith"
+  ]
+}

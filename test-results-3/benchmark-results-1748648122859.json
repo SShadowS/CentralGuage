@@ -1,0 +1,54 @@
+[
+  {
+    "taskId": "CG-AL-001",
+    "model": "mock-gpt-4",
+    "attempts": [
+      {
+        "attempt": 1,
+        "llmResponse": {
+          "content": "Here's the AL code that implements the requested functionality:\n\nBEGIN-CODE\ncodeunit 70000 \"Inventory Calculator\"\n{\n    \n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}\nEND-CODE\n\nThis code follows Business Central AL conventions and should compile successfully.",
+          "model": "mock-gpt-4",
+          "usage": {
+            "promptTokens": 189,
+            "completionTokens": 142,
+            "totalTokens": 331,
+            "estimatedCost": 0
+          },
+          "duration": 1689,
+          "finishReason": "stop"
+        },
+        "generatedCode": "codeunit 70000 \"Inventory Calculator\"\n{\n    \n\n    procedure CalculateInventoryValue(): Decimal\n    var\n        Item: Record Item;\n        TotalValue: Decimal;\n    begin\n        TotalValue := 0;\n        \n        if Item.FindSet() then\n            repeat\n                TotalValue += Item.\"Unit Cost\" * Item.Inventory;\n            until Item.Next() = 0;\n            \n        exit(TotalValue);\n    end;\n}",
+        "compilationResult": {
+          "success": true,
+          "errors": [],
+          "warnings": [
+            {
+              "code": "AL0486",
+              "message": "Access property should be specified for public objects",
+              "file": "test-results-3/temp/CG-AL-001_attempt_1/GeneratedCode.al",
+              "line": 1,
+              "column": 0,
+              "severity": "warning"
+            }
+          ],
+          "output": "Microsoft (R) AL Compiler version 13.0.0.0\nCopyright (C) Microsoft Corporation. All rights reserved.\n\ntest-results-3/temp/CG-AL-001_attempt_1/GeneratedCode.al(1,0): warning AL0486: Access property should be specified for public objects\n\nCompilation completed successfully.\n",
+          "duration": 1506,
+          "artifactPath": "test-results-3/temp/CG-AL-001_attempt_1/bin/app.app"
+        },
+        "passed": true,
+        "score": 1
+      }
+    ],
+    "finalResult": "pass",
+    "passAttempt": 1,
+    "totalDuration": 3264,
+    "aggregateScore": 1,
+    "metadata": {
+      "templateUsed": "code-gen.md",
+      "fixTemplateUsed": "bugfix.md",
+      "totalTokens": 331,
+      "totalCost": 0,
+      "executionTime": "2025-05-30T23:35:22.859Z"
+    }
+  }
+]

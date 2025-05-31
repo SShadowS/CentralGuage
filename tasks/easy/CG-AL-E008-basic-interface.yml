@@ -1,0 +1,20 @@
+id: CG-AL-E008
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a simple AL interface called "Payment Processor" with ID 70000.
+  The interface should define the following procedures:
+  - ProcessPayment(Amount: Decimal; PaymentMethod: Text): Boolean
+  - ValidatePayment(PaymentData: Text): Boolean  
+  - GetTransactionFee(Amount: Decimal): Decimal
+  
+  Include proper Access property and ensure all procedures have appropriate parameter and return types.
+  Follow Business Central interface conventions and include basic documentation comments.
+expected:
+  compile: true
+  testApp: /tests/CG-AL-E008.altest
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
