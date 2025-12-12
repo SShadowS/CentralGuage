@@ -97,4 +97,7 @@ export interface BenchmarkOptions {
 export type {
   TaskExecutionConfig,
   BenchmarkProgress,
-} from "../src/tasks/types.ts";
+  AttemptResult as LegacyAttemptResult,
+  LegacyTaskExecutionResult,
+  TaskExecutor,
+} from "../src/tasks/interfaces.ts";

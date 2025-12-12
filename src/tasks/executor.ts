@@ -2,13 +2,13 @@ import { exists } from "@std/fs";
 import { join } from "@std/path";
 import { parse } from "@std/yaml";
 
-import type { TaskManifest } from "../../types/index.ts";
-import type { 
-  AttemptResult, 
-  TaskExecutionConfig, 
-  TaskExecutionResult, 
-  TaskExecutor 
-} from "./types.ts";
+import type {
+  TaskManifest,
+  AttemptResult,
+  TaskExecutionConfig,
+  LegacyTaskExecutionResult as TaskExecutionResult,
+  TaskExecutor
+} from "./interfaces.ts";
 
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { ContainerProviderRegistry } from "../container/registry.ts";

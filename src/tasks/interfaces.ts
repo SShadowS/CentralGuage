@@ -215,3 +215,76 @@ export interface TaskValidationResult {
   warnings: string[];
   suggestions: string[];
 }
+
+// =============================================================================
+// Legacy Types (for backward compatibility with DefaultTaskExecutor)
+// =============================================================================
+
+/**
+ * @deprecated Use TaskExecutionRequest instead for new code
+ */
+export interface TaskExecutionConfig {
+  taskManifest: TaskManifest;
+  llmModel: string;
+  llmProvider: string;
+  containerProvider: string;
+  containerName: string;
+  templateDir: string;
+  outputDir: string;
+  maxAttempts: number;
+  temperature: number;
+  maxTokens: number;
+}
+
+/**
+ * @deprecated Use ExecutionAttempt instead for new code
+ */
+export interface AttemptResult {
+  attempt: number;
+  llmResponse: LLMResponse;
+  generatedCode: string;
+  compilationResult: CompilationResult;
+  testResult?: TestResult;
+  passed: boolean;
+  score: number;
+}
+
+/**
+ * @deprecated Use TaskExecutionResult instead for new code
+ */
+export interface LegacyTaskExecutionResult {
+  taskId: string;
+  model: string;
+  attempts: AttemptResult[];
+  finalResult: "pass" | "fail";
+  passAttempt: number;
+  totalDuration: number;
+  aggregateScore: number;
+  metadata: {
+    templateUsed: string;
+    fixTemplateUsed?: string;
+    totalTokens: number;
+    totalCost: number;
+    executionTime: Date;
+  };
+}
+
+/**
+ * Progress tracking for benchmark runs
+ */
+export interface BenchmarkProgress {
+  totalTasks: number;
+  completedTasks: number;
+  currentTask?: string;
+  currentModel?: string;
+  errors: string[];
+  estimatedTimeRemaining?: number;
+}
+
+/**
+ * @deprecated Use TaskExecutorV2 class instead
+ */
+export interface TaskExecutor {
+  executeTask(config: TaskExecutionConfig): Promise<LegacyTaskExecutionResult>;
+  validateTask(manifest: TaskManifest): Promise<string[]>;
+}
