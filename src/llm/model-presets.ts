@@ -206,6 +206,7 @@ export class ModelPresetRegistry {
     if (MODEL_GROUPS[spec]) {
       return MODEL_GROUPS[spec].map(alias => {
         const preset = MODEL_PRESETS[alias];
+        if (!preset) return alias; // Return alias as-is if not found
         return `${preset.provider}/${preset.model}`;
       });
     }
@@ -250,7 +251,10 @@ export class ModelPresetRegistry {
     };
     
     for (const preset of Object.values(MODEL_PRESETS)) {
-      tiers[preset.costTier].push(preset);
+      const tier = tiers[preset.costTier];
+      if (tier) {
+        tier.push(preset);
+      }
     }
     
     return tiers;

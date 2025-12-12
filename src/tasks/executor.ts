@@ -224,7 +224,7 @@ export class DefaultTaskExecutor implements TaskExecutor {
     const tempDir = join(config.outputDir, "temp", `${config.taskManifest.id}_attempt_${attemptNumber}`);
     
     // Create temporary project
-    const project = await ALProjectManager.createProject(tempDir, {
+    await ALProjectManager.createProject(tempDir, {
       id: "12345678-1234-1234-1234-123456789999",
       name: `${config.taskManifest.id} Attempt ${attemptNumber}`,
       publisher: "CentralGauge",
@@ -349,9 +349,9 @@ export class DefaultTaskExecutor implements TaskExecutor {
 
   private calculateAggregateScore(attempts: AttemptResult[], passAttempt: number): number {
     if (passAttempt === 0) return 0; // Never passed
-    
+
     const passingAttempt = attempts[passAttempt - 1];
-    return passingAttempt.score;
+    return passingAttempt?.score ?? 0;
   }
 
   private truncateErrors(errors: string, maxLength: number): string {

@@ -49,7 +49,7 @@ export class GeminiAdapter implements LLMAdapter {
   }
 
   async generateFix(
-    originalCode: string,
+    _originalCode: string,
     errors: string[],
     request: LLMRequest,
     context: GenerationContext,
@@ -102,6 +102,7 @@ export class GeminiAdapter implements LLMAdapter {
 
   estimateCost(promptTokens: number, completionTokens: number): number {
     // Google Gemini pricing (as of 2024)
+    const defaultCost = { input: 0.00125, output: 0.005 };
     const modelCosts: Record<string, { input: number; output: number }> = {
       "gemini-1.5-pro": { input: 0.00125, output: 0.005 },
       "gemini-1.5-pro-002": { input: 0.00125, output: 0.005 },
@@ -109,11 +110,11 @@ export class GeminiAdapter implements LLMAdapter {
       "gemini-1.5-flash-002": { input: 0.000075, output: 0.0003 },
       "gemini-1.0-pro": { input: 0.0005, output: 0.0015 },
     };
-    
-    const costs = modelCosts[this.config.model] || modelCosts["gemini-1.5-pro"];
+
+    const costs = modelCosts[this.config.model] ?? defaultCost;
     const inputCost = (promptTokens / 1000) * costs.input;
     const outputCost = (completionTokens / 1000) * costs.output;
-    
+
     return inputCost + outputCost;
   }
 

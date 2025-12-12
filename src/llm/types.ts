@@ -6,6 +6,9 @@ export interface LLMConfig {
   temperature?: number;
   maxTokens?: number;
   timeout?: number;
+  // Azure OpenAI specific
+  deploymentName?: string;
+  apiVersion?: string;
 }
 
 export interface LLMRequest {

@@ -2,7 +2,7 @@ import { exists } from "@std/fs";
 import { join } from "@std/path";
 
 export interface TemplateContext {
-  [key: string]: string | number | boolean | undefined;
+  [key: string]: string | number | boolean | undefined | null | any[] | Record<string, any>;
 }
 
 export class TemplateRenderer {
@@ -49,19 +49,19 @@ export class TemplateRenderer {
     let result = template;
 
     // Handle conditionals: {{#if variable}}content{{/if}}
-    result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (match, key, content) => {
+    result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_match, key, content) => {
       const value = context[key];
       return value ? content : "";
     });
 
     // Handle inverse conditionals: {{#unless variable}}content{{/unless}}
-    result = result.replace(/\{\{#unless\s+(\w+)\}\}([\s\S]*?)\{\{\/unless\}\}/g, (match, key, content) => {
+    result = result.replace(/\{\{#unless\s+(\w+)\}\}([\s\S]*?)\{\{\/unless\}\}/g, (_match, key, content) => {
       const value = context[key];
       return !value ? content : "";
     });
 
     // Handle simple loops: {{#each items}}{{.}}{{/each}} - for arrays of strings
-    result = result.replace(/\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g, (match, key, content) => {
+    result = result.replace(/\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g, (_match, key, content) => {
       const value = context[key];
       if (Array.isArray(value)) {
         return value.map(item => content.replace(/\{\{\.\}\}/g, String(item))).join("");
@@ -88,9 +88,9 @@ export class TemplateRenderer {
   // Validate template syntax
   validateTemplate(template: string): string[] {
     const errors: string[] = [];
-    const variables = template.match(/\{\{(\w+)\}\}/g) || [];
-    const conditionals = template.match(/\{\{#(if|unless)\s+\w+\}\}/g) || [];
-    const loops = template.match(/\{\{#each\s+\w+\}\}/g) || [];
+    // const variables = template.match(/\{\{(\w+)\}\}/g) || [];
+    // const conditionals = template.match(/\{\{#(if|unless)\s+\w+\}\}/g) || [];
+    // const loops = template.match(/\{\{#each\s+\w+\}\}/g) || [];
 
     // Check for unmatched conditionals
     const ifCount = (template.match(/\{\{#if\s+\w+\}\}/g) || []).length;

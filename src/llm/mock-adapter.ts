@@ -21,6 +21,36 @@ export class MockLLMAdapter implements LLMAdapter {
   };
   
   private readonly codeTemplates = {
+    simpleTable: `table 70000 "Test Table"
+{
+    DataClassification = CustomerContent;
+    
+    fields
+    {
+        field(1; "Entry No."; Integer)
+        {
+            DataClassification = CustomerContent;
+            AutoIncrement = true;
+        }
+        field(2; "Description"; Text[100])
+        {
+            DataClassification = CustomerContent;
+        }
+        field(3; "Amount"; Decimal)
+        {
+            DataClassification = CustomerContent;
+        }
+    }
+    
+    keys
+    {
+        key(PK; "Entry No.")
+        {
+            Clustered = true;
+        }
+    }
+}`,
+
     simpleCodeunit: `codeunit 70000 "Inventory Calculator"
 {
     Access = Public;
@@ -160,13 +190,13 @@ export class MockLLMAdapter implements LLMAdapter {
     }
     
     if (config.maxTokens !== undefined && config.maxTokens < 1) {
-      errors.push("Max tokens must be greater than 0");
+      errors.push("maxTokens must be greater than 0");
     }
     
     return errors;
   }
 
-  estimateCost(promptTokens: number, completionTokens: number): number {
+  estimateCost(_promptTokens: number, _completionTokens: number): number {
     // Mock cost estimation (free for mock)
     return 0;
   }
@@ -179,7 +209,9 @@ export class MockLLMAdapter implements LLMAdapter {
     const lowerPrompt = prompt.toLowerCase();
     
     // Determine what type of AL object to generate based on prompt
-    if (lowerPrompt.includes("api") || lowerPrompt.includes("page")) {
+    if (lowerPrompt.includes("table")) {
+      return this.wrapInBeginCode(this.codeTemplates.simpleTable);
+    } else if (lowerPrompt.includes("api") || lowerPrompt.includes("page")) {
       return this.wrapInBeginCode(this.codeTemplates.apiPage);
     } else if (lowerPrompt.includes("extension") || lowerPrompt.includes("extend")) {
       return this.wrapInBeginCode(this.codeTemplates.tableExtension);
@@ -242,7 +274,9 @@ export class MockLLMAdapter implements LLMAdapter {
     const numErrors = Math.floor(Math.random() * 2) + 1;
     for (let i = 0; i < numErrors; i++) {
       const errorType = errorTypes[Math.floor(Math.random() * errorTypes.length)];
-      errorType();
+      if (errorType) {
+        errorType();
+      }
     }
     
     return errorCode;

@@ -7,13 +7,15 @@ import type { BenchmarkOptions } from "../types/index.ts";
 import { ContainerProviderRegistry } from "../src/container/registry.ts";
 import { ALProjectManager } from "../src/compiler/al-project.ts";
 import { LLMAdapterRegistry } from "../src/llm/registry.ts";
-import { DefaultTaskExecutor, loadTaskManifest } from "../src/tasks/executor.ts";
+import { loadTaskManifest } from "../src/tasks/loader.ts";
+import { TaskExecutorV2 } from "../src/tasks/executor-v2.ts";
 import type { ContainerConfig } from "../src/container/types.ts";
-import type { TaskExecutionConfig } from "../src/tasks/types.ts";
-import { ModelPresetRegistry, MODEL_PRESETS, MODEL_GROUPS } from "../src/llm/model-presets.ts";
+import type { TaskExecutionRequest } from "../src/tasks/interfaces.ts";
+import { ModelPresetRegistry, MODEL_PRESETS } from "../src/llm/model-presets.ts";
 import { ConfigManager } from "../src/config/config.ts";
 import { EnvLoader } from "../src/utils/env-loader.ts";
 import { SplashScreen } from "../src/utils/splash-screen.ts";
+import { DebugLogger } from "../src/utils/debug-logger.ts";
 
 const VERSION = "0.1.0";
 
@@ -28,13 +30,14 @@ function parseProviderAndModel(modelSpec: string): { provider: string; model: st
   // First try to resolve through preset system (handles aliases, groups, and provider/model)
   const resolved = ModelPresetRegistry.resolve(modelSpec);
   
-  if (resolved.length === 1 && resolved[0] !== modelSpec) {
+  const resolvedSpec = resolved[0];
+  if (resolved.length === 1 && resolvedSpec && resolvedSpec !== modelSpec) {
     // Successfully resolved to a different spec, parse the resolved spec
-    const resolvedSpec = resolved[0];
     if (resolvedSpec.includes("/")) {
-      const [provider, ...modelParts] = resolvedSpec.split("/");
-      const model = modelParts.join("/");
-      
+      const parts = resolvedSpec.split("/");
+      const provider = parts[0] || "";
+      const model = parts.slice(1).join("/");
+
       // Validate provider
       const validProviders = ["openai", "anthropic", "gemini", "azure-openai", "local", "mock"];
       if (validProviders.includes(provider)) {
@@ -45,9 +48,10 @@ function parseProviderAndModel(modelSpec: string): { provider: string; model: st
   
   // If not resolved or is already provider/model format, handle directly
   if (modelSpec.includes("/")) {
-    const [provider, ...modelParts] = modelSpec.split("/");
-    const model = modelParts.join("/"); // Handle models with slashes like "models/gemini-pro"
-    
+    const parts = modelSpec.split("/");
+    const provider = parts[0] || "";
+    const model = parts.slice(1).join("/"); // Handle models with slashes like "models/gemini-pro"
+
     // Validate provider
     const validProviders = ["openai", "anthropic", "gemini", "azure-openai", "local", "mock"];
     if (validProviders.includes(provider)) {
@@ -94,7 +98,7 @@ function parseProviderAndModel(modelSpec: string): { provider: string; model: st
   return { provider, model: modelSpec };
 }
 
-async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<void> {
+async function runBenchmark(options: BenchmarkOptions, quiet = false, containerProviderName?: string): Promise<void> {
   if (!quiet) {
     // Load environment and display splash screen
     await EnvLoader.loadEnvironment();
@@ -104,6 +108,24 @@ async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<v
       showProviders: true,
       compact: false,
     });
+  }
+
+  // Initialize debug logging if enabled
+  let debugLogger: DebugLogger | null = null;
+  if (options.debug) {
+    const sessionId = `session-${Date.now()}`;
+    const debugConfig = {
+      enabled: true,
+      outputDir: options.debugOutputDir || "debug",
+      sessionId,
+      logLevel: options.debugLogLevel || "basic",
+      includeRawResponse: options.debugLogLevel === "verbose",
+      includeRequestHeaders: options.debugLogLevel !== "basic",
+      maxFileSize: 100, // 100MB
+    };
+    
+    debugLogger = DebugLogger.initialize(debugConfig);
+    console.log(`🔍 Debug logging enabled: ${debugConfig.outputDir} (level: ${debugConfig.logLevel})`);
   }
 
   console.log("🚀 Starting CentralGauge benchmark...");
@@ -135,9 +157,11 @@ async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<v
     
     console.log(`📋 Loaded ${taskManifests.length} task(s)`);
     
-    // Setup container (using mock for now)
+    // Setup container (use specified provider or auto-detect)
     const containerName = "centralgauge-benchmark";
-    const containerProvider = ContainerProviderRegistry.create("mock");
+    const containerProvider = !containerProviderName || containerProviderName === "auto" 
+      ? await ContainerProviderRegistry.getDefault()
+      : ContainerProviderRegistry.create(containerProviderName);
     
     console.log("🐳 Setting up container...");
     await containerProvider.setup({
@@ -150,7 +174,7 @@ async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<v
     });
     
     // Initialize task executor
-    const executor = new DefaultTaskExecutor();
+    const executor = new TaskExecutorV2();
     
     // Execute benchmark for each model (expanding groups if needed)
     const allResults = [];
@@ -169,24 +193,23 @@ async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<v
         for (const manifest of taskManifests) {
         console.log(`\n📝 Executing task: ${manifest.id}`);
         
-        const config: TaskExecutionConfig = {
+        const request: TaskExecutionRequest = {
           taskManifest: manifest,
           llmModel,
           llmProvider,
-          containerProvider: "mock",
+          containerProvider: containerProvider.name,
           containerName,
-          templateDir: "templates",
           outputDir: options.outputDir,
-          maxAttempts: options.attempts,
+          attemptLimit: options.attempts,
           temperature: options.temperature || 0.1,
           maxTokens: options.maxTokens || 4000,
         };
         
           try {
-            const result = await executor.executeTask(config);
+            const result = await executor.executeTask(request);
             allResults.push(result);
             
-            console.log(`✨ Task ${manifest.id} completed: ${result.finalResult} (score: ${result.aggregateScore.toFixed(3)})`);
+            console.log(`✨ Task ${manifest.id} completed: ${result.success ? "pass" : "fail"} (score: ${result.finalScore.toFixed(3)})`);
           } catch (error) {
             console.error(`❌ Task ${manifest.id} failed: ${error instanceof Error ? error.message : String(error)}`);
           }
@@ -201,17 +224,28 @@ async function runBenchmark(options: BenchmarkOptions, quiet = false): Promise<v
     // Print summary
     console.log(`\n📊 Benchmark Summary:`);
     console.log(`   Total tasks: ${allResults.length}`);
-    console.log(`   Passed: ${allResults.filter(r => r.finalResult === "pass").length}`);
-    console.log(`   Failed: ${allResults.filter(r => r.finalResult === "fail").length}`);
-    console.log(`   Average score: ${(allResults.reduce((sum, r) => sum + r.aggregateScore, 0) / allResults.length).toFixed(3)}`);
+    console.log(`   Passed: ${allResults.filter(r => r.success).length}`);
+    console.log(`   Failed: ${allResults.filter(r => !r.success).length}`);
+    console.log(`   Average score: ${(allResults.reduce((sum, r) => sum + r.finalScore, 0) / allResults.length).toFixed(3)}`);
     console.log(`   Results saved to: ${resultsFile}`);
     
     // Cleanup container
     await containerProvider.stop(containerName);
     await containerProvider.remove(containerName);
     
+    // Finalize debug logging
+    if (debugLogger) {
+      await debugLogger.finalize();
+    }
+    
   } catch (error) {
     console.error(`❌ Benchmark failed: ${error instanceof Error ? error.message : String(error)}`);
+    
+    // Finalize debug logging even on error
+    if (debugLogger) {
+      await debugLogger.finalize();
+    }
+    
     throw error;
   }
 }
@@ -297,7 +331,7 @@ export const benchmarkData = ${JSON.stringify(allResults, null, 2)};`;
         stderr: "piped",
       });
       
-      const { code, stdout, stderr } = await buildProcess.output();
+      const { code, stdout: _stdout, stderr } = await buildProcess.output();
       
       if (code !== 0) {
         const errorText = new TextDecoder().decode(stderr);
@@ -384,7 +418,7 @@ async function handleContainerSetup(name: string, provider: string, bcVersion?: 
 }
 
 async function handleContainerControl(action: string, name: string): Promise<void> {
-  const provider = ContainerProviderRegistry.create("mock");
+  const provider = await ContainerProviderRegistry.getDefault();
   
   switch (action) {
     case "start":
@@ -415,32 +449,32 @@ function handleModelsList(testSpecs?: string[]): void {
   const presetsByCategory = ModelPresetRegistry.getPresetsByCategory();
   
   // Show flagship models first
-  if (presetsByCategory.flagship) {
+  if (presetsByCategory["flagship"]) {
     console.log("   Flagship Models:");
-    presetsByCategory.flagship.forEach(preset => {
+    presetsByCategory["flagship"].forEach(preset => {
       console.log(`   ${preset.alias.padEnd(12)} → ${preset.displayName} (${preset.costTier})`);
     });
   }
-  
+
   // Show budget models
-  if (presetsByCategory.budget) {
+  if (presetsByCategory["budget"]) {
     console.log("\n   Budget Models:");
-    presetsByCategory.budget.forEach(preset => {
+    presetsByCategory["budget"].forEach(preset => {
       console.log(`   ${preset.alias.padEnd(12)} → ${preset.displayName} (${preset.costTier})`);
     });
   }
-  
+
   // Show coding-specific models
-  if (presetsByCategory.coding) {
+  if (presetsByCategory["coding"]) {
     console.log("\n   Coding Models:");
-    presetsByCategory.coding.forEach(preset => {
+    presetsByCategory["coding"].forEach(preset => {
       console.log(`   ${preset.alias.padEnd(12)} → ${preset.displayName} (${preset.category.join(", ")})`);
     });
   }
-  
+
   // Show model groups
   console.log("\n🎯 Model Groups:");
-  const groups = MODEL_GROUPS;
+  // Model groups defined in MODEL_GROUPS constant
   console.log("   flagship     → Top-tier models for best quality");
   console.log("   budget       → Cost-effective models for development"); 
   console.log("   coding       → Optimized for code generation tasks");
@@ -512,7 +546,7 @@ function handleModelsList(testSpecs?: string[]): void {
   console.log("   • Set ANTHROPIC_API_KEY, OPENAI_API_KEY etc. for API access");
 }
 
-async function handleCompile(projectPath: string, containerName: string, outputDir?: string): Promise<void> {
+async function handleCompile(projectPath: string, containerName: string, _outputDir?: string): Promise<void> {
   if (!await exists(projectPath)) {
     console.error(`❌ Error: Project path does not exist: ${projectPath}`);
     Deno.exit(1);
@@ -520,7 +554,7 @@ async function handleCompile(projectPath: string, containerName: string, outputD
   
   try {
     const project = await ALProjectManager.loadProject(projectPath);
-    const provider = ContainerProviderRegistry.create("mock");
+    const provider = await ContainerProviderRegistry.getDefault();
     
     console.log(`🔨 Compiling AL project: ${ALProjectManager.getProjectInfo(project)}`);
     
@@ -549,7 +583,7 @@ async function handleCompile(projectPath: string, containerName: string, outputD
   }
 }
 
-async function handleTest(projectPath: string, containerName: string, outputDir?: string): Promise<void> {
+async function handleTest(projectPath: string, containerName: string, _outputDir?: string): Promise<void> {
   if (!await exists(projectPath)) {
     console.error(`❌ Error: Project path does not exist: ${projectPath}`);
     Deno.exit(1);
@@ -557,7 +591,7 @@ async function handleTest(projectPath: string, containerName: string, outputDir?
   
   try {
     const project = await ALProjectManager.loadProject(projectPath);
-    const provider = ContainerProviderRegistry.create("mock");
+    const provider = await ContainerProviderRegistry.getDefault();
     
     console.log(`🧪 Running tests for: ${ALProjectManager.getProjectInfo(project)}`);
     
@@ -614,23 +648,30 @@ const cli = new Command()
 
 // Benchmark command
 cli.command("bench", "Run benchmark evaluation")
-  .option("-l, --llms <models...>", "LLM models to test (provider/model format)", { required: true })
-  .option("-t, --tasks <patterns...>", "Task file patterns", { default: ["tasks/*.yml"] })
+  .option("-l, --llms <models:string[]>", "LLM models to test (provider/model format)", { required: true })
+  .option("-t, --tasks <patterns:string[]>", "Task file patterns", { default: ["tasks/*.yml"] })
   .option("-a, --attempts <number>", "Number of attempts per task", { default: 2 })
   .option("-o, --output <dir>", "Output directory", { default: "results/" })
   .option("--temperature <number>", "LLM temperature", { default: 0.1 })
   .option("--max-tokens <number>", "Maximum tokens per request", { default: 4000 })
   .option("-q, --quiet", "Disable splash screen and verbose output", { default: false })
+  .option("--debug", "Enable debug logging of LLM requests/responses", { default: false })
+  .option("--debug-output <dir>", "Debug output directory", { default: "debug/" })
+  .option("--debug-level <level>", "Debug log level (basic|detailed|verbose)", { default: "basic" })
+  .option("--container-provider <provider>", "Container provider to use (docker|bccontainer|mock)", { default: "auto" })
   .action(async (options) => {
     const benchOptions: BenchmarkOptions = {
       llms: options.llms,
-      tasks: options.tasks,
-      attempts: options.attempts,
+      tasks: [...options.tasks],
+      attempts: typeof options.attempts === "number" ? options.attempts : parseInt(String(options.attempts), 10),
       outputDir: options.output,
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
+      temperature: typeof options.temperature === "number" ? options.temperature : parseFloat(String(options.temperature)),
+      maxTokens: typeof options.maxTokens === "number" ? options.maxTokens : parseInt(String(options.maxTokens), 10),
+      debug: options.debug,
+      debugOutputDir: options.debugOutput,
+      debugLogLevel: options.debugLevel as "basic" | "detailed" | "verbose",
     };
-    await runBenchmark(benchOptions, options.quiet);
+    await runBenchmark(benchOptions, options.quiet, options.containerProvider);
   });
 
 // Report command
@@ -658,22 +699,22 @@ containerCmd.command("setup", "Create and setup a new container")
   });
 
 containerCmd.command("start <name>", "Start an existing container")
-  .action(async (options, name: string) => {
+  .action(async (_options, name: string) => {
     await handleContainerControl("start", name);
   });
 
 containerCmd.command("stop <name>", "Stop a running container")
-  .action(async (options, name: string) => {
+  .action(async (_options, name: string) => {
     await handleContainerControl("stop", name);
   });
 
 containerCmd.command("remove <name>", "Remove a container")
-  .action(async (options, name: string) => {
+  .action(async (_options, name: string) => {
     await handleContainerControl("remove", name);
   });
 
 containerCmd.command("status <name>", "Show container status")
-  .action(async (options, name: string) => {
+  .action(async (_options, name: string) => {
     await handleContainerControl("status", name);
   });
 
@@ -704,7 +745,7 @@ cli.command("test <project-path>", "Run AL tests in container")
 
 // Models command
 cli.command("models [...specs]", "List supported models and test parsing")
-  .action((options, ...specs: string[]) => {
+  .action((_options, ...specs: string[]) => {
     handleModelsList(specs.length > 0 ? specs : undefined);
   });
 

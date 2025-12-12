@@ -1,6 +1,14 @@
-import type { BenchmarkResult, TaskManifest } from "../../types/index.ts";
+/**
+ * Legacy task types for backward compatibility with DefaultTaskExecutor
+ * @deprecated Prefer using types from ./interfaces.ts for new code
+ */
+
+import type { TaskManifest } from "./interfaces.ts";
 import type { LLMResponse } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
+
+// Re-export TaskManifest for convenience
+export type { TaskManifest };
 
 export interface TaskExecutionConfig {
   taskManifest: TaskManifest;

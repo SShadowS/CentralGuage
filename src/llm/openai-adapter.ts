@@ -8,6 +8,7 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 
 export class OpenAIAdapter implements LLMAdapter {
   readonly name = "openai";
@@ -37,8 +38,44 @@ export class OpenAIAdapter implements LLMAdapter {
   ): Promise<CodeGenerationResult> {
     console.log(`🤖 [OpenAI] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`);
     
-    const response = await this.callOpenAI(request);
+    let rawResponse: any;
+    let response: LLMResponse;
+    
+    try {
+      const result = await this.callOpenAI(request, true); // Request raw response for debugging
+      if (typeof result === 'object' && 'response' in result) {
+        response = result.response;
+        rawResponse = result.rawResponse;
+      } else {
+        response = result;
+        rawResponse = undefined;
+      }
+    } catch (error) {
+      // Log error to debug if enabled
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError("openai", "generateCode", request, context, error as Error, rawResponse);
+      }
+      throw error;
+    }
+    
     const extraction = CodeExtractor.extract(response.content, "al");
+    
+    // Log successful interaction to debug if enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "openai",
+        "generateCode",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        rawResponse
+      );
+    }
     
     return {
       code: extraction.code,
@@ -49,15 +86,51 @@ export class OpenAIAdapter implements LLMAdapter {
   }
 
   async generateFix(
-    originalCode: string,
+    _originalCode: string,
     errors: string[],
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
     console.log(`🤖 [OpenAI] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`);
     
-    const response = await this.callOpenAI(request);
+    let rawResponse: any;
+    let response: LLMResponse;
+    
+    try {
+      const result = await this.callOpenAI(request, true); // Request raw response for debugging
+      if (typeof result === 'object' && 'response' in result) {
+        response = result.response;
+        rawResponse = result.rawResponse;
+      } else {
+        response = result;
+        rawResponse = undefined;
+      }
+    } catch (error) {
+      // Log error to debug if enabled
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError("openai", "generateFix", request, context, error as Error, rawResponse);
+      }
+      throw error;
+    }
+    
     const extraction = CodeExtractor.extract(response.content, "diff");
+    
+    // Log successful interaction to debug if enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "openai",
+        "generateFix",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        rawResponse
+      );
+    }
     
     return {
       code: extraction.code,
@@ -113,8 +186,8 @@ export class OpenAIAdapter implements LLMAdapter {
     };
     
     const costs = modelCosts[this.config.model] || modelCosts["gpt-4o"];
-    const inputCost = (promptTokens / 1000) * costs.input;
-    const outputCost = (completionTokens / 1000) * costs.output;
+    const inputCost = (promptTokens / 1000) * costs!.input;
+    const outputCost = (completionTokens / 1000) * costs!.output;
     
     return inputCost + outputCost;
   }
@@ -135,7 +208,7 @@ export class OpenAIAdapter implements LLMAdapter {
     }
   }
 
-  private async callOpenAI(request: LLMRequest): Promise<LLMResponse> {
+  private async callOpenAI(request: LLMRequest, includeRaw = false): Promise<LLMResponse | { response: LLMResponse; rawResponse: any }> {
     const startTime = Date.now();
     
     if (!this.config.apiKey) {
@@ -190,13 +263,22 @@ export class OpenAIAdapter implements LLMAdapter {
       ),
     };
 
-    return {
+    const llmResponse: LLMResponse = {
       content: choice.message?.content || "",
       model: this.config.model,
       usage,
       duration,
       finishReason: this.mapFinishReason(choice.finish_reason),
     };
+
+    if (includeRaw) {
+      return {
+        response: llmResponse,
+        rawResponse: data,
+      };
+    }
+
+    return llmResponse;
   }
 
   private mapFinishReason(reason: string | undefined): "stop" | "length" | "content_filter" | "error" {

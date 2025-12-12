@@ -14,6 +14,7 @@ describe("ConfigManager", () => {
   beforeEach(async () => {
     mockEnv = new MockEnv();
     tempDir = await createTempDir();
+    ConfigManager.reset();
   });
 
   afterEach(async () => {
@@ -30,7 +31,7 @@ describe("ConfigManager", () => {
       assertExists(config.defaultModels.development);
       assertExists(config.defaultModels.comparison);
       
-      assertEquals(config.defaultModels.benchmark, ["sonnet"]);
+      assertEquals(config.defaultModels.benchmark, ["sonnet", "gpt-4o"]);
       assertEquals(config.defaultModels.development, ["mock"]);
       assertEquals(config.defaultModels.comparison, ["flagship"]);
       
@@ -188,7 +189,7 @@ benchmark:
       const devModels = await ConfigManager.resolveModels(undefined, "development");
       const comparisonModels = await ConfigManager.resolveModels(undefined, "comparison");
       
-      assertEquals(benchmarkModels, ["sonnet"]);
+      assertEquals(benchmarkModels, ["sonnet", "gpt-4o"]);
       assertEquals(devModels, ["mock"]);
       assertEquals(comparisonModels, ["flagship"]);
     });

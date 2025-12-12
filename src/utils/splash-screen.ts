@@ -141,9 +141,14 @@ export class SplashScreen {
     if (compact) {
       console.log(`   Container: ${containerProviders.length} available`);
     } else {
-      console.log(`   ${brightGreen("Container Providers:")} ${containerProviders.length} available`);
+      console.log(`   ${brightGreen("Container Providers:")} ${containerProviders.length} registered`);
       for (const provider of containerProviders) {
-        console.log(`      ${brightGreen("✓")} ${provider}`);
+        const isReal = provider !== "mock";
+        const status = isReal ? brightGreen("✓") : brightYellow("○");
+        const note = provider === "bccontainer" ? "(Windows + bccontainerhelper)" :
+                    provider === "docker" ? "(Docker required)" :
+                    provider === "mock" ? "(testing only)" : "";
+        console.log(`      ${status} ${provider} ${gray(note)}`);
       }
     }
     

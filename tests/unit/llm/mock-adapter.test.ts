@@ -63,8 +63,8 @@ describe("MockLLMAdapter", () => {
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
-        objectType: "table",
-        previousErrors: [],
+        description: "Create a simple AL table for customer data",
+        errors: [],
       };
 
       const result = await adapter.generateCode(request, context);
@@ -88,7 +88,6 @@ describe("MockLLMAdapter", () => {
         taskId: "test-task",
         attempt: 1,
         description: "Create a page for data entry",
-        previousCode: undefined,
         errors: [],
       };
 
@@ -112,7 +111,6 @@ describe("MockLLMAdapter", () => {
         taskId: "test-task",
         attempt: 1,
         description: "Create a codeunit for business logic",
-        previousCode: undefined,
         errors: [],
       };
 
@@ -134,8 +132,8 @@ describe("MockLLMAdapter", () => {
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
-        objectType: "table",
-        previousErrors: [],
+        description: "Create a simple AL table",
+        errors: [],
       };
 
       // Run multiple times to test randomness
@@ -171,8 +169,9 @@ describe("MockLLMAdapter", () => {
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 2,
-        objectType: "table",
-        previousErrors: errors,
+        description: "Fix the following errors in the AL code",
+        previousCode: originalCode,
+        errors: errors,
       };
 
       const result = await adapter.generateFix(originalCode, errors, request, context);
@@ -196,8 +195,9 @@ describe("MockLLMAdapter", () => {
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 2,
-        objectType: "table",
-        previousErrors: errors,
+        description: "Fix the following errors in the AL code",
+        previousCode: originalCode,
+        errors: errors,
       };
 
       const result = await adapter.generateFix(originalCode, errors, request, context);
@@ -233,8 +233,8 @@ describe("MockLLMAdapter", () => {
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
-        objectType: "table",
-        previousErrors: [],
+        description: "Create a simple AL table",
+        errors: [],
       };
 
       const startTime = Date.now();
@@ -257,8 +257,8 @@ describe("MockLLMAdapter", () => {
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
-        objectType: "table",
-        previousErrors: [],
+        description: "Create a simple AL table",
+        errors: [],
       };
 
       const result = await adapter.generateCode(request, context);

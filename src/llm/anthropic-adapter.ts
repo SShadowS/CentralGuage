@@ -50,7 +50,7 @@ export class AnthropicAdapter implements LLMAdapter {
   }
 
   async generateFix(
-    originalCode: string,
+    _originalCode: string,
     errors: string[],
     request: LLMRequest,
     context: GenerationContext,
@@ -103,6 +103,7 @@ export class AnthropicAdapter implements LLMAdapter {
 
   estimateCost(promptTokens: number, completionTokens: number): number {
     // Anthropic pricing (as of 2024)
+    const defaultCost = { input: 0.003, output: 0.015 };
     const modelCosts: Record<string, { input: number; output: number }> = {
       "claude-3-5-sonnet-20241022": { input: 0.003, output: 0.015 },
       "claude-3-5-sonnet-20240620": { input: 0.003, output: 0.015 },
@@ -111,11 +112,11 @@ export class AnthropicAdapter implements LLMAdapter {
       "claude-3-sonnet-20240229": { input: 0.003, output: 0.015 },
       "claude-3-haiku-20240307": { input: 0.00025, output: 0.00125 },
     };
-    
-    const costs = modelCosts[this.config.model] || modelCosts["claude-3-5-sonnet-20241022"];
+
+    const costs = modelCosts[this.config.model] ?? defaultCost;
     const inputCost = (promptTokens / 1000) * costs.input;
     const outputCost = (completionTokens / 1000) * costs.output;
-    
+
     return inputCost + outputCost;
   }
 

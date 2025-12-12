@@ -50,7 +50,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
   }
 
   async generateFix(
-    originalCode: string,
+    _originalCode: string,
     errors: string[],
     request: LLMRequest,
     context: GenerationContext,
@@ -75,7 +75,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       errors.push("API key is required for Azure OpenAI");
     }
     
-    if (!config.baseUrl && !process.env.AZURE_OPENAI_ENDPOINT) {
+    if (!config.baseUrl && !Deno.env.get("AZURE_OPENAI_ENDPOINT")) {
       errors.push("Azure OpenAI endpoint is required. Set AZURE_OPENAI_ENDPOINT or provide baseUrl in config.");
     }
     
@@ -97,6 +97,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
   estimateCost(promptTokens: number, completionTokens: number): number {
     // Azure OpenAI pricing varies by region and contract
     // These are rough estimates based on standard pricing
+    const defaultCost = { input: 0.005, output: 0.015 };
     const modelCosts: Record<string, { input: number; output: number }> = {
       "gpt-4o": { input: 0.005, output: 0.015 },
       "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
@@ -105,11 +106,11 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       "gpt-35-turbo": { input: 0.0005, output: 0.0015 },
       "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
     };
-    
-    const costs = modelCosts[this.config.model] || modelCosts["gpt-4o"];
+
+    const costs = modelCosts[this.config.model] ?? defaultCost;
     const inputCost = (promptTokens / 1000) * costs.input;
     const outputCost = (completionTokens / 1000) * costs.output;
-    
+
     return inputCost + outputCost;
   }
 
@@ -137,7 +138,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
     }
 
     // Construct Azure OpenAI endpoint URL
-    const endpoint = this.config.baseUrl || process.env.AZURE_OPENAI_ENDPOINT;
+    const endpoint = this.config.baseUrl || Deno.env.get("AZURE_OPENAI_ENDPOINT");
     if (!endpoint) {
       throw new Error("Azure OpenAI endpoint not configured");
     }

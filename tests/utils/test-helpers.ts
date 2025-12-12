@@ -3,7 +3,7 @@
  */
 
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
-import type { LLMConfig, LLMResponse, TokenUsage } from "../../src/llm/types.ts";
+import type { LLMConfig, LLMResponse } from "../../src/llm/types.ts";
 import type { ALProject } from "../../src/container/types.ts";
 
 /**
@@ -44,7 +44,6 @@ export function createMockLLMResponse(overrides?: Partial<LLMResponse>): LLMResp
  */
 export function createMockALProject(overrides?: Partial<ALProject>): ALProject {
   return {
-    name: "Test Project",
     path: "/tmp/test-project",
     appJson: {
       id: "test-app-id",
@@ -54,8 +53,8 @@ export function createMockALProject(overrides?: Partial<ALProject>): ALProject {
       platform: "1.0.0.0",
       runtime: "11.0",
     },
-    dependencies: [],
-    alFiles: [],
+    sourceFiles: [],
+    testFiles: [],
     ...overrides,
   };
 }

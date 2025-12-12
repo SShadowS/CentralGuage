@@ -62,7 +62,7 @@ export class LocalLLMAdapter implements LLMAdapter {
   }
 
   async generateFix(
-    originalCode: string,
+    _originalCode: string,
     errors: string[],
     request: LLMRequest,
     context: GenerationContext,
@@ -83,7 +83,7 @@ export class LocalLLMAdapter implements LLMAdapter {
   validateConfig(config: LLMConfig): string[] {
     const errors: string[] = [];
     
-    if (!config.baseUrl && !process.env.OLLAMA_HOST && !process.env.LOCAL_LLM_ENDPOINT) {
+    if (!config.baseUrl && !Deno.env.get("OLLAMA_HOST") && !Deno.env.get("LOCAL_LLM_ENDPOINT")) {
       errors.push("Local LLM endpoint is required. Set OLLAMA_HOST, LOCAL_LLM_ENDPOINT, or provide baseUrl in config.");
     }
     
@@ -103,7 +103,7 @@ export class LocalLLMAdapter implements LLMAdapter {
     return errors;
   }
 
-  estimateCost(promptTokens: number, completionTokens: number): number {
+  estimateCost(_promptTokens: number, _completionTokens: number): number {
     // Local models are typically free to run
     return 0;
   }
@@ -128,9 +128,9 @@ export class LocalLLMAdapter implements LLMAdapter {
     const startTime = Date.now();
     
     // Determine endpoint - try Ollama first, then generic local endpoint
-    const endpoint = this.config.baseUrl || 
-                    process.env.LOCAL_LLM_ENDPOINT ||
-                    process.env.OLLAMA_HOST ||
+    const endpoint = this.config.baseUrl ||
+                    Deno.env.get("LOCAL_LLM_ENDPOINT") ||
+                    Deno.env.get("OLLAMA_HOST") ||
                     "http://localhost:11434";
     
     // Check if this looks like an Ollama endpoint

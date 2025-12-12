@@ -5,7 +5,6 @@
 
 import { exists } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
-import { ModelPresetRegistry } from "../llm/model-presets.ts";
 
 export interface CentralGaugeConfig {
   // Default models for different scenarios
@@ -36,6 +35,16 @@ export interface CentralGaugeConfig {
     memoryLimit?: string;
   };
   
+  // Debug settings
+  debug?: {
+    enabled?: boolean;
+    outputDir?: string;
+    logLevel?: "basic" | "detailed" | "verbose";
+    includeRawResponse?: boolean;
+    includeRequestHeaders?: boolean;
+    maxFileSize?: number; // in MB
+  };
+  
   // Environment overrides
   environment?: Record<string, string>;
 }
@@ -43,6 +52,22 @@ export interface CentralGaugeConfig {
 export class ConfigManager {
   private static config: CentralGaugeConfig = {};
   private static configLoaded = false;
+  
+  /**
+   * Reset configuration (mainly for testing)
+   */
+  static reset(): void {
+    this.config = {};
+    this.configLoaded = false;
+  }
+
+  /**
+   * Set configuration directly (for testing)
+   */
+  static setConfig(config: Partial<CentralGaugeConfig>): void {
+    this.config = { ...this.config, ...config };
+    this.configLoaded = true;
+  }
   
   /**
    * Load configuration from various sources in priority order:
@@ -214,6 +239,26 @@ export class ConfigManager {
       config.benchmark = {};
       if (attempts) config.benchmark.attempts = parseInt(attempts);
       if (outputDir) config.benchmark.outputDir = outputDir;
+    }
+    
+    // Debug settings
+    const debugEnabled = Deno.env.get("CENTRALGAUGE_DEBUG");
+    const debugOutputDir = Deno.env.get("CENTRALGAUGE_DEBUG_OUTPUT_DIR");
+    const debugLogLevel = Deno.env.get("CENTRALGAUGE_DEBUG_LOG_LEVEL");
+    const debugIncludeRaw = Deno.env.get("CENTRALGAUGE_DEBUG_INCLUDE_RAW");
+    const debugIncludeHeaders = Deno.env.get("CENTRALGAUGE_DEBUG_INCLUDE_HEADERS");
+    const debugMaxFileSize = Deno.env.get("CENTRALGAUGE_DEBUG_MAX_FILE_SIZE");
+    
+    if (debugEnabled || debugOutputDir || debugLogLevel || debugIncludeRaw || debugIncludeHeaders || debugMaxFileSize) {
+      config.debug = {};
+      if (debugEnabled) config.debug.enabled = debugEnabled.toLowerCase() === "true";
+      if (debugOutputDir) config.debug.outputDir = debugOutputDir;
+      if (debugLogLevel && ["basic", "detailed", "verbose"].includes(debugLogLevel)) {
+        config.debug.logLevel = debugLogLevel as "basic" | "detailed" | "verbose";
+      }
+      if (debugIncludeRaw) config.debug.includeRawResponse = debugIncludeRaw.toLowerCase() === "true";
+      if (debugIncludeHeaders) config.debug.includeRequestHeaders = debugIncludeHeaders.toLowerCase() === "true";
+      if (debugMaxFileSize) config.debug.maxFileSize = parseInt(debugMaxFileSize);
     }
     
     return config;
