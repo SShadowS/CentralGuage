@@ -14,7 +14,7 @@ description: >-
   Use proper field numbering starting from 70000.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E004.altest
+  testApp: tests/al/easy/CG-AL-E004.Test.al
 metrics:
   - compile_pass
   - tests_pass

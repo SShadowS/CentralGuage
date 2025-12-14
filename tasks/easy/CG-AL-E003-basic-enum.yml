@@ -14,7 +14,7 @@ description: >-
   Follow Business Central enum conventions and ensure the enum can be used as a field type.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E003.altest
+  testApp: tests/al/easy/CG-AL-E003.Test.al
 metrics:
   - compile_pass
   - tests_pass

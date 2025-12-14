@@ -16,7 +16,7 @@ description: >-
   Follow Business Central patterns for complex business logic with proper Access = Public.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M002.altest
+  testApp: tests/al/medium/CG-AL-M002.Test.al
 metrics:
   - compile_pass
   - tests_pass

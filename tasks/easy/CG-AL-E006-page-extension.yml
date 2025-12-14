@@ -13,7 +13,7 @@ description: >-
   The new fields should appear in the existing General group on the Customer Card.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E006.altest
+  testApp: tests/al/easy/CG-AL-E006.Test.al
 metrics:
   - compile_pass
   - tests_pass

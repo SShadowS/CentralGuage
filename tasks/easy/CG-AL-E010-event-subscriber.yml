@@ -13,7 +13,7 @@ description: >-
   Use appropriate procedure naming and ensure the event subscription follows Business Central patterns.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E010.altest
+  testApp: tests/al/easy/CG-AL-E010.Test.al
 metrics:
   - compile_pass
   - tests_pass

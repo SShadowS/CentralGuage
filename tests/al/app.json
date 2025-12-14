@@ -1,0 +1,33 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "CentralGauge Tests",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "brief": "Test codeunits for CentralGauge benchmark tasks",
+  "description": "Contains AL test codeunits to validate LLM-generated code for CentralGauge benchmark scenarios",
+  "privacyStatement": "",
+  "EULA": "",
+  "help": "",
+  "url": "https://github.com/SShadowS/CentralGauge",
+  "logo": "",
+  "dependencies": [],
+  "screenshots": [],
+  "platform": "24.0.0.0",
+  "application": "24.0.0.0",
+  "idRanges": [
+    {
+      "from": 80001,
+      "to": 80100
+    }
+  ],
+  "resourceExposurePolicy": {
+    "allowDebugging": true,
+    "allowDownloadingSource": true,
+    "includeSourceInSymbolFile": true
+  },
+  "runtime": "13.0",
+  "target": "Cloud",
+  "features": [
+    "NoImplicitWith"
+  ]
+}

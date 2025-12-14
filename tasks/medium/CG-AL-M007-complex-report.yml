@@ -28,7 +28,7 @@ description: >-
   and comprehensive data processing logic. Use ApplicationArea and UsageCategory.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M007.altest
+  testApp: tests/al/medium/CG-AL-M007.Test.al
 metrics:
   - compile_pass
   - tests_pass

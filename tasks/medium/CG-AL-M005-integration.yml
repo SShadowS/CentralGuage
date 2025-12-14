@@ -18,7 +18,7 @@ description: >-
   Include local procedures for HTTP request building and response parsing.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M005.altest
+  testApp: tests/al/medium/CG-AL-M005.Test.al
 metrics:
   - compile_pass
   - tests_pass

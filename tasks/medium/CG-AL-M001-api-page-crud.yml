@@ -16,7 +16,7 @@ description: >-
   Include OnInsert/OnModify triggers for validation and audit logging.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M001.altest
+  testApp: tests/al/medium/CG-AL-M001.Test.al
 metrics:
   - compile_pass
   - tests_pass

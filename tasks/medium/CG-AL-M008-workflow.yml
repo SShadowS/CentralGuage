@@ -23,7 +23,7 @@ description: >-
   and comprehensive logging. Include approval status management and state transitions.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M008.altest
+  testApp: tests/al/medium/CG-AL-M008.Test.al
 metrics:
   - compile_pass
   - tests_pass

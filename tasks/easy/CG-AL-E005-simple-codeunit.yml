@@ -13,7 +13,7 @@ description: >-
   Follow Business Central codeunit conventions.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E005.altest
+  testApp: tests/al/easy/CG-AL-E005.Test.al
 metrics:
   - compile_pass
   - tests_pass

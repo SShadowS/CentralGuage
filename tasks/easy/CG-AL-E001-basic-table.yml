@@ -14,7 +14,7 @@ description: >-
   Set appropriate primary key and ensure the table follows Business Central conventions.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E001.altest
+  testApp: tests/al/easy/CG-AL-E001.Test.al
 metrics:
   - compile_pass
   - tests_pass

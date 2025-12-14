@@ -13,7 +13,7 @@ description: >-
   Follow Business Central interface conventions and include basic documentation comments.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E008.altest
+  testApp: tests/al/easy/CG-AL-E008.Test.al
 metrics:
   - compile_pass
   - tests_pass

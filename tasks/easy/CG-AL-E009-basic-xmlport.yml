@@ -13,7 +13,7 @@ description: >-
   Follow Business Central XMLport conventions and include proper direction and format settings.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E009.altest
+  testApp: tests/al/easy/CG-AL-E009.Test.al
 metrics:
   - compile_pass
   - tests_pass

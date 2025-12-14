@@ -23,7 +23,7 @@ description: >-
   for all procedures. Add logging and audit trail functionality.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M009.altest
+  testApp: tests/al/medium/CG-AL-M009.Test.al
 metrics:
   - compile_pass
   - tests_pass

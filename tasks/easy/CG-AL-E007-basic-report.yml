@@ -15,7 +15,7 @@ description: >-
   Include basic report properties like UsageCategory and ApplicationArea.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E007.altest
+  testApp: tests/al/easy/CG-AL-E007.Test.al
 metrics:
   - compile_pass
   - tests_pass

@@ -23,7 +23,7 @@ description: >-
   Use proper data classification and include comprehensive validation logic.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M006.altest
+  testApp: tests/al/medium/CG-AL-M006.Test.al
 metrics:
   - compile_pass
   - tests_pass

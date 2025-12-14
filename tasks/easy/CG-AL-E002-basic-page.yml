@@ -15,7 +15,7 @@ description: >-
   The page should allow editing of all fields.
 expected:
   compile: true
-  testApp: /tests/CG-AL-E002.altest
+  testApp: tests/al/easy/CG-AL-E002.Test.al
 metrics:
   - compile_pass
   - tests_pass

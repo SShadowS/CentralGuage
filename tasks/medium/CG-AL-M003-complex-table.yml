@@ -21,7 +21,7 @@ description: >-
   Include proper captions, data classification, and field validation patterns.
 expected:
   compile: true
-  testApp: /tests/CG-AL-M003.altest
+  testApp: tests/al/medium/CG-AL-M003.Test.al
 metrics:
   - compile_pass
   - tests_pass
