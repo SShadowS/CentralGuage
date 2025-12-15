@@ -353,6 +353,21 @@ async function runParallelBenchmark(
 
     const orchestrator = new ParallelBenchmarkOrchestrator(config);
 
+    // Track pass rates per model for live display
+    const modelPassRates = new Map<
+      string,
+      { total: number; attempt1: number; attempt2: number }
+    >();
+
+    /** Get color based on pass rate */
+    const getPassRateColor = (passed: number, total: number): string => {
+      if (total === 0) return "dim";
+      const rate = passed / total;
+      if (rate >= 0.7) return "green";
+      if (rate >= 0.4) return "yellow";
+      return "red";
+    };
+
     // Subscribe to events for progress reporting
     orchestrator.on((event: ParallelExecutionEvent) => {
       switch (event.type) {
@@ -380,6 +395,17 @@ async function runParallelBenchmark(
             model,
             `${status} (score: ${event.result.finalScore.toFixed(1)})`,
           );
+          // Track pass rates
+          if (!modelPassRates.has(model)) {
+            modelPassRates.set(model, { total: 0, attempt1: 0, attempt2: 0 });
+          }
+          const stats = modelPassRates.get(model)!;
+          stats.total++;
+          if (event.result.passedAttemptNumber === 1) {
+            stats.attempt1++;
+          } else if (event.result.passedAttemptNumber === 2) {
+            stats.attempt2++;
+          }
           break;
         }
         case "task_completed": {
@@ -400,6 +426,25 @@ async function runParallelBenchmark(
           log.task(
             `Complete - Winner: ${winnerText} (${bestScore.toFixed(1)})`,
           );
+          // Display pass rates for all models
+          const parts = Array.from(modelPassRates.entries()).map(
+            ([m, s]) => {
+              const passed = s.attempt1 + s.attempt2;
+              const rateColor = getPassRateColor(passed, s.total);
+              const colorFn = rateColor === "green"
+                ? colors.green
+                : rateColor === "yellow"
+                ? colors.yellow
+                : rateColor === "dim"
+                ? colors.dim
+                : colors.red;
+              const modelColorFn = getModelColor(m);
+              return `${modelColorFn(m)} ${
+                colorFn(`${passed}/${s.total}`)
+              } (1st:${s.attempt1} 2nd:${s.attempt2})`;
+            },
+          );
+          console.log(`Pass rates: ${parts.join(" | ")}`);
           break;
         }
         case "progress":
