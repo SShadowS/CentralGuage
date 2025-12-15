@@ -6,6 +6,20 @@ deno.lock
 results/
 reports/
 
+# Build artifacts and binaries
+dist/
+
+# Test coverage and results
+coverage/
+test-results*/
+easy-test*/
+medium-test/
+final-test/
+full-benchmark-test/
+
+# Generated documentation
+docs/
+
 # Logs
 *.log
 logs/
