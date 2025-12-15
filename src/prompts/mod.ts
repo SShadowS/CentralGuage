@@ -1,0 +1,17 @@
+/**
+ * Prompt Injection Module
+ * Provides modular prompt customization with cascading configuration
+ */
+
+export type {
+  AppliedPromptInjection,
+  CLIPromptOverrides,
+  InjectionStage,
+  PromptInjection,
+  PromptInjectionConfig,
+  ProviderInjections,
+  ResolvedPromptInjection,
+  StageInjections,
+} from "./types.ts";
+
+export { PromptInjectionResolver } from "./injection-resolver.ts";
