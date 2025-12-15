@@ -6,10 +6,10 @@ description: >-
   Create a simple AL card page called "Product Category Card" with ID 70001.
   The page should be based on a table called "Product Category" and display the following fields:
   - Code
-  - Description  
+  - Description
   - Active
   - Created Date
-  
+
   Use proper page layout with a Content area and repeater group.
   Include appropriate captions and ensure the page follows Business Central conventions.
   The page should allow editing of all fields.

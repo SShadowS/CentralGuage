@@ -4,7 +4,11 @@
  */
 
 import { exists } from "@std/fs";
-import type { LLMRequest, LLMResponse, GenerationContext } from "../llm/types.ts";
+import type {
+  GenerationContext,
+  LLMRequest,
+  LLMResponse,
+} from "../llm/types.ts";
 
 export interface DebugLogEntry {
   timestamp: string;
@@ -85,7 +89,7 @@ export class DebugLogger {
     extractedCode: string,
     extractedFromDelimiters: boolean,
     language: string,
-    rawResponse?: any
+    rawResponse?: unknown,
   ): Promise<void> {
     if (!this.config.enabled) {
       return;
@@ -93,7 +97,7 @@ export class DebugLogger {
 
     try {
       const requestId = `${provider}-${Date.now()}-${++this.requestCounter}`;
-      
+
       const logEntry: DebugLogEntry = {
         timestamp: new Date().toISOString(),
         provider,
@@ -125,12 +129,15 @@ export class DebugLogger {
 
       // Create provider-specific log file
       const logFile = await this.getLogFile(provider);
-      
+
       // Write basic log entry
       await this.writeLogEntry(logFile, logEntry);
 
       // Write detailed/verbose logs if requested
-      if (this.config.logLevel === "detailed" || this.config.logLevel === "verbose") {
+      if (
+        this.config.logLevel === "detailed" ||
+        this.config.logLevel === "verbose"
+      ) {
         await this.writeDetailedLog(provider, requestId, {
           context,
           rawResponse: this.config.includeRawResponse ? rawResponse : undefined,
@@ -138,10 +145,15 @@ export class DebugLogger {
         });
       }
 
-      console.log(`🔍 [Debug] Logged ${provider} ${operation} interaction: ${requestId}`);
-      
+      console.log(
+        `🔍 [Debug] Logged ${provider} ${operation} interaction: ${requestId}`,
+      );
     } catch (error) {
-      console.warn(`⚠️  [Debug] Failed to log interaction: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `⚠️  [Debug] Failed to log interaction: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -190,7 +202,10 @@ export class DebugLogger {
   /**
    * Write a log entry to the provider's log file
    */
-  private async writeLogEntry(filePath: string, entry: DebugLogEntry): Promise<void> {
+  private async writeLogEntry(
+    filePath: string,
+    entry: DebugLogEntry,
+  ): Promise<void> {
     try {
       const logLine = JSON.stringify({
         type: "llm_interaction",
@@ -198,12 +213,15 @@ export class DebugLogger {
       }) + "\n";
 
       await Deno.writeTextFile(filePath, logLine, { append: true });
-      
+
       // Check file size and rotate if necessary
       await this.checkFileSize(filePath);
-      
     } catch (error) {
-      console.warn(`⚠️  [Debug] Failed to write log entry: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `⚠️  [Debug] Failed to write log entry: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -215,9 +233,9 @@ export class DebugLogger {
     requestId: string,
     details: {
       context: GenerationContext;
-      rawResponse?: any;
+      rawResponse?: unknown;
       logLevel: string;
-    }
+    },
   ): Promise<void> {
     try {
       const detailsDir = `${this.config.outputDir}/details`;
@@ -231,19 +249,27 @@ export class DebugLogger {
         timestamp: new Date().toISOString(),
         context: details.context,
         rawResponse: details.rawResponse,
-        environment: details.logLevel === "verbose" ? {
-          denoVersion: Deno.version.deno,
-          v8Version: Deno.version.v8,
-          typescriptVersion: Deno.version.typescript,
-          workingDirectory: Deno.cwd(),
-          args: Deno.args,
-        } : undefined,
+        environment: details.logLevel === "verbose"
+          ? {
+            denoVersion: Deno.version.deno,
+            v8Version: Deno.version.v8,
+            typescriptVersion: Deno.version.typescript,
+            workingDirectory: Deno.cwd(),
+            args: Deno.args,
+          }
+          : undefined,
       };
 
-      await Deno.writeTextFile(detailsFile, JSON.stringify(detailsData, null, 2));
-      
+      await Deno.writeTextFile(
+        detailsFile,
+        JSON.stringify(detailsData, null, 2),
+      );
     } catch (error) {
-      console.warn(`⚠️  [Debug] Failed to write detailed log: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `⚠️  [Debug] Failed to write detailed log: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -254,15 +280,18 @@ export class DebugLogger {
     try {
       const stat = await Deno.stat(filePath);
       const sizeMB = stat.size / (1024 * 1024);
-      
+
       if (sizeMB > this.config.maxFileSize) {
         // Rotate log file
         const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        const rotatedPath = filePath.replace(/\.jsonl$/, `-rotated-${timestamp}.jsonl`);
+        const rotatedPath = filePath.replace(
+          /\.jsonl$/,
+          `-rotated-${timestamp}.jsonl`,
+        );
         await Deno.rename(filePath, rotatedPath);
-        
+
         console.log(`🔄 [Debug] Rotated log file: ${rotatedPath}`);
-        
+
         // Remove the file from cache so a new one will be created
         for (const [provider, path] of this.logFiles.entries()) {
           if (path === filePath) {
@@ -285,14 +314,15 @@ export class DebugLogger {
     request: LLMRequest,
     context: GenerationContext,
     error: Error,
-    rawError?: any
+    rawError?: unknown,
   ): Promise<void> {
     if (!this.config.enabled) {
       return;
     }
 
     try {
-      const requestId = `${provider}-error-${Date.now()}-${++this.requestCounter}`;
+      const requestId = `${provider}-error-${Date.now()}-${++this
+        .requestCounter}`;
       const logFile = await this.getLogFile(provider);
 
       const errorEntry = {
@@ -319,11 +349,16 @@ export class DebugLogger {
         },
       };
 
-      await Deno.writeTextFile(logFile, JSON.stringify(errorEntry) + "\n", { append: true });
+      await Deno.writeTextFile(logFile, JSON.stringify(errorEntry) + "\n", {
+        append: true,
+      });
       console.log(`🔍 [Debug] Logged ${provider} error: ${requestId}`);
-      
     } catch (logError) {
-      console.warn(`⚠️  [Debug] Failed to log error: ${logError instanceof Error ? logError.message : String(logError)}`);
+      console.warn(
+        `⚠️  [Debug] Failed to log error: ${
+          logError instanceof Error ? logError.message : String(logError)
+        }`,
+      );
     }
   }
 
@@ -336,7 +371,8 @@ export class DebugLogger {
     }
 
     try {
-      const summaryFile = `${this.config.outputDir}/debug-summary-${this.config.sessionId}.json`;
+      const summaryFile =
+        `${this.config.outputDir}/debug-summary-${this.config.sessionId}.json`;
       const stats = new Map<string, {
         requests: number;
         errors: number;
@@ -349,8 +385,8 @@ export class DebugLogger {
       for (const [provider, logFile] of this.logFiles.entries()) {
         if (await exists(logFile)) {
           const content = await Deno.readTextFile(logFile);
-          const lines = content.split('\n').filter(line => line.trim());
-          
+          const lines = content.split("\n").filter((line) => line.trim());
+
           let requests = 0;
           let errors = 0;
           let totalTokens = 0;
@@ -389,17 +425,32 @@ export class DebugLogger {
         sessionId: this.config.sessionId,
         config: this.config,
         statistics: Object.fromEntries(stats),
-        totalRequests: Array.from(stats.values()).reduce((sum, stat) => sum + stat.requests, 0),
-        totalErrors: Array.from(stats.values()).reduce((sum, stat) => sum + stat.errors, 0),
-        totalTokens: Array.from(stats.values()).reduce((sum, stat) => sum + stat.totalTokens, 0),
-        totalCost: Array.from(stats.values()).reduce((sum, stat) => sum + stat.totalCost, 0),
+        totalRequests: Array.from(stats.values()).reduce(
+          (sum, stat) => sum + stat.requests,
+          0,
+        ),
+        totalErrors: Array.from(stats.values()).reduce(
+          (sum, stat) => sum + stat.errors,
+          0,
+        ),
+        totalTokens: Array.from(stats.values()).reduce(
+          (sum, stat) => sum + stat.totalTokens,
+          0,
+        ),
+        totalCost: Array.from(stats.values()).reduce(
+          (sum, stat) => sum + stat.totalCost,
+          0,
+        ),
       };
 
       await Deno.writeTextFile(summaryFile, JSON.stringify(summary, null, 2));
       console.log(`📊 [Debug] Generated summary report: ${summaryFile}`);
-      
     } catch (error) {
-      console.warn(`⚠️  [Debug] Failed to generate summary: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `⚠️  [Debug] Failed to generate summary: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -409,7 +460,9 @@ export class DebugLogger {
   async finalize(): Promise<void> {
     if (this.config.enabled) {
       await this.generateSummaryReport();
-      console.log(`🔍 [Debug] Session finalized. Logs saved in: ${this.config.outputDir}`);
+      console.log(
+        `🔍 [Debug] Session finalized. Logs saved in: ${this.config.outputDir}`,
+      );
     }
   }
 

@@ -1,5 +1,5 @@
-import { describe, it, beforeEach, afterEach } from "@std/testing/bdd";
-import { assertEquals, assert, assertExists } from "@std/assert";
+import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { assert, assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { TaskExecutorV2 } from "../../src/tasks/executor-v2.ts";
@@ -18,14 +18,14 @@ describe("TaskExecutorV2 Integration Tests", () => {
   beforeEach(async () => {
     // Reset config
     ConfigManager.reset();
-    
+
     // Setup temporary directories
     tempDir = await Deno.makeTempDir({ prefix: "executor-v2-test-" });
 
     // Create template directory with required templates
     const templateDir = join(tempDir, "templates");
     await ensureDir(templateDir);
-    
+
     // Create comprehensive prompt template
     const promptTemplate = `# Task: {{task_id}}
 
@@ -61,12 +61,12 @@ Please fix the compilation errors and provide the corrected AL code.`;
 
     await Deno.writeTextFile(
       join(templateDir, "prompt.md"),
-      promptTemplate
+      promptTemplate,
     );
-    
+
     await Deno.writeTextFile(
       join(templateDir, "fix.md"),
-      fixTemplate
+      fixTemplate,
     );
 
     // Set config to use our temp directory
@@ -74,8 +74,8 @@ Please fix the compilation errors and provide the corrected AL code.`;
     ConfigManager.setConfig({
       benchmark: {
         templateDir,
-        outputDir: join(tempDir, "output")
-      }
+        outputDir: join(tempDir, "output"),
+      },
     });
 
     // Initialize executor
@@ -83,7 +83,10 @@ Please fix the compilation errors and provide the corrected AL code.`;
 
     // Register mock providers
     LLMAdapterRegistry.register("mock", () => new MockLLMAdapter());
-    ContainerProviderRegistry.register("mock", () => new MockContainerProvider());
+    ContainerProviderRegistry.register(
+      "mock",
+      () => new MockContainerProvider(),
+    );
   });
 
   afterEach(async () => {
@@ -105,16 +108,16 @@ Please fix the compilation errors and provide the corrected AL code.`;
         max_attempts: 2,
         expected: {
           compile: true,
-          testApp: ""
+          testApp: "",
         },
-        metrics: ["compile_success", "token_usage"]
+        metrics: ["compile_success", "token_usage"],
       };
 
       const request: TaskExecutionRequest = {
         taskManifest: manifest,
         llmProvider: "mock",
         llmModel: "mock-gpt-4",
-        outputDir: join(tempDir, "output")
+        outputDir: join(tempDir, "output"),
       };
 
       const result = await executor.executeTask(request);
@@ -125,12 +128,12 @@ Please fix the compilation errors and provide the corrected AL code.`;
       assertEquals(result.context.taskType, "code_generation");
       assertEquals(result.context.llmProvider, "mock");
       assertEquals(result.context.llmModel, "mock-gpt-4");
-      
+
       // Verify execution happened
       assert(result.attempts.length > 0, "Should have at least one attempt");
       assert(result.totalDuration > 0);
       assert(result.totalTokensUsed > 0);
-      
+
       // Verify metadata
       assertEquals(result.executedBy, Deno.env.get("USER") || "unknown");
       assertEquals(result.environment["denoVersion"], Deno.version.deno);
@@ -145,21 +148,23 @@ Please fix the compilation errors and provide the corrected AL code.`;
         max_attempts: 3,
         expected: {
           compile: true,
-          testApp: "TestApp"
+          testApp: "TestApp",
         },
-        metrics: ["compile_success", "test_success"]
+        metrics: ["compile_success", "test_success"],
       };
 
       const request: TaskExecutionRequest = {
         taskManifest: manifest,
         llmProvider: "mock",
-        llmModel: "mock-gpt-4"
+        llmModel: "mock-gpt-4",
       };
 
       const result = await executor.executeTask(request);
 
       // Should have executed tests on successful compilation
-      const successfulAttempt = result.attempts.find(a => a.compilationResult?.success);
+      const successfulAttempt = result.attempts.find((a) =>
+        a.compilationResult?.success
+      );
       if (successfulAttempt) {
         assertExists(successfulAttempt.testResult);
       }
@@ -175,16 +180,16 @@ Please fix the compilation errors and provide the corrected AL code.`;
         fix_template: "fix.md",
         max_attempts: 3,
         expected: {
-          compile: true
+          compile: true,
         },
-        metrics: ["attempts", "compile_success"]
+        metrics: ["attempts", "compile_success"],
       };
 
       const request: TaskExecutionRequest = {
         taskManifest: manifest,
         llmProvider: "mock",
         llmModel: "mock-gpt-4",
-        attemptLimit: 3
+        attemptLimit: 3,
       };
 
       const result = await executor.executeTask(request);
@@ -192,7 +197,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
       // Should have at least one attempt
       assert(result.attempts.length >= 1, "Should have at least one attempt");
       assert(result.attempts.length <= 3, "Should respect attempt limit");
-      
+
       // If there were retries, verify prompts change between attempts
       if (result.attempts.length > 1) {
         const attempt0 = result.attempts[0];
@@ -202,10 +207,13 @@ Please fix the compilation errors and provide the corrected AL code.`;
           assert(attempt1.prompt.includes("Compilation Errors"));
 
           // Verify it actually retried due to errors
-          assert(!attempt0.success || (attempt0.compilationResult?.errors?.length ?? 0) > 0);
+          assert(
+            !attempt0.success ||
+              (attempt0.compilationResult?.errors?.length ?? 0) > 0,
+          );
         }
       }
-      
+
       // The test passes regardless of whether it needed retries
       // The important thing is that retry logic works when needed
     });
@@ -218,15 +226,15 @@ Please fix the compilation errors and provide the corrected AL code.`;
         fix_template: "fix.md",
         max_attempts: 0, // Invalid - must be at least 1
         expected: {
-          compile: true
+          compile: true,
         },
-        metrics: []
+        metrics: [],
       };
 
       const request: TaskExecutionRequest = {
         taskManifest: invalidManifest,
         llmProvider: "mock",
-        llmModel: "mock-gpt-4"
+        llmModel: "mock-gpt-4",
       };
 
       let errorThrown = false;
@@ -248,20 +256,21 @@ Please fix the compilation errors and provide the corrected AL code.`;
     it("should validate required patterns in generated code", async () => {
       const manifest: TaskManifest = {
         id: "pattern-validation",
-        description: 'Create procedure CalculateTotal and table 50100 "Sales Data"',
+        description:
+          'Create procedure CalculateTotal and table 50100 "Sales Data"',
         prompt_template: "prompt.md",
         fix_template: "fix.md",
         max_attempts: 2,
         expected: {
-          compile: true
+          compile: true,
         },
-        metrics: ["pattern_match"]
+        metrics: ["pattern_match"],
       };
 
       const request: TaskExecutionRequest = {
         taskManifest: manifest,
         llmProvider: "mock",
-        llmModel: "mock-gpt-4"
+        llmModel: "mock-gpt-4",
       };
 
       const result = await executor.executeTask(request);
@@ -273,9 +282,12 @@ Please fix the compilation errors and provide the corrected AL code.`;
       // The mock adapter might not generate the exact patterns,
       // but the validation logic should run
       const lastAttempt = result.attempts[result.attempts.length - 1];
-      if (lastAttempt && !lastAttempt.success && lastAttempt.failureReasons.length > 0) {
+      if (
+        lastAttempt && !lastAttempt.success &&
+        lastAttempt.failureReasons.length > 0
+      ) {
         // If it failed, check if pattern validation was a reason
-        const patternFailure = lastAttempt.failureReasons.find(r =>
+        const patternFailure = lastAttempt.failureReasons.find((r) =>
           r.includes("Missing required patterns")
         );
         // Pattern validation was checked
@@ -293,9 +305,9 @@ Please fix the compilation errors and provide the corrected AL code.`;
         fix_template: "fix.md",
         max_attempts: 1,
         expected: {
-          compile: true
+          compile: true,
         },
-        metrics: ["file_output"]
+        metrics: ["file_output"],
       };
 
       const outputDir = join(tempDir, "custom-output");
@@ -305,7 +317,7 @@ Please fix the compilation errors and provide the corrected AL code.`;
         taskManifest: manifest,
         llmProvider: "mock",
         llmModel: "mock-gpt-4",
-        outputDir
+        outputDir,
       };
 
       const result = await executor.executeTask(request);
@@ -313,13 +325,17 @@ Please fix the compilation errors and provide the corrected AL code.`;
       // Verify files were created
       const resultDir = join(outputDir, manifest.id, result.executionId);
       const resultFile = join(resultDir, "result.json");
-      
+
       try {
         const savedResult = JSON.parse(await Deno.readTextFile(resultFile));
         assertEquals(savedResult.taskId, result.taskId);
         assertEquals(savedResult.executionId, result.executionId);
       } catch (error) {
-        throw new Error(`Failed to read saved result: ${error instanceof Error ? error.message : String(error)}`);
+        throw new Error(
+          `Failed to read saved result: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
     });
   });

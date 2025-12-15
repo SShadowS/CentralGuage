@@ -19,7 +19,9 @@ export class DockerContainerProvider implements ContainerProvider {
   readonly name = "docker";
   readonly platform = "linux" as const;
 
-  private async executeDocker(args: string[]): Promise<{ output: string; exitCode: number }> {
+  private async executeDocker(
+    args: string[],
+  ): Promise<{ output: string; exitCode: number }> {
     try {
       const process = new Deno.Command("docker", {
         args,
@@ -33,10 +35,14 @@ export class DockerContainerProvider implements ContainerProvider {
 
       return {
         output: output + (error ? `\nSTDERR: ${error}` : ""),
-        exitCode: code
+        exitCode: code,
       };
     } catch (error) {
-      throw new Error(`Docker command failed: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Docker command failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -47,13 +53,15 @@ export class DockerContainerProvider implements ContainerProvider {
         throw new Error("Docker is not responding");
       }
     } catch {
-      throw new Error("Docker is not installed or not accessible. Please install Docker and ensure it's running.");
+      throw new Error(
+        "Docker is not installed or not accessible. Please install Docker and ensure it's running.",
+      );
     }
   }
 
   async setup(config: ContainerConfig): Promise<void> {
     console.log(`🐳 [Docker] Setting up container: ${config.name}`);
-    
+
     await this.checkDockerAvailable();
 
     // Remove existing container if it exists
@@ -76,17 +84,28 @@ export class DockerContainerProvider implements ContainerProvider {
 
     // Create and start container
     const dockerArgs = [
-      "run", "-d",
-      "--name", config.name,
-      "--hostname", config.name,
-      "-e", "ACCEPT_EULA=Y",
-      "-e", "useSSL=N",
-      "-e", "auth=NavUserPassword",
-      "-e", "username=admin",
-      "-e", "password=admin",
-      "-p", "8080:8080", // Web client
-      "-p", "7046-7049:7046-7049", // Service tiers
-      "--memory", config.memoryLimit || "8g",
+      "run",
+      "-d",
+      "--name",
+      config.name,
+      "--hostname",
+      config.name,
+      "-e",
+      "ACCEPT_EULA=Y",
+      "-e",
+      "useSSL=N",
+      "-e",
+      "auth=NavUserPassword",
+      "-e",
+      "username=admin",
+      "-e",
+      "password=admin",
+      "-p",
+      "8080:8080", // Web client
+      "-p",
+      "7046-7049:7046-7049", // Service tiers
+      "--memory",
+      config.memoryLimit || "8g",
     ];
 
     if (config.includeAL) {
@@ -111,29 +130,43 @@ export class DockerContainerProvider implements ContainerProvider {
     console.log(`✅ [Docker] Container ${config.name} setup complete`);
   }
 
-  private async waitForContainerReady(containerName: string, timeoutMs: number): Promise<void> {
+  private async waitForContainerReady(
+    containerName: string,
+    timeoutMs: number,
+  ): Promise<void> {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const logsResult = await this.executeDocker(["logs", "--tail", "50", containerName]);
-        if (logsResult.output.includes("Ready for connections!") || 
-            logsResult.output.includes("Container is ready")) {
+        const logsResult = await this.executeDocker([
+          "logs",
+          "--tail",
+          "50",
+          containerName,
+        ]);
+        if (
+          logsResult.output.includes("Ready for connections!") ||
+          logsResult.output.includes("Container is ready")
+        ) {
           return;
         }
       } catch {
         // Continue waiting
       }
-      
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+
+      await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
     }
-    
-    throw new Error(`Container ${containerName} did not become ready within ${timeoutMs / 1000} seconds`);
+
+    throw new Error(
+      `Container ${containerName} did not become ready within ${
+        timeoutMs / 1000
+      } seconds`,
+    );
   }
 
   async start(containerName: string): Promise<void> {
     console.log(`🚀 [Docker] Starting container: ${containerName}`);
-    
+
     const result = await this.executeDocker(["start", containerName]);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to start container: ${result.output}`);
@@ -144,7 +177,7 @@ export class DockerContainerProvider implements ContainerProvider {
 
   async stop(containerName: string): Promise<void> {
     console.log(`🛑 [Docker] Stopping container: ${containerName}`);
-    
+
     const result = await this.executeDocker(["stop", containerName]);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to stop container: ${result.output}`);
@@ -155,7 +188,7 @@ export class DockerContainerProvider implements ContainerProvider {
 
   async remove(containerName: string): Promise<void> {
     console.log(`🗑️  [Docker] Removing container: ${containerName}`);
-    
+
     const result = await this.executeDocker(["rm", "-f", containerName]);
     if (result.exitCode !== 0) {
       throw new Error(`Failed to remove container: ${result.output}`);
@@ -167,16 +200,17 @@ export class DockerContainerProvider implements ContainerProvider {
   async status(containerName: string): Promise<ContainerStatus> {
     // Get container info
     const inspectResult = await this.executeDocker([
-      "inspect", containerName, 
-      "--format", 
-      "{{.State.Running}}|{{.State.Health.Status}}|{{.Config.Image}}|{{.State.StartedAt}}"
+      "inspect",
+      containerName,
+      "--format",
+      "{{.State.Running}}|{{.State.Health.Status}}|{{.Config.Image}}|{{.State.StartedAt}}",
     ]);
 
     if (inspectResult.exitCode !== 0) {
       throw new Error(`Container ${containerName} not found`);
     }
 
-    const parts = inspectResult.output.trim().split('|');
+    const parts = inspectResult.output.trim().split("|");
     const running = parts[0];
     const health = parts[1];
     const image = parts[2] || "";
@@ -214,8 +248,13 @@ export class DockerContainerProvider implements ContainerProvider {
     };
   }
 
-  async compileProject(containerName: string, project: ALProject): Promise<CompilationResult> {
-    console.log(`🔨 [Docker] Compiling AL project in container: ${containerName}`);
+  async compileProject(
+    containerName: string,
+    project: ALProject,
+  ): Promise<CompilationResult> {
+    console.log(
+      `🔨 [Docker] Compiling AL project in container: ${containerName}`,
+    );
 
     const startTime = Date.now();
     const projectPath = project.path;
@@ -223,11 +262,15 @@ export class DockerContainerProvider implements ContainerProvider {
     // Copy project to container
     const containerPath = "/tmp/al_project";
     const copyResult = await this.executeDocker([
-      "cp", `${projectPath}/.`, `${containerName}:${containerPath}`
+      "cp",
+      `${projectPath}/.`,
+      `${containerName}:${containerPath}`,
     ]);
 
     if (copyResult.exitCode !== 0) {
-      throw new Error(`Failed to copy project to container: ${copyResult.output}`);
+      throw new Error(
+        `Failed to copy project to container: ${copyResult.output}`,
+      );
     }
 
     try {
@@ -238,7 +281,11 @@ export class DockerContainerProvider implements ContainerProvider {
       `;
 
       const compileResult = await this.executeDocker([
-        "exec", containerName, "powershell", "-Command", compileScript
+        "exec",
+        containerName,
+        "powershell",
+        "-Command",
+        compileScript,
       ]);
 
       const duration = Date.now() - startTime;
@@ -247,13 +294,17 @@ export class DockerContainerProvider implements ContainerProvider {
       const errors: CompilationError[] = [];
       const warnings: CompilationWarning[] = [];
 
-      const lines = compileResult.output.split('\n');
+      const lines = compileResult.output.split("\n");
 
       for (const line of lines) {
         // Parse AL compiler output
         // Format: filename(line,col): error AL####: message
-        const errorMatch = line.match(/([^(]+)\((\d+),(\d+)\):\s*error\s+(AL\d+):\s*(.+)/);
-        const warningMatch = line.match(/([^(]+)\((\d+),(\d+)\):\s*warning\s+(AL\d+):\s*(.+)/);
+        const errorMatch = line.match(
+          /([^(]+)\((\d+),(\d+)\):\s*error\s+(AL\d+):\s*(.+)/,
+        );
+        const warningMatch = line.match(
+          /([^(]+)\((\d+),(\d+)\):\s*warning\s+(AL\d+):\s*(.+)/,
+        );
 
         if (errorMatch) {
           errors.push({
@@ -276,9 +327,14 @@ export class DockerContainerProvider implements ContainerProvider {
         }
       }
 
-      const success = errors.length === 0 && !compileResult.output.includes("COMPILE_FAILED");
+      const success = errors.length === 0 &&
+        !compileResult.output.includes("COMPILE_FAILED");
 
-      console.log(`${success ? '✅' : '❌'} [Docker] Compilation ${success ? 'succeeded' : 'failed'}: ${errors.length} errors, ${warnings.length} warnings`);
+      console.log(
+        `${success ? "✅" : "❌"} [Docker] Compilation ${
+          success ? "succeeded" : "failed"
+        }: ${errors.length} errors, ${warnings.length} warnings`,
+      );
 
       return {
         success,
@@ -287,18 +343,24 @@ export class DockerContainerProvider implements ContainerProvider {
         output: compileResult.output,
         duration,
       };
-
     } finally {
       // Clean up container temp files
       await this.executeDocker([
-        "exec", containerName, "powershell", "-Command", "Remove-Item -Path /tmp/al_project -Recurse -Force -ErrorAction SilentlyContinue"
+        "exec",
+        containerName,
+        "powershell",
+        "-Command",
+        "Remove-Item -Path /tmp/al_project -Recurse -Force -ErrorAction SilentlyContinue",
       ]).catch(() => {
         // Ignore cleanup errors
       });
     }
   }
 
-  async runTests(containerName: string, project: ALProject): Promise<TestResult> {
+  async runTests(
+    containerName: string,
+    project: ALProject,
+  ): Promise<TestResult> {
     console.log(`🧪 [Docker] Running tests in container: ${containerName}`);
 
     const startTime = Date.now();
@@ -307,7 +369,9 @@ export class DockerContainerProvider implements ContainerProvider {
     // Copy project to container
     const containerPath = "/tmp/al_test";
     await this.executeDocker([
-      "cp", `${projectPath}/.`, `${containerName}:${containerPath}`
+      "cp",
+      `${projectPath}/.`,
+      `${containerName}:${containerPath}`,
     ]);
 
     try {
@@ -318,7 +382,11 @@ export class DockerContainerProvider implements ContainerProvider {
       `;
 
       const testResult = await this.executeDocker([
-        "exec", containerName, "powershell", "-Command", testScript
+        "exec",
+        containerName,
+        "powershell",
+        "-Command",
+        testScript,
       ]);
 
       const duration = Date.now() - startTime;
@@ -326,12 +394,16 @@ export class DockerContainerProvider implements ContainerProvider {
       // Parse test results
       const results: TestCaseResult[] = [];
 
-      const lines = testResult.output.split('\n');
+      const lines = testResult.output.split("\n");
 
       for (const line of lines) {
         // Parse AL test result format
-        const passMatch = line.match(/Test\s+(\w+)\s+passed(?:\s+in\s+(\d+)ms)?/);
-        const failMatch = line.match(/Test\s+(\w+)\s+failed(?:\s+in\s+(\d+)ms)?:\s*(.+)/);
+        const passMatch = line.match(
+          /Test\s+(\w+)\s+passed(?:\s+in\s+(\d+)ms)?/,
+        );
+        const failMatch = line.match(
+          /Test\s+(\w+)\s+failed(?:\s+in\s+(\d+)ms)?:\s*(.+)/,
+        );
 
         if (passMatch) {
           results.push({
@@ -351,11 +423,15 @@ export class DockerContainerProvider implements ContainerProvider {
       }
 
       const totalTests = results.length;
-      const passedTests = results.filter(r => r.passed).length;
+      const passedTests = results.filter((r) => r.passed).length;
       const failedTests = totalTests - passedTests;
       const success = failedTests === 0;
 
-      console.log(`${success ? '✅' : '❌'} [Docker] Tests ${success ? 'passed' : 'failed'}: ${passedTests}/${totalTests} passed`);
+      console.log(
+        `${success ? "✅" : "❌"} [Docker] Tests ${
+          success ? "passed" : "failed"
+        }: ${passedTests}/${totalTests} passed`,
+      );
 
       return {
         success,
@@ -366,35 +442,63 @@ export class DockerContainerProvider implements ContainerProvider {
         duration,
         output: testResult.output,
       };
-
     } finally {
       // Clean up container temp files
       await this.executeDocker([
-        "exec", containerName, "powershell", "-Command", "Remove-Item -Path /tmp/al_test -Recurse -Force -ErrorAction SilentlyContinue"
+        "exec",
+        containerName,
+        "powershell",
+        "-Command",
+        "Remove-Item -Path /tmp/al_test -Recurse -Force -ErrorAction SilentlyContinue",
       ]).catch(() => {
         // Ignore cleanup errors
       });
     }
   }
 
-  async copyToContainer(containerName: string, localPath: string, containerPath: string): Promise<void> {
-    const result = await this.executeDocker(["cp", localPath, `${containerName}:${containerPath}`]);
-    
+  async copyToContainer(
+    containerName: string,
+    localPath: string,
+    containerPath: string,
+  ): Promise<void> {
+    const result = await this.executeDocker([
+      "cp",
+      localPath,
+      `${containerName}:${containerPath}`,
+    ]);
+
     if (result.exitCode !== 0) {
       throw new Error(`Failed to copy to container: ${result.output}`);
     }
   }
 
-  async copyFromContainer(containerName: string, containerPath: string, localPath: string): Promise<void> {
-    const result = await this.executeDocker(["cp", `${containerName}:${containerPath}`, localPath]);
-    
+  async copyFromContainer(
+    containerName: string,
+    containerPath: string,
+    localPath: string,
+  ): Promise<void> {
+    const result = await this.executeDocker([
+      "cp",
+      `${containerName}:${containerPath}`,
+      localPath,
+    ]);
+
     if (result.exitCode !== 0) {
       throw new Error(`Failed to copy from container: ${result.output}`);
     }
   }
 
-  async executeCommand(containerName: string, command: string): Promise<{ output: string; exitCode: number }> {
-    return await this.executeDocker(["exec", containerName, "powershell", "-Command", command]);
+  async executeCommand(
+    containerName: string,
+    command: string,
+  ): Promise<{ output: string; exitCode: number }> {
+    return await this.executeDocker([
+      "exec",
+      containerName,
+      "powershell",
+      "-Command",
+      command,
+    ]);
   }
 
   async isHealthy(containerName: string): Promise<boolean> {

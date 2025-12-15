@@ -8,7 +8,7 @@ description: >-
   - CapitalizeFirstLetter(InputText: Text): Text - capitalizes the first letter of input text
   - CountWords(InputText: Text): Integer - counts the number of words in the input text
   - IsValidEmail(EmailAddress: Text): Boolean - basic validation to check if text contains @ and .
-  
+
   Include proper Access property and ensure all procedures have appropriate parameter and return types.
   Follow Business Central codeunit conventions.
 expected:

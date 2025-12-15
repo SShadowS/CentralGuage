@@ -15,36 +15,67 @@ export interface ModelPreset {
 }
 
 export const MODEL_PRESETS: Record<string, ModelPreset> = {
-  // OpenAI Models
+  // OpenAI Models - GPT-5 (2025)
+  "gpt-5": {
+    alias: "gpt-5",
+    provider: "openai",
+    model: "gpt-5.1",
+    displayName: "GPT-5.1",
+    description: "Latest GPT-5 model with advanced reasoning",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["flagship", "coding", "reasoning", "2025"],
+  },
+  "gpt-5-pro": {
+    alias: "gpt-5-pro",
+    provider: "openai",
+    model: "gpt-5-pro",
+    displayName: "GPT-5 Pro",
+    description: "Professional GPT-5 with enhanced capabilities",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["flagship", "quality", "2025"],
+  },
+  "codex-mini": {
+    alias: "codex-mini",
+    provider: "openai",
+    model: "gpt-5.1-codex-mini",
+    displayName: "GPT-5.1 Codex Mini",
+    description: "Optimized for code generation tasks",
+    costTier: "standard",
+    performanceTier: "fast",
+    category: ["coding", "fast", "2025"],
+  },
+  // OpenAI Models - GPT-4
   "gpt-4o": {
     alias: "gpt-4o",
     provider: "openai",
     model: "gpt-4o",
     displayName: "GPT-4o",
-    description: "Latest GPT-4 optimized model with vision capabilities",
+    description: "GPT-4 optimized model with vision capabilities",
     costTier: "premium",
     performanceTier: "quality",
-    category: ["flagship", "coding", "reasoning"]
+    category: ["flagship", "coding", "reasoning"],
   },
   "gpt-4": {
     alias: "gpt-4",
-    provider: "openai", 
+    provider: "openai",
     model: "gpt-4-turbo",
     displayName: "GPT-4 Turbo",
     description: "High-performance GPT-4 with improved speed",
     costTier: "premium",
     performanceTier: "balanced",
-    category: ["flagship", "coding"]
+    category: ["flagship", "coding"],
   },
   "gpt-3.5": {
     alias: "gpt-3.5",
     provider: "openai",
     model: "gpt-3.5-turbo",
-    displayName: "GPT-3.5 Turbo", 
+    displayName: "GPT-3.5 Turbo",
     description: "Fast and cost-effective chat model",
     costTier: "budget",
     performanceTier: "fast",
-    category: ["budget", "speed"]
+    category: ["budget", "speed"],
   },
   "o1": {
     alias: "o1",
@@ -54,7 +85,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     description: "Advanced reasoning model for complex problems",
     costTier: "premium",
     performanceTier: "quality",
-    category: ["reasoning", "complex"]
+    category: ["reasoning", "complex"],
   },
   "o3": {
     alias: "o3",
@@ -62,12 +93,43 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     model: "o3-high",
     displayName: "OpenAI o3 High",
     description: "Next-generation reasoning with high compute",
-    costTier: "premium", 
+    costTier: "premium",
     performanceTier: "quality",
-    category: ["reasoning", "flagship", "experimental"]
+    category: ["reasoning", "flagship", "2025"],
   },
 
-  // Anthropic Models
+  // Anthropic Models - Claude 4.5 (2025)
+  "claude-4.5": {
+    alias: "claude-4.5",
+    provider: "anthropic",
+    model: "claude-opus-4-5-20251101",
+    displayName: "Claude 4.5 Opus",
+    description: "Most advanced Claude model with extended reasoning",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["flagship", "reasoning", "quality", "2025"],
+  },
+  "sonnet-4.5": {
+    alias: "sonnet-4.5",
+    provider: "anthropic",
+    model: "claude-sonnet-4-5-20251022",
+    displayName: "Claude 4.5 Sonnet",
+    description: "Balanced performance Claude 4.5 model",
+    costTier: "standard",
+    performanceTier: "balanced",
+    category: ["flagship", "coding", "balanced", "2025"],
+  },
+  "haiku-4.5": {
+    alias: "haiku-4.5",
+    provider: "anthropic",
+    model: "claude-haiku-4-5-20251022",
+    displayName: "Claude 4.5 Haiku",
+    description: "Fast and efficient Claude 4.5 model",
+    costTier: "budget",
+    performanceTier: "fast",
+    category: ["budget", "speed", "2025"],
+  },
+  // Anthropic Models - Claude 3.5/3
   "sonnet": {
     alias: "sonnet",
     provider: "anthropic",
@@ -76,40 +138,61 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     description: "Balanced model for coding and analysis",
     costTier: "standard",
     performanceTier: "balanced",
-    category: ["flagship", "coding", "balanced"]
+    category: ["flagship", "coding", "balanced"],
   },
   "haiku": {
     alias: "haiku",
-    provider: "anthropic", 
+    provider: "anthropic",
     model: "claude-3-haiku-20240307",
     displayName: "Claude 3 Haiku",
     description: "Fast and efficient model for simple tasks",
     costTier: "budget",
     performanceTier: "fast",
-    category: ["budget", "speed"]
+    category: ["budget", "speed"],
   },
   "opus": {
     alias: "opus",
     provider: "anthropic",
-    model: "claude-3-opus-20240229", 
+    model: "claude-3-opus-20240229",
     displayName: "Claude 3 Opus",
-    description: "Most capable model for complex reasoning",
+    description: "Most capable Claude 3 model for complex reasoning",
     costTier: "premium",
     performanceTier: "quality",
-    category: ["flagship", "reasoning", "quality"]
-  },
-  "sonnet-4": {
-    alias: "sonnet-4",
-    provider: "anthropic",
-    model: "sonnet-4-think-8k",
-    displayName: "Claude Sonnet-4 (Thinking)",
-    description: "Advanced model with extended thinking capabilities",
-    costTier: "premium",
-    performanceTier: "quality", 
-    category: ["flagship", "reasoning", "experimental"]
+    category: ["flagship", "reasoning", "quality"],
   },
 
-  // Google Gemini Models
+  // Google Gemini Models - 2025
+  "gemini-3": {
+    alias: "gemini-3",
+    provider: "gemini",
+    model: "gemini-3",
+    displayName: "Gemini 3",
+    description: "Google's next-generation multimodal model",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["flagship", "multimodal", "reasoning", "2025"],
+  },
+  "gemini-2.5": {
+    alias: "gemini-2.5",
+    provider: "gemini",
+    model: "gemini-2.5-pro",
+    displayName: "Gemini 2.5 Pro",
+    description: "Advanced Gemini with improved reasoning",
+    costTier: "standard",
+    performanceTier: "balanced",
+    category: ["flagship", "balanced", "2025"],
+  },
+  "gemini-2.5-flash": {
+    alias: "gemini-2.5-flash",
+    provider: "gemini",
+    model: "gemini-2.5-flash",
+    displayName: "Gemini 2.5 Flash",
+    description: "Fast Gemini 2.5 model for quick responses",
+    costTier: "budget",
+    performanceTier: "fast",
+    category: ["speed", "budget", "2025"],
+  },
+  // Google Gemini Models - 1.5
   "gemini": {
     alias: "gemini",
     provider: "gemini",
@@ -118,17 +201,17 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     description: "Google's flagship multimodal model",
     costTier: "standard",
     performanceTier: "balanced",
-    category: ["flagship", "multimodal"]
+    category: ["flagship", "multimodal"],
   },
   "gemini-flash": {
     alias: "gemini-flash",
-    provider: "gemini", 
+    provider: "gemini",
     model: "gemini-1.5-flash",
     displayName: "Gemini 1.5 Flash",
     description: "Optimized for speed and efficiency",
     costTier: "budget",
     performanceTier: "fast",
-    category: ["budget", "speed"]
+    category: ["budget", "speed"],
   },
 
   // Local Models (common ones)
@@ -140,55 +223,189 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     description: "Meta's open-source model via Ollama",
     costTier: "free",
     performanceTier: "balanced",
-    category: ["local", "open-source"]
+    category: ["local", "open-source"],
   },
   "codellama": {
-    alias: "codellama", 
+    alias: "codellama",
     provider: "local",
     model: "codellama:latest",
     displayName: "Code Llama",
     description: "Code-specialized Llama model",
     costTier: "free",
     performanceTier: "balanced",
-    category: ["local", "coding", "open-source"]
+    category: ["local", "coding", "open-source"],
+  },
+
+  // OpenRouter Models (unified API gateway)
+  "openrouter-gpt4": {
+    alias: "openrouter-gpt4",
+    provider: "openrouter",
+    model: "openai/gpt-4o",
+    displayName: "GPT-4o (via OpenRouter)",
+    description: "GPT-4o via OpenRouter unified API",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["openrouter", "flagship"],
+  },
+  "openrouter-claude": {
+    alias: "openrouter-claude",
+    provider: "openrouter",
+    model: "anthropic/claude-3.5-sonnet",
+    displayName: "Claude 3.5 Sonnet (via OpenRouter)",
+    description: "Claude via OpenRouter unified API",
+    costTier: "standard",
+    performanceTier: "balanced",
+    category: ["openrouter", "balanced"],
+  },
+  "openrouter-llama": {
+    alias: "openrouter-llama",
+    provider: "openrouter",
+    model: "meta-llama/llama-3.3-70b-instruct",
+    displayName: "Llama 3.3 70B (via OpenRouter)",
+    description: "Meta's Llama via OpenRouter",
+    costTier: "budget",
+    performanceTier: "balanced",
+    category: ["openrouter", "open-source"],
+  },
+  "openrouter-deepseek": {
+    alias: "openrouter-deepseek",
+    provider: "openrouter",
+    model: "deepseek/deepseek-chat",
+    displayName: "DeepSeek Chat (via OpenRouter)",
+    description: "DeepSeek via OpenRouter unified API",
+    costTier: "budget",
+    performanceTier: "balanced",
+    category: ["openrouter", "budget", "open-source"],
   },
 
   // Mock for testing
   "mock": {
     alias: "mock",
     provider: "mock",
-    model: "mock-gpt-4", 
+    model: "mock-gpt-4",
     displayName: "Mock GPT-4",
     description: "Mock adapter for testing and development",
     costTier: "free",
     performanceTier: "fast",
-    category: ["testing", "development"]
-  }
+    category: ["testing", "development"],
+  },
 };
 
 export const MODEL_GROUPS: Record<string, string[]> = {
   // Performance-based groups
-  "flagship": ["gpt-4o", "sonnet", "opus", "gemini", "o3"],
-  "budget": ["gpt-3.5", "haiku", "gemini-flash"],
-  "fast": ["gpt-3.5", "haiku", "gemini-flash", "llama"], 
-  "quality": ["gpt-4o", "opus", "o1", "o3", "sonnet-4"],
-  
+  "flagship": [
+    "gpt-5",
+    "claude-4.5",
+    "gemini-3",
+    "gpt-4o",
+    "sonnet",
+    "opus",
+    "gemini",
+    "o3",
+  ],
+  "budget": [
+    "gpt-3.5",
+    "haiku",
+    "haiku-4.5",
+    "gemini-flash",
+    "gemini-2.5-flash",
+  ],
+  "fast": [
+    "gpt-3.5",
+    "haiku",
+    "haiku-4.5",
+    "gemini-flash",
+    "gemini-2.5-flash",
+    "codex-mini",
+    "llama",
+  ],
+  "quality": [
+    "gpt-5",
+    "gpt-5-pro",
+    "claude-4.5",
+    "gemini-3",
+    "gpt-4o",
+    "opus",
+    "o1",
+    "o3",
+  ],
+
   // Use case groups
-  "coding": ["gpt-4o", "sonnet", "codellama", "gpt-4"],
-  "reasoning": ["o1", "o3", "opus", "sonnet-4"],
-  "multimodal": ["gpt-4o", "gemini"],
+  "coding": [
+    "gpt-5",
+    "codex-mini",
+    "sonnet-4.5",
+    "gpt-4o",
+    "sonnet",
+    "codellama",
+    "gpt-4",
+  ],
+  "reasoning": ["o1", "o3", "claude-4.5", "gpt-5-pro", "gemini-3", "opus"],
+  "multimodal": ["gpt-4o", "gemini", "gemini-3"],
   "local": ["llama", "codellama"],
   "free": ["llama", "codellama", "mock"],
-  
-  // Cost-based groups  
-  "expensive": ["gpt-4o", "opus", "o1", "o3"],
-  "cheap": ["gpt-3.5", "haiku", "gemini-flash"],
-  
+
+  // 2025 models group
+  "2025": [
+    "gpt-5",
+    "gpt-5-pro",
+    "codex-mini",
+    "claude-4.5",
+    "sonnet-4.5",
+    "haiku-4.5",
+    "gemini-3",
+    "gemini-2.5",
+    "gemini-2.5-flash",
+    "o3",
+  ],
+
+  // OpenRouter models
+  "openrouter": [
+    "openrouter-gpt4",
+    "openrouter-claude",
+    "openrouter-llama",
+    "openrouter-deepseek",
+  ],
+
+  // Cost-based groups
+  "expensive": [
+    "gpt-5",
+    "gpt-5-pro",
+    "claude-4.5",
+    "gemini-3",
+    "gpt-4o",
+    "opus",
+    "o1",
+    "o3",
+  ],
+  "cheap": [
+    "gpt-3.5",
+    "haiku",
+    "haiku-4.5",
+    "gemini-flash",
+    "gemini-2.5-flash",
+    "openrouter-deepseek",
+  ],
+
   // Testing groups
-  "comparison": ["gpt-4o", "sonnet", "gemini", "opus"],
-  "speed-test": ["gpt-3.5", "haiku", "gemini-flash"],
-  "quality-test": ["gpt-4o", "opus", "o1"],
-  "all": Object.keys(MODEL_PRESETS)
+  "comparison": [
+    "gpt-5",
+    "sonnet-4.5",
+    "gemini-2.5",
+    "gpt-4o",
+    "sonnet",
+    "gemini",
+    "opus",
+  ],
+  "speed-test": [
+    "gpt-3.5",
+    "haiku",
+    "haiku-4.5",
+    "gemini-flash",
+    "gemini-2.5-flash",
+  ],
+  "quality-test": ["gpt-5", "claude-4.5", "gemini-3", "gpt-4o", "opus", "o1"],
+  "all": Object.keys(MODEL_PRESETS),
 };
 
 export class ModelPresetRegistry {
@@ -201,32 +418,32 @@ export class ModelPresetRegistry {
     if (spec.includes("/")) {
       return [spec];
     }
-    
+
     // Check if it's a group
     if (MODEL_GROUPS[spec]) {
-      return MODEL_GROUPS[spec].map(alias => {
+      return MODEL_GROUPS[spec].map((alias) => {
         const preset = MODEL_PRESETS[alias];
         if (!preset) return alias; // Return alias as-is if not found
         return `${preset.provider}/${preset.model}`;
       });
     }
-    
+
     // Check if it's a preset alias
     if (MODEL_PRESETS[spec]) {
       const preset = MODEL_PRESETS[spec];
       return [`${preset.provider}/${preset.model}`];
     }
-    
+
     // Unknown spec, return as-is (will be handled by existing logic)
     return [spec];
   }
-  
+
   /**
    * Get all available presets grouped by category
    */
   static getPresetsByCategory(): Record<string, ModelPreset[]> {
     const categories: Record<string, ModelPreset[]> = {};
-    
+
     for (const preset of Object.values(MODEL_PRESETS)) {
       for (const category of preset.category) {
         if (!categories[category]) {
@@ -235,10 +452,10 @@ export class ModelPresetRegistry {
         categories[category].push(preset);
       }
     }
-    
+
     return categories;
   }
-  
+
   /**
    * Get presets by cost tier
    */
@@ -247,33 +464,33 @@ export class ModelPresetRegistry {
       free: [],
       budget: [],
       standard: [],
-      premium: []
+      premium: [],
     };
-    
+
     for (const preset of Object.values(MODEL_PRESETS)) {
       const tier = tiers[preset.costTier];
       if (tier) {
         tier.push(preset);
       }
     }
-    
+
     return tiers;
   }
-  
+
   /**
    * Get preset info by alias
    */
   static getPreset(alias: string): ModelPreset | null {
     return MODEL_PRESETS[alias] || null;
   }
-  
+
   /**
    * List all available groups
    */
   static getGroups(): string[] {
     return Object.keys(MODEL_GROUPS);
   }
-  
+
   /**
    * List all available aliases
    */

@@ -9,7 +9,7 @@ description: >-
   - Description (Text[100])
   - Active (Boolean, default true)
   - Created Date (Date)
-  
+
   Include proper captions and data classification.
   Set appropriate primary key and ensure the table follows Business Central conventions.
 expected:

@@ -2,16 +2,16 @@
  * Unit tests for Mock LLM Adapter
  */
 
-import { describe, it, beforeEach } from "@std/testing/bdd";
-import { assertEquals, assertExists, assert } from "@std/assert";
+import { beforeEach, describe, it } from "@std/testing/bdd";
+import { assert, assertEquals, assertExists } from "@std/assert";
 import { MockLLMAdapter } from "../../../src/llm/mock-adapter.ts";
-import { 
-  createMockLLMConfig, 
-  assertValidLLMResponse, 
+import {
   assertValidCostEstimate,
-  MockALCode 
+  assertValidLLMResponse,
+  createMockLLMConfig,
+  MockALCode,
 } from "../../utils/test-helpers.ts";
-import type { LLMRequest, GenerationContext } from "../../../src/llm/types.ts";
+import type { GenerationContext, LLMRequest } from "../../../src/llm/types.ts";
 
 describe("MockLLMAdapter", () => {
   let adapter: MockLLMAdapter;
@@ -21,7 +21,7 @@ describe("MockLLMAdapter", () => {
     adapter = new MockLLMAdapter();
     config = createMockLLMConfig({
       provider: "mock",
-      model: "mock-gpt-4"
+      model: "mock-gpt-4",
     });
     adapter.configure(config);
   });
@@ -42,13 +42,13 @@ describe("MockLLMAdapter", () => {
     it("should reject invalid temperature", () => {
       const invalidConfig = createMockLLMConfig({ temperature: 2.5 });
       const errors = adapter.validateConfig(invalidConfig);
-      assert(errors.some(error => error.includes("Temperature")));
+      assert(errors.some((error) => error.includes("Temperature")));
     });
 
     it("should reject invalid maxTokens", () => {
       const invalidConfig = createMockLLMConfig({ maxTokens: -100 });
       const errors = adapter.validateConfig(invalidConfig);
-      assert(errors.some(error => error.includes("maxTokens")));
+      assert(errors.some((error) => error.includes("maxTokens")));
     });
   });
 
@@ -59,7 +59,7 @@ describe("MockLLMAdapter", () => {
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
@@ -68,7 +68,7 @@ describe("MockLLMAdapter", () => {
       };
 
       const result = await adapter.generateCode(request, context);
-      
+
       assertValidLLMResponse(result.response);
       assertEquals(result.language, "al");
       assertExists(result.code);
@@ -83,7 +83,7 @@ describe("MockLLMAdapter", () => {
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
@@ -92,7 +92,7 @@ describe("MockLLMAdapter", () => {
       };
 
       const result = await adapter.generateCode(request, context);
-      
+
       assertValidLLMResponse(result.response);
       assertEquals(result.language, "al");
       assertExists(result.code);
@@ -106,7 +106,7 @@ describe("MockLLMAdapter", () => {
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
@@ -115,7 +115,7 @@ describe("MockLLMAdapter", () => {
       };
 
       const result = await adapter.generateCode(request, context);
-      
+
       assertValidLLMResponse(result.response);
       assertEquals(result.language, "al");
       assertExists(result.code);
@@ -128,7 +128,7 @@ describe("MockLLMAdapter", () => {
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
@@ -139,14 +139,16 @@ describe("MockLLMAdapter", () => {
       // Run multiple times to test randomness
       for (let i = 0; i < 10; i++) {
         const result = await adapter.generateCode(request, context);
-        if (result.code.includes("DELIBERATE_ERROR") || 
-            result.code.includes("MissingField") ||
-            result.code.includes("SyntaxError")) {
+        if (
+          result.code.includes("DELIBERATE_ERROR") ||
+          result.code.includes("MissingField") ||
+          result.code.includes("SyntaxError")
+        ) {
           // Found an error, test passes
           return;
         }
       }
-      
+
       // Should introduce errors at least sometimes (around 30% of the time)
       // This test might occasionally fail due to randomness, but very rarely
     });
@@ -157,15 +159,15 @@ describe("MockLLMAdapter", () => {
       const originalCode = MockALCode.table;
       const errors = [
         "Field 'InvalidField' does not exist",
-        "Missing semicolon at line 5"
+        "Missing semicolon at line 5",
       ];
-      
+
       const request: LLMRequest = {
         prompt: "Fix the following errors in the AL code",
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 2,
@@ -174,8 +176,13 @@ describe("MockLLMAdapter", () => {
         errors: errors,
       };
 
-      const result = await adapter.generateFix(originalCode, errors, request, context);
-      
+      const result = await adapter.generateFix(
+        originalCode,
+        errors,
+        request,
+        context,
+      );
+
       assertValidLLMResponse(result.response);
       assertExists(result.code);
       // Should provide a diff-style fix
@@ -185,13 +192,13 @@ describe("MockLLMAdapter", () => {
     it("should handle empty error list", async () => {
       const originalCode = MockALCode.table;
       const errors: string[] = [];
-      
+
       const request: LLMRequest = {
         prompt: "Review and fix any issues in the AL code",
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 2,
@@ -200,8 +207,13 @@ describe("MockLLMAdapter", () => {
         errors: errors,
       };
 
-      const result = await adapter.generateFix(originalCode, errors, request, context);
-      
+      const result = await adapter.generateFix(
+        originalCode,
+        errors,
+        request,
+        context,
+      );
+
       assertValidLLMResponse(result.response);
       assertExists(result.code);
     });
@@ -229,7 +241,7 @@ describe("MockLLMAdapter", () => {
         temperature: 0.1,
         maxTokens: 1000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
@@ -240,7 +252,7 @@ describe("MockLLMAdapter", () => {
       const startTime = Date.now();
       await adapter.generateCode(request, context);
       const duration = Date.now() - startTime;
-      
+
       // Should take at least 800ms (minimum simulated delay)
       assert(duration >= 800);
       // Should not take more than 3000ms (maximum simulated delay + overhead)
@@ -253,7 +265,7 @@ describe("MockLLMAdapter", () => {
         temperature: 0.1,
         maxTokens: 2000,
       };
-      
+
       const context: GenerationContext = {
         taskId: "test-task",
         attempt: 1,
@@ -262,11 +274,11 @@ describe("MockLLMAdapter", () => {
       };
 
       const result = await adapter.generateCode(request, context);
-      
+
       // Token counts should be proportional to content length
       const promptLength = request.prompt.length;
       const responseLength = result.response.content.length;
-      
+
       assert(result.response.usage.promptTokens > promptLength / 10);
       assert(result.response.usage.completionTokens > responseLength / 10);
       assert(result.response.usage.totalTokens > 0);

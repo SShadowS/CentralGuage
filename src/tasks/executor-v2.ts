@@ -2,13 +2,13 @@
  * Task Executor v2 - Uses transformation layer for clean architecture
  */
 
-import { join, basename } from "@std/path";
+import { basename, join } from "@std/path";
 import { ensureDir } from "@std/fs";
-import type { 
-  TaskExecutionContext, 
+import type {
+  ExecutionAttempt,
+  TaskExecutionContext,
   TaskExecutionRequest,
   TaskExecutionResult,
-  ExecutionAttempt 
 } from "./interfaces.ts";
 import { TaskTransformer } from "./transformer.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
@@ -19,12 +19,21 @@ import { ALProjectManager } from "../compiler/al-project.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
 import type { GenerationContext, LLMAdapter } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
-import { TaskExecutionError, LLMProviderError, isRetryableError, getRetryDelay } from "../errors.ts";
+import {
+  getRetryDelay,
+  isRetryableError,
+  LLMProviderError,
+  TaskExecutionError,
+} from "../errors.ts";
+import { PromptInjectionResolver } from "../prompts/mod.ts";
+import type { InjectionStage } from "../prompts/mod.ts";
 
 export class TaskExecutorV2 {
   private templateRenderer: TemplateRenderer | null = null;
-  
-  private async getTemplateRenderer(_context: TaskExecutionContext): Promise<TemplateRenderer> {
+
+  private async getTemplateRenderer(
+    _context: TaskExecutionContext,
+  ): Promise<TemplateRenderer> {
     if (!this.templateRenderer) {
       const config = await ConfigManager.loadConfig();
       const templateDir = config.benchmark?.templateDir || "templates";
@@ -32,28 +41,34 @@ export class TaskExecutorV2 {
     }
     return this.templateRenderer;
   }
-  
+
   /**
    * Execute a task using the provided request
    */
-  async executeTask(request: TaskExecutionRequest): Promise<TaskExecutionResult> {
+  async executeTask(
+    request: TaskExecutionRequest,
+  ): Promise<TaskExecutionResult> {
     const startTime = Date.now();
-    
+
     // Transform request into execution context
     const context = await TaskTransformer.createExecutionContext(request);
-    console.log(`🚀 Executing task: ${context.manifest.id} with ${context.llmModel}`);
-    
+    console.log(
+      `🚀 Executing task: ${context.manifest.id} with ${context.llmModel}`,
+    );
+
     // Validate the manifest
     const validation = await TaskTransformer.validateManifest(context.manifest);
     if (!validation.valid) {
-      throw new Error(`Task validation failed: ${validation.errors.join(", ")}`);
+      throw new Error(
+        `Task validation failed: ${validation.errors.join(", ")}`,
+      );
     }
-    
+
     // Show warnings if any
     if (validation.warnings.length > 0) {
       console.warn(`⚠️  Warnings: ${validation.warnings.join(", ")}`);
     }
-    
+
     // Initialize providers
     const llmAdapter = LLMAdapterRegistry.create(context.llmProvider, {
       provider: context.llmProvider,
@@ -61,9 +76,11 @@ export class TaskExecutorV2 {
       temperature: context.temperature,
       maxTokens: context.maxTokens,
     });
-    
-    const containerProvider = ContainerProviderRegistry.create(context.containerProvider);
-    
+
+    const containerProvider = ContainerProviderRegistry.create(
+      context.containerProvider,
+    );
+
     // Ensure container is ready
     if (!await containerProvider.isHealthy(context.containerName)) {
       const config = await ConfigManager.loadConfig();
@@ -76,35 +93,47 @@ export class TaskExecutorV2 {
         includeTestToolkit: context.manifest.expected.testApp ? true : false,
       });
     }
-    
+
     // Execute attempts
     const attempts: ExecutionAttempt[] = [];
     let success = false;
     let finalCode: string | undefined;
-    
-    for (let attemptNum = 1; attemptNum <= context.attemptLimit && !success; attemptNum++) {
-      const attempt = await this.executeAttempt(context, attemptNum, attempts, llmAdapter);
+
+    for (
+      let attemptNum = 1;
+      attemptNum <= context.attemptLimit && !success;
+      attemptNum++
+    ) {
+      const attempt = await this.executeAttempt(
+        context,
+        attemptNum,
+        attempts,
+        llmAdapter,
+      );
       attempts.push(attempt);
-      
+
       if (attempt.success) {
         success = true;
         finalCode = attempt.extractedCode;
       }
     }
-    
+
     // Calculate aggregate metrics
     const totalTokensUsed = attempts.reduce((sum, a) => sum + a.tokensUsed, 0);
     const totalCost = attempts.reduce((sum, a) => sum + a.cost, 0);
     const totalDuration = Date.now() - startTime;
-    
+
     // Determine success details
-    const passedAttemptNumber = attempts.findIndex(a => a.success) + 1;
-    const successRate = attempts.filter(a => a.success).length / attempts.length;
-    
+    const passedAttemptNumber = attempts.findIndex((a) => a.success) + 1;
+    const successRate = attempts.filter((a) => a.success).length /
+      attempts.length;
+
     // Build result
     const result: TaskExecutionResult = {
       taskId: context.manifest.id,
-      executionId: `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      executionId: `exec-${Date.now()}-${
+        Math.random().toString(36).substr(2, 9)
+      }`,
       context,
       attempts,
       success,
@@ -123,34 +152,38 @@ export class TaskExecutorV2 {
         arch: Deno.build.arch,
       },
     };
-    
+
     // Save results if output directory is specified
     if (context.outputDir) {
       await this.saveResults(result, context);
     }
-    
+
     return result;
   }
-  
+
   /**
-   * Execute a single attempt
+   * Execute a single attempt (public for parallel execution)
    */
-  private async executeAttempt(
+  async executeAttempt(
     context: TaskExecutionContext,
     attemptNumber: number,
     previousAttempts: ExecutionAttempt[],
-    llmAdapter: LLMAdapter
+    llmAdapter: LLMAdapter,
   ): Promise<ExecutionAttempt> {
     const attemptStart = Date.now();
     console.log(`\n📝 Attempt ${attemptNumber}/${context.attemptLimit}`);
 
-    // Generate prompt
-    const prompt = await this.generatePrompt(context, attemptNumber, previousAttempts);
+    // Generate prompt with injection support
+    const { prompt, systemPrompt } = await this.generatePrompt(
+      context,
+      attemptNumber,
+      previousAttempts,
+    );
 
     const lastAttempt = previousAttempts[previousAttempts.length - 1];
     const previousCode = lastAttempt?.extractedCode;
     const previousErrors = lastAttempt?.compilationResult?.errors.map(
-      e => `${e.file}:${e.line} - ${e.message}`
+      (e) => `${e.file}:${e.line} - ${e.message}`,
     );
 
     const generationContext: GenerationContext = {
@@ -160,50 +193,76 @@ export class TaskExecutorV2 {
       ...(previousCode !== undefined && { previousCode }),
       ...(previousErrors !== undefined && { errors: previousErrors }),
     };
-    
+
+    // Build LLM request with optional system prompt
+    const llmRequest: { prompt: string; systemPrompt?: string } = { prompt };
+    if (systemPrompt) {
+      llmRequest.systemPrompt = systemPrompt;
+    }
+
     // Call LLM with retry for transient errors
     const codeResult = await this.callLLMWithRetry(
       async () => {
         return attemptNumber === 1
-          ? await llmAdapter.generateCode({ prompt }, generationContext)
+          ? await llmAdapter.generateCode(llmRequest, generationContext)
           : await llmAdapter.generateFix(
-              previousAttempts[previousAttempts.length - 1]!.extractedCode,
-              generationContext.errors || [],
-              { prompt },
-              generationContext
-            );
+            previousAttempts[previousAttempts.length - 1]!.extractedCode,
+            generationContext.errors || [],
+            llmRequest,
+            generationContext,
+          );
       },
       context.llmProvider,
       context.manifest.id,
-      attemptNumber
+      attemptNumber,
     );
-    
+
     // Extract code
-    const extraction = CodeExtractor.extract(codeResult.response.content, context.expectedOutput.type === "diff" ? "diff" : "al");
-    const codeLanguage: "al" | "diff" = extraction.language === "diff" ? "diff" : "al";
-    const extractedCode = CodeExtractor.cleanCode(extraction.code, codeLanguage);
-    
+    const extraction = CodeExtractor.extract(
+      codeResult.response.content,
+      context.expectedOutput.type === "diff" ? "diff" : "al",
+    );
+    const codeLanguage: "al" | "diff" = extraction.language === "diff"
+      ? "diff"
+      : "al";
+    const extractedCode = CodeExtractor.cleanCode(
+      extraction.code,
+      codeLanguage,
+    );
+
     // Create temporary project and compile
-    const projectDir = await this.createTempProject(context, extractedCode, attemptNumber);
+    const projectDir = await this.createTempProject(
+      context,
+      extractedCode,
+      attemptNumber,
+    );
     const project = await ALProjectManager.loadProject(projectDir);
-    
-    const containerProvider = ContainerProviderRegistry.create(context.containerProvider);
-    const compilationResult = await containerProvider.compileProject(context.containerName, project);
-    
+
+    const containerProvider = ContainerProviderRegistry.create(
+      context.containerProvider,
+    );
+    const compilationResult = await containerProvider.compileProject(
+      context.containerName,
+      project,
+    );
+
     // Run tests if required and compilation succeeded
     let testResult;
     if (compilationResult.success && context.manifest.expected.testApp) {
-      testResult = await containerProvider.runTests(context.containerName, project);
+      testResult = await containerProvider.runTests(
+        context.containerName,
+        project,
+      );
     }
-    
+
     // Evaluate success
     const { success, score, reasons } = this.evaluateAttempt(
       context,
       extractedCode,
       compilationResult,
-      testResult
+      testResult,
     );
-    
+
     // Build attempt result
     const attempt: ExecutionAttempt = {
       attemptNumber,
@@ -221,26 +280,35 @@ export class TaskExecutorV2 {
       tokensUsed: codeResult.response.usage.totalTokens,
       cost: llmAdapter.estimateCost(
         codeResult.response.usage.promptTokens,
-        codeResult.response.usage.completionTokens
+        codeResult.response.usage.completionTokens,
       ),
       duration: Date.now() - attemptStart,
     };
-    
+
     return attempt;
   }
-  
+
   /**
-   * Generate prompt for an attempt
+   * Generate prompt for an attempt with prompt injection support
+   * Returns both the assembled prompt and optional system prompt
    */
   private async generatePrompt(
     context: TaskExecutionContext,
     attemptNumber: number,
-    previousAttempts: ExecutionAttempt[]
-  ): Promise<string> {
+    previousAttempts: ExecutionAttempt[],
+  ): Promise<{ prompt: string; systemPrompt?: string }> {
+    // Determine the injection stage
+    const stage: InjectionStage = attemptNumber === 1 ? "generation" : "fix";
+
+    // Get global config for prompts
+    const globalConfig = await ConfigManager.loadConfig();
+
+    // Generate base prompt from templates
+    let basePrompt: string;
     if (attemptNumber === 1) {
       // First attempt - use prompt template
       const renderer = await this.getTemplateRenderer(context);
-      return await renderer.render(context.manifest.prompt_template, {
+      basePrompt = await renderer.render(context.manifest.prompt_template, {
         task_id: context.manifest.id,
         description: context.manifest.description,
         instructions: context.instructions,
@@ -251,11 +319,11 @@ export class TaskExecutorV2 {
       // Subsequent attempts - use fix template
       const previousAttempt = previousAttempts[previousAttempts.length - 1]!;
       const errors = previousAttempt.compilationResult?.errors.map(
-        e => `${e.file}:${e.line} - ${e.message}`
+        (e) => `${e.file}:${e.line} - ${e.message}`,
       ).join("\n") || "";
-      
+
       const renderer = await this.getTemplateRenderer(context);
-      return await renderer.render(context.manifest.fix_template, {
+      basePrompt = await renderer.render(context.manifest.fix_template, {
         task_id: context.manifest.id,
         description: context.manifest.description,
         attempt: attemptNumber,
@@ -264,24 +332,44 @@ export class TaskExecutorV2 {
         error_snippet: this.truncateErrors(errors, 2048),
       });
     }
+
+    // Apply prompt injection resolver
+    const applied = PromptInjectionResolver.resolveAndApply(
+      basePrompt,
+      globalConfig.prompts,
+      context.manifest.prompts,
+      context.promptOverrides,
+      context.llmProvider,
+      stage,
+    );
+
+    const result: { prompt: string; systemPrompt?: string } = {
+      prompt: applied.prompt,
+    };
+
+    if (applied.systemPrompt) {
+      result.systemPrompt = applied.systemPrompt;
+    }
+
+    return result;
   }
-  
+
   /**
    * Create temporary project for compilation
    */
   private async createTempProject(
     context: TaskExecutionContext,
     code: string,
-    attemptNumber: number
+    attemptNumber: number,
   ): Promise<string> {
     const tempDir = join(
       context.outputDir,
       "temp",
-      `${context.manifest.id}_attempt_${attemptNumber}_${Date.now()}`
+      `${context.manifest.id}_attempt_${attemptNumber}_${Date.now()}`,
     );
-    
+
     await ensureDir(tempDir);
-    
+
     // Create app.json
     const appJson = {
       id: `${context.manifest.id}-${attemptNumber}`,
@@ -292,32 +380,35 @@ export class TaskExecutorV2 {
       runtime: "11.0",
       idRanges: [{ from: 70000, to: 70099 }],
     };
-    
+
     await Deno.writeTextFile(
       join(tempDir, "app.json"),
-      JSON.stringify(appJson, null, 2)
+      JSON.stringify(appJson, null, 2),
     );
-    
+
     // Write code file
-    const codeFile = join(tempDir, basename(context.targetFile) || "Generated.al");
+    const codeFile = join(
+      tempDir,
+      basename(context.targetFile) || "Generated.al",
+    );
     await Deno.writeTextFile(codeFile, code);
-    
+
     return tempDir;
   }
-  
+
   /**
-   * Evaluate if an attempt was successful
+   * Evaluate if an attempt was successful (public for parallel execution)
    */
-  private evaluateAttempt(
+  evaluateAttempt(
     context: TaskExecutionContext,
     code: string,
     compilationResult: CompilationResult,
-    testResult?: TestResult
+    testResult?: TestResult,
   ): { success: boolean; score: number; reasons: string[] } {
     const reasons: string[] = [];
     let score = 0;
     let maxScore = 0;
-    
+
     // Check compilation
     maxScore += 50;
     if (context.expectedOutput.validation.mustCompile) {
@@ -329,46 +420,54 @@ export class TaskExecutorV2 {
     } else if (compilationResult.success) {
       score += 25; // Bonus for compiling even if not required
     }
-    
+
     // Check tests
     if (context.expectedOutput.validation.mustPass && testResult) {
       maxScore += 30;
       if (testResult.success) {
         score += 30;
       } else {
-        reasons.push(`Tests failed: ${testResult.failedTests}/${testResult.totalTests}`);
+        reasons.push(
+          `Tests failed: ${testResult.failedTests}/${testResult.totalTests}`,
+        );
       }
     }
-    
+
     // Check required patterns
     if (context.expectedOutput.validation.mustContain) {
       maxScore += 10;
-      const missingPatterns = context.expectedOutput.validation.mustContain.filter(
-        pattern => !code.includes(pattern)
-      );
-      
+      const missingPatterns = context.expectedOutput.validation.mustContain
+        .filter(
+          (pattern) => !code.includes(pattern),
+        );
+
       if (missingPatterns.length === 0) {
         score += 10;
       } else {
-        reasons.push(`Missing required patterns: ${missingPatterns.join(", ")}`);
+        reasons.push(
+          `Missing required patterns: ${missingPatterns.join(", ")}`,
+        );
       }
     }
-    
+
     // Check forbidden patterns
     if (context.expectedOutput.validation.mustNotContain) {
       maxScore += 10;
-      const foundForbidden = context.expectedOutput.validation.mustNotContain.filter(
-        pattern => code.includes(pattern)
-      );
-      
+      const foundForbidden = context.expectedOutput.validation.mustNotContain
+        .filter(
+          (pattern) => code.includes(pattern),
+        );
+
       if (foundForbidden.length === 0) {
         score += 10;
       } else {
-        reasons.push(`Contains forbidden patterns: ${foundForbidden.join(", ")}`);
+        reasons.push(
+          `Contains forbidden patterns: ${foundForbidden.join(", ")}`,
+        );
         score -= 10; // Penalty
       }
     }
-    
+
     // Custom checks
     context.evaluation.customChecks.forEach((check, index) => {
       maxScore += 5;
@@ -378,42 +477,42 @@ export class TaskExecutorV2 {
         reasons.push(`Custom check ${index + 1} failed`);
       }
     });
-    
+
     // Normalize score
     const normalizedScore = maxScore > 0 ? (score / maxScore) * 100 : 0;
     const success = normalizedScore >= 70 && reasons.length === 0;
-    
+
     return { success, score: normalizedScore, reasons };
   }
-  
+
   /**
    * Calculate final score across all attempts
    */
   private calculateFinalScore(attempts: ExecutionAttempt[]): number {
     if (attempts.length === 0) return 0;
-    
-    const successfulAttempt = attempts.find(a => a.success);
+
+    const successfulAttempt = attempts.find((a) => a.success);
     if (!successfulAttempt) {
       // No successful attempt - use best score with penalty
-      const bestScore = Math.max(...attempts.map(a => a.score));
+      const bestScore = Math.max(...attempts.map((a) => a.score));
       return bestScore * 0.5; // 50% penalty for not succeeding
     }
-    
+
     // Success - score based on attempt number
     const attemptPenalty = (successfulAttempt.attemptNumber - 1) * 10;
     return Math.max(0, successfulAttempt.score - attemptPenalty);
   }
-  
+
   /**
    * Truncate error messages for prompt
    */
   private truncateErrors(errors: string, maxLength: number): string {
     if (errors.length <= maxLength) return errors;
-    
+
     const lines = errors.split("\n");
     const truncated: string[] = [];
     let currentLength = 0;
-    
+
     for (const line of lines) {
       if (currentLength + line.length > maxLength) {
         truncated.push("... (truncated)");
@@ -422,59 +521,66 @@ export class TaskExecutorV2 {
       truncated.push(line);
       currentLength += line.length + 1;
     }
-    
+
     return truncated.join("\n");
   }
-  
+
   /**
    * Save execution results
    */
-  private async saveResults(result: TaskExecutionResult, context: TaskExecutionContext): Promise<void> {
-    const outputDir = join(context.outputDir, context.manifest.id, result.executionId);
+  private async saveResults(
+    result: TaskExecutionResult,
+    context: TaskExecutionContext,
+  ): Promise<void> {
+    const outputDir = join(
+      context.outputDir,
+      context.manifest.id,
+      result.executionId,
+    );
     await ensureDir(outputDir);
-    
+
     // Save execution result
     await Deno.writeTextFile(
       join(outputDir, "result.json"),
-      JSON.stringify(result, null, 2)
+      JSON.stringify(result, null, 2),
     );
-    
+
     // Save final code if successful
     if (result.success && result.finalCode) {
       await Deno.writeTextFile(
         join(outputDir, "final_code.al"),
-        result.finalCode
+        result.finalCode,
       );
     }
-    
+
     // Save attempt details
     for (const attempt of result.attempts) {
       const attemptDir = join(outputDir, `attempt_${attempt.attemptNumber}`);
       await ensureDir(attemptDir);
-      
+
       await Deno.writeTextFile(
         join(attemptDir, "prompt.md"),
-        attempt.prompt
+        attempt.prompt,
       );
-      
+
       await Deno.writeTextFile(
         join(attemptDir, "response.md"),
-        attempt.llmResponse.content
+        attempt.llmResponse.content,
       );
-      
+
       await Deno.writeTextFile(
         join(attemptDir, "extracted_code.al"),
-        attempt.extractedCode
+        attempt.extractedCode,
       );
-      
+
       if (attempt.compilationResult) {
         await Deno.writeTextFile(
           join(attemptDir, "compilation.json"),
-          JSON.stringify(attempt.compilationResult, null, 2)
+          JSON.stringify(attempt.compilationResult, null, 2),
         );
       }
     }
-    
+
     console.log(`💾 Results saved to: ${outputDir}`);
   }
 
@@ -486,7 +592,7 @@ export class TaskExecutorV2 {
     provider: string,
     taskId: string,
     attemptNumber: number,
-    maxRetries: number = 2
+    maxRetries: number = 2,
   ): Promise<T> {
     let lastError: Error | undefined;
 
@@ -499,10 +605,12 @@ export class TaskExecutorV2 {
         if (retry < maxRetries && isRetryableError(error)) {
           const delayMs = getRetryDelay(error, 1000 * (retry + 1));
           console.warn(
-            `⚠️  LLM call failed (retry ${retry + 1}/${maxRetries}): ${lastError.message}. ` +
-            `Retrying in ${delayMs}ms...`
+            `⚠️  LLM call failed (retry ${
+              retry + 1
+            }/${maxRetries}): ${lastError.message}. ` +
+              `Retrying in ${delayMs}ms...`,
           );
-          await new Promise(resolve => setTimeout(resolve, delayMs));
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
 
@@ -512,7 +620,7 @@ export class TaskExecutorV2 {
           provider,
           false,
           undefined,
-          { taskId, attemptNumber, originalError: lastError.message }
+          { taskId, attemptNumber, originalError: lastError.message },
         );
       }
     }
@@ -521,7 +629,73 @@ export class TaskExecutorV2 {
     throw new TaskExecutionError(
       `LLM call failed: ${lastError?.message || "Unknown error"}`,
       taskId,
-      attemptNumber
+      attemptNumber,
     );
+  }
+
+  /**
+   * Compile and test code - convenience method for parallel execution
+   * Returns compilation result and optional test result
+   */
+  async compileAndTest(
+    context: TaskExecutionContext,
+    code: string,
+    attemptNumber: number,
+  ): Promise<{
+    compilationResult: CompilationResult;
+    testResult?: TestResult;
+    projectDir: string;
+  }> {
+    // Create temporary project
+    const projectDir = await this.createTempProject(
+      context,
+      code,
+      attemptNumber,
+    );
+    const project = await ALProjectManager.loadProject(projectDir);
+
+    // Compile
+    const containerProvider = ContainerProviderRegistry.create(
+      context.containerProvider,
+    );
+    const compilationResult = await containerProvider.compileProject(
+      context.containerName,
+      project,
+    );
+
+    // Run tests if required and compilation succeeded
+    let testResult: TestResult | undefined;
+    if (compilationResult.success && context.manifest.expected.testApp) {
+      testResult = await containerProvider.runTests(
+        context.containerName,
+        project,
+      );
+    }
+
+    const result: {
+      compilationResult: CompilationResult;
+      testResult?: TestResult;
+      projectDir: string;
+    } = {
+      compilationResult,
+      projectDir,
+    };
+
+    if (testResult !== undefined) {
+      result.testResult = testResult;
+    }
+
+    return result;
+  }
+
+  /**
+   * Clean up temporary project directory
+   */
+  async cleanupProject(projectDir: string): Promise<void> {
+    try {
+      await Deno.remove(projectDir, { recursive: true });
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 }

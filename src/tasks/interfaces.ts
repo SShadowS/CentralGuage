@@ -5,11 +5,19 @@
 
 import type { LLMResponse } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
+import type {
+  CLIPromptOverrides,
+  PromptInjectionConfig,
+} from "../prompts/mod.ts";
 
 /**
  * Task types supported by the system
  */
-export type TaskType = "code_generation" | "code_fix" | "refactoring" | "test_generation";
+export type TaskType =
+  | "code_generation"
+  | "code_fix"
+  | "refactoring"
+  | "test_generation";
 
 /**
  * Task manifest - defines a benchmark task loaded from YAML
@@ -57,6 +65,9 @@ export interface TaskManifest {
     /** Estimated token usage */
     estimatedTokens?: number;
   };
+
+  /** Task-specific prompt injections */
+  prompts?: PromptInjectionConfig;
 }
 
 /**
@@ -66,33 +77,33 @@ export interface TaskManifest {
 export interface TaskExecutionContext {
   // From original manifest
   manifest: TaskManifest;
-  
+
   // Computed/enriched properties
   taskType: TaskType;
   alProjectPath: string;
   targetFile: string;
   instructions: string;
-  
+
   // Execution configuration
   llmProvider: string;
   llmModel: string;
   containerProvider: string;
   containerName: string;
-  
+
   // Template paths (resolved)
   promptTemplatePath: string;
   fixTemplatePath: string;
-  
+
   // Execution parameters
   attemptLimit: number;
   timeout: number;
   temperature: number;
   maxTokens: number;
-  
+
   // Output configuration
   outputDir: string;
   debugMode: boolean;
-  
+
   // Expected outcomes
   expectedOutput: {
     type: "al_code" | "diff" | "test_code";
@@ -103,14 +114,14 @@ export interface TaskExecutionContext {
       mustNotContain?: string[];
     };
   };
-  
+
   // Evaluation criteria
   evaluation: {
     requiredElements: string[];
     forbiddenElements: string[];
     customChecks: Array<(code: string) => boolean>;
   };
-  
+
   // Metadata
   metadata: {
     difficulty: "easy" | "medium" | "hard";
@@ -118,6 +129,9 @@ export interface TaskExecutionContext {
     tags: string[];
     estimatedTokens: number;
   };
+
+  // Prompt injection overrides (from CLI)
+  promptOverrides?: CLIPromptOverrides;
 }
 
 /**
@@ -127,22 +141,22 @@ export interface ExecutionAttempt {
   attemptNumber: number;
   startTime: Date;
   endTime: Date;
-  
+
   // LLM interaction
   prompt: string;
   llmResponse: LLMResponse;
   extractedCode: string;
   codeLanguage: "al" | "diff";
-  
+
   // Compilation/test results
   compilationResult?: CompilationResult;
   testResult?: TestResult;
-  
+
   // Evaluation
   success: boolean;
   score: number;
   failureReasons: string[];
-  
+
   // Metrics
   tokensUsed: number;
   cost: number;
@@ -156,25 +170,25 @@ export interface TaskExecutionResult {
   // Identification
   taskId: string;
   executionId: string;
-  
+
   // Configuration used
   context: TaskExecutionContext;
-  
+
   // Execution details
   attempts: ExecutionAttempt[];
   success: boolean;
   finalCode?: string;
   finalScore: number;
-  
+
   // Aggregate metrics
   totalTokensUsed: number;
   totalCost: number;
   totalDuration: number;
-  
+
   // Success details
   passedAttemptNumber: number; // 0 if never passed
   successRate: number; // 0.0 to 1.0
-  
+
   // Metadata
   executedAt: Date;
   executedBy: string;
@@ -188,22 +202,25 @@ export interface TaskExecutionResult {
 export interface TaskExecutionRequest {
   // Required
   taskManifest: TaskManifest;
-  
+
   // Optional overrides
   llmProvider?: string;
   llmModel?: string;
   containerProvider?: string;
   containerName?: string;
-  
+
   // Execution options
   attemptLimit?: number;
   timeout?: number;
   outputDir?: string;
   debugMode?: boolean;
-  
+
   // LLM parameters
   temperature?: number;
   maxTokens?: number;
+
+  // Prompt injection overrides (from CLI)
+  promptOverrides?: CLIPromptOverrides;
 }
 
 /**

@@ -4,21 +4,21 @@ fix_template: bugfix.md
 max_attempts: 2
 description: >-
   Create a comprehensive interface implementation for a shipping service.
-  
+
   First, define an interface called "Shipping Provider" with ID 70001:
   - CalculateShippingCost(Weight: Decimal; Distance: Decimal; ServiceType: Enum): Decimal
   - EstimateDeliveryTime(SourceAddress: Text; DestinationAddress: Text): Integer
   - CreateShipment(ShipmentDetails: JsonObject): Text - returns tracking number
   - TrackShipment(TrackingNumber: Text): JsonObject - returns status info
   - ValidateAddress(Address: Text): Boolean
-  
+
   Then create a concrete implementation codeunit called "Standard Shipping Provider" with ID 70004 that implements the interface:
   - Include realistic shipping calculations based on weight/distance
   - Implement delivery time estimation with business rules
   - Handle shipment creation with proper validation
   - Provide tracking functionality with status updates
   - Include comprehensive address validation logic
-  
+
   Use proper interface syntax, implements keyword, and include error handling
   for all procedures. Add logging and audit trail functionality.
 expected:

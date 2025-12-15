@@ -11,7 +11,7 @@ description: >-
   - Include proper OData annotations and API versioning (v1.0)
   - Add business logic validation (price must be positive, stock must be non-negative)
   - Include proper captions, publisher info (mycompany), and API group (products)
-  
+
   Use proper API page conventions with DelayedInsert, ODataKeyFields, and appropriate triggers.
   Include OnInsert/OnModify triggers for validation and audit logging.
 expected:

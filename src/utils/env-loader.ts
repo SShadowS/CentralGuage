@@ -5,13 +5,21 @@
 
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
-import { brightBlue, brightGreen, brightYellow, gray, red } from "@std/fmt/colors";
+import {
+  brightBlue,
+  brightGreen,
+  brightYellow,
+  gray,
+  red,
+} from "@std/fmt/colors";
 
 export interface EnvConfig {
   // API Keys
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
   GOOGLE_API_KEY?: string;
+  GEMINI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   AZURE_OPENAI_API_KEY?: string;
   AZURE_OPENAI_ENDPOINT?: string;
   OLLAMA_HOST?: string;
@@ -72,13 +80,17 @@ export class EnvLoader {
       for (const envFile of envFiles) {
         if (await exists(envFile)) {
           try {
-            const fileVars = await load({ envPath: envFile, export: false });
+            const fileVars = await load({ envPath: envFile, export: true });
             loadedFromFile = { ...loadedFromFile, ...fileVars };
             envFileFound = true;
             result.source = ".env";
             console.log(gray(`📁 Loaded environment from ${envFile}`));
           } catch (error) {
-            result.errors.push(`Failed to load ${envFile}: ${error instanceof Error ? error.message : String(error)}`);
+            result.errors.push(
+              `Failed to load ${envFile}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
           }
         }
       }
@@ -90,7 +102,7 @@ export class EnvLoader {
 
       // Get all environment variables (file + system)
       const allEnvVars = envFileFound ? { ...loadedFromFile } : {};
-      
+
       // Add system environment variables
       for (const [key, value] of Object.entries(Deno.env.toObject())) {
         if (!allEnvVars[key]) {
@@ -99,16 +111,27 @@ export class EnvLoader {
       }
 
       // Categorize found variables
-      const apiKeyPrefixes = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "AZURE_OPENAI"];
-      const configPrefixes = ["CENTRALGAUGE_", "OLLAMA_HOST", "LOCAL_LLM_ENDPOINT"];
+      const apiKeyPrefixes = [
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "AZURE_OPENAI",
+      ];
+      const configPrefixes = [
+        "CENTRALGAUGE_",
+        "OLLAMA_HOST",
+        "LOCAL_LLM_ENDPOINT",
+      ];
 
       for (const [key, value] of Object.entries(allEnvVars)) {
         if (value) {
           result.envVarsFound.push(key);
 
-          if (apiKeyPrefixes.some(prefix => key.startsWith(prefix))) {
+          if (apiKeyPrefixes.some((prefix) => key.startsWith(prefix))) {
             result.apiKeysFound.push(key);
-          } else if (configPrefixes.some(prefix => key.startsWith(prefix))) {
+          } else if (configPrefixes.some((prefix) => key.startsWith(prefix))) {
             result.configVarsFound.push(key);
           }
         }
@@ -117,9 +140,12 @@ export class EnvLoader {
       // Store configuration
       this.envConfig = allEnvVars as EnvConfig;
       result.loaded = true;
-
     } catch (error) {
-      result.errors.push(`Environment loading failed: ${error instanceof Error ? error.message : String(error)}`);
+      result.errors.push(
+        `Environment loading failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     this.loadResult = result;
@@ -129,7 +155,10 @@ export class EnvLoader {
   /**
    * Get environment variable with optional fallback
    */
-  static get<T extends string | number>(key: keyof EnvConfig, fallback?: T): T | string | undefined {
+  static get<T extends string | number>(
+    key: keyof EnvConfig,
+    fallback?: T,
+  ): T | string | undefined {
     const value = this.envConfig[key];
     if (value === undefined) {
       return fallback;
@@ -147,16 +176,29 @@ export class EnvLoader {
   /**
    * Check if an API key is available
    */
-  static hasApiKey(provider: "openai" | "anthropic" | "google" | "azure"): boolean {
+  static hasApiKey(
+    provider:
+      | "openai"
+      | "anthropic"
+      | "google"
+      | "gemini"
+      | "openrouter"
+      | "azure",
+  ): boolean {
     switch (provider) {
       case "openai":
         return !!this.envConfig.OPENAI_API_KEY;
       case "anthropic":
         return !!this.envConfig.ANTHROPIC_API_KEY;
       case "google":
-        return !!this.envConfig.GOOGLE_API_KEY;
+      case "gemini":
+        return !!(this.envConfig.GOOGLE_API_KEY ||
+          this.envConfig.GEMINI_API_KEY);
+      case "openrouter":
+        return !!this.envConfig.OPENROUTER_API_KEY;
       case "azure":
-        return !!(this.envConfig.AZURE_OPENAI_API_KEY && this.envConfig.AZURE_OPENAI_ENDPOINT);
+        return !!(this.envConfig.AZURE_OPENAI_API_KEY &&
+          this.envConfig.AZURE_OPENAI_ENDPOINT);
       default:
         return false;
     }
@@ -170,7 +212,8 @@ export class EnvLoader {
 
     if (this.hasApiKey("openai")) providers.push("openai");
     if (this.hasApiKey("anthropic")) providers.push("anthropic");
-    if (this.hasApiKey("google")) providers.push("gemini");
+    if (this.hasApiKey("gemini")) providers.push("gemini");
+    if (this.hasApiKey("openrouter")) providers.push("openrouter");
     if (this.hasApiKey("azure")) providers.push("azure-openai");
 
     return providers;
@@ -179,24 +222,36 @@ export class EnvLoader {
   /**
    * Validate environment configuration
    */
-  static validateEnvironment(): { valid: boolean; warnings: string[]; errors: string[] } {
+  static validateEnvironment(): {
+    valid: boolean;
+    warnings: string[];
+    errors: string[];
+  } {
     const warnings: string[] = [];
     const errors: string[] = [];
 
     // Check for at least one API key
-    const hasAnyApiKey = this.getAvailableProviders().some(p => !["mock", "local"].includes(p));
+    const hasAnyApiKey = this.getAvailableProviders().some((p) =>
+      !["mock", "local"].includes(p)
+    );
     if (!hasAnyApiKey) {
-      warnings.push("No API keys found - only mock and local providers available");
+      warnings.push(
+        "No API keys found - only mock and local providers available",
+      );
     }
 
     // Validate Azure configuration if partially set
     const hasAzureKey = !!this.envConfig.AZURE_OPENAI_API_KEY;
     const hasAzureEndpoint = !!this.envConfig.AZURE_OPENAI_ENDPOINT;
     if (hasAzureKey && !hasAzureEndpoint) {
-      errors.push("AZURE_OPENAI_ENDPOINT required when AZURE_OPENAI_API_KEY is set");
+      errors.push(
+        "AZURE_OPENAI_ENDPOINT required when AZURE_OPENAI_API_KEY is set",
+      );
     }
     if (hasAzureEndpoint && !hasAzureKey) {
-      errors.push("AZURE_OPENAI_API_KEY required when AZURE_OPENAI_ENDPOINT is set");
+      errors.push(
+        "AZURE_OPENAI_API_KEY required when AZURE_OPENAI_ENDPOINT is set",
+      );
     }
 
     // Validate numeric configuration values
@@ -211,7 +266,9 @@ export class EnvLoader {
       if (value) {
         const num = Number(value);
         if (isNaN(num)) {
-          errors.push(`${key} must be a valid number (${description}), got: ${value}`);
+          errors.push(
+            `${key} must be a valid number (${description}), got: ${value}`,
+          );
         }
       }
     }
@@ -233,24 +290,40 @@ export class EnvLoader {
     }
 
     const result = this.loadResult;
-    
+
     // Header
     console.log(`${brightBlue("🌍 Environment Status")}`);
-    console.log(`   Source: ${result.source === ".env" ? brightGreen(".env file") : brightYellow("system")}`);
-    
+    console.log(
+      `   Source: ${
+        result.source === ".env"
+          ? brightGreen(".env file")
+          : brightYellow("system")
+      }`,
+    );
+
     if (showDetails) {
       // API Keys
       if (result.apiKeysFound.length > 0) {
-        console.log(`   ${brightGreen("🔑 API Keys:")} ${result.apiKeysFound.map(key => 
-          key.replace(/_API_KEY$/, "").toLowerCase()
-        ).join(", ")}`);
+        console.log(
+          `   ${brightGreen("🔑 API Keys:")} ${
+            result.apiKeysFound.map((key) =>
+              key.replace(/_API_KEY$/, "").toLowerCase()
+            ).join(", ")
+          }`,
+        );
       } else {
-        console.log(`   ${brightYellow("🔑 API Keys:")} none (mock/local only)`);
+        console.log(
+          `   ${brightYellow("🔑 API Keys:")} none (mock/local only)`,
+        );
       }
 
       // Configuration Variables
       if (result.configVarsFound.length > 0) {
-        console.log(`   ${brightGreen("⚙️  Config:")} ${result.configVarsFound.length} variables`);
+        console.log(
+          `   ${
+            brightGreen("⚙️  Config:")
+          } ${result.configVarsFound.length} variables`,
+        );
         for (const key of result.configVarsFound) {
           const value = this.envConfig[key as keyof EnvConfig];
           if (value) {
@@ -301,6 +374,10 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 # Google Gemini Configuration
 GOOGLE_API_KEY=AIza...
+# Alternative: GEMINI_API_KEY=AIza...
+
+# OpenRouter Configuration (access 400+ models via unified API)
+OPENROUTER_API_KEY=sk-or-...
 
 # Azure OpenAI Configuration
 AZURE_OPENAI_API_KEY=...

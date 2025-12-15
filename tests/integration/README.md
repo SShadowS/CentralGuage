@@ -9,9 +9,11 @@ The integration tests focus on validating that our LLM adapters correctly handle
 ## Test Files
 
 ### `provider-real-responses.test.ts`
+
 Comprehensive integration tests that validate all LLM provider adapters against real API response formats.
 
 **Coverage:**
+
 - **OpenAI**: Response parsing, error handling, token usage calculation
 - **Anthropic**: Message format, content blocks, safety handling
 - **Google Gemini**: Candidate processing, safety ratings, usage metadata
@@ -20,6 +22,7 @@ Comprehensive integration tests that validate all LLM provider adapters against 
 - **Mock Adapter**: Consistent behavior, AL code generation
 
 **Test Fixtures (`../fixtures/provider-responses.ts`):**
+
 - Real API response samples from each provider
 - Error response formats for comprehensive error handling
 - Edge cases and special scenarios (streaming, safety blocks, etc.)
@@ -27,29 +30,33 @@ Comprehensive integration tests that validate all LLM provider adapters against 
 ## Key Features Tested
 
 ### Response Format Validation
-✅ Proper parsing of each provider's unique response structure  
-✅ Token usage extraction and calculation  
-✅ Error response handling with appropriate error messages  
-✅ Content extraction from various response formats  
+
+✅ Proper parsing of each provider's unique response structure\
+✅ Token usage extraction and calculation\
+✅ Error response handling with appropriate error messages\
+✅ Content extraction from various response formats
 
 ### Error Handling
-✅ Network timeouts and connection failures  
-✅ API authentication errors  
-✅ Rate limiting and quota exceeded scenarios  
-✅ Malformed JSON and unexpected response formats  
-✅ Provider-specific errors (deployment not found, content filtering, etc.)  
+
+✅ Network timeouts and connection failures\
+✅ API authentication errors\
+✅ Rate limiting and quota exceeded scenarios\
+✅ Malformed JSON and unexpected response formats\
+✅ Provider-specific errors (deployment not found, content filtering, etc.)
 
 ### Content Validation
-✅ AL code structure validation  
-✅ Security checks for malicious content  
-✅ Unicode and special character handling  
-✅ Large response processing  
+
+✅ AL code structure validation\
+✅ Security checks for malicious content\
+✅ Unicode and special character handling\
+✅ Large response processing
 
 ### Cross-Provider Consistency
-✅ Unified interface across all providers  
-✅ Consistent token usage reporting  
-✅ Standardized error handling  
-✅ Common performance metrics  
+
+✅ Unified interface across all providers\
+✅ Consistent token usage reporting\
+✅ Standardized error handling\
+✅ Common performance metrics
 
 ## Running the Tests
 
@@ -67,6 +74,7 @@ deno test --allow-all tests/integration/ --no-check
 ## Test Results
 
 All integration tests pass successfully, validating:
+
 - ✅ 30 test cases across 6 providers
 - ✅ Real API response format compatibility
 - ✅ Comprehensive error handling
@@ -84,6 +92,7 @@ All integration tests pass successfully, validating:
 ## Maintenance
 
 These tests should be updated when:
+
 - Provider APIs change their response formats
 - New providers are added to CentralGauge
 - New features are added to existing adapters

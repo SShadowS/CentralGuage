@@ -3,7 +3,7 @@
  */
 
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 
 describe("Example Tests", () => {
   describe("Basic Functionality", () => {
@@ -48,8 +48,8 @@ describe("Example Tests", () => {
   });
 
   describe("Async Operations", () => {
-    async function delay(ms: number): Promise<string> {
-      return new Promise(resolve => {
+    function delay(ms: number): Promise<string> {
+      return new Promise((resolve) => {
         setTimeout(() => resolve(`Delayed ${ms}ms`), ms);
       });
     }

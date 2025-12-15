@@ -44,7 +44,7 @@ export interface ContainerProvider {
     containerName: string,
     command: string,
   ): Promise<{ output: string; exitCode: number }>;
-  
+
   // Health checks
   isHealthy(containerName: string): Promise<boolean>;
 }

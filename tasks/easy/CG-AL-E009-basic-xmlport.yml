@@ -7,7 +7,7 @@ description: >-
   The XMLport should export Item data with the following structure:
   - Root element: Items
   - Item element containing: No, Description, Unit Price, Inventory
-  
+
   Configure the XMLport for export only with proper schema structure.
   Use the Item table as the data source and include appropriate field mappings.
   Follow Business Central XMLport conventions and include proper direction and format settings.

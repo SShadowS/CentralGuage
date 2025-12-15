@@ -5,13 +5,13 @@ max_attempts: 2
 description: >-
   Create an integration codeunit called "External Payment Service" with ID 70002 that handles external API communication.
   The codeunit should implement:
-  
+
   - SendPaymentRequest(PaymentData: JsonObject): JsonObject - send payment to external service
   - ValidatePaymentResponse(Response: JsonObject): Boolean - validate API response
   - GetPaymentStatus(TransactionId: Text): JsonObject - check payment status
   - HandlePaymentWebhook(WebhookData: JsonObject) - process incoming webhooks
   - LogPaymentTransaction(TransactionData: JsonObject) - audit logging
-  
+
   Include proper HTTP client usage with error handling, retry logic for failed requests,
   authentication headers, JSON serialization/deserialization, and timeout handling.
   Use HttpClient, JsonToken, JsonObject patterns and include comprehensive error messages.

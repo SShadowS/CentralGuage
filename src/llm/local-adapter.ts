@@ -8,13 +8,14 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import * as colors from "@std/fmt/colors";
 
 export class LocalLLMAdapter implements LLMAdapter {
   readonly name = "local";
   readonly supportedModels = [
     // Ollama models
     "llama3.2:latest",
-    "llama3.1:latest", 
+    "llama3.1:latest",
     "llama3:latest",
     "codellama:latest",
     "codellama:13b",
@@ -25,13 +26,13 @@ export class LocalLLMAdapter implements LLMAdapter {
     "starcoder2:latest",
     // Generic patterns
     "llama",
-    "codellama", 
+    "codellama",
     "mistral",
     "qwen",
     "deepseek",
     "starcoder",
   ];
-  
+
   private config: LLMConfig = {
     provider: "local",
     model: "codellama:latest",
@@ -48,11 +49,15 @@ export class LocalLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(`🤖 [Local LLM] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`);
-    
+    console.log(
+      colors.blue(
+        `[Local LLM] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+      ),
+    );
+
     const response = await this.callLocalLLM(request);
     const extraction = CodeExtractor.extract(response.content, "al");
-    
+
     return {
       code: extraction.code,
       language: "al",
@@ -67,14 +72,20 @@ export class LocalLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(`🤖 [Local LLM] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`);
-    
+    console.log(
+      colors.blue(
+        `[Local LLM] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
+      ),
+    );
+
     const response = await this.callLocalLLM(request);
     const extraction = CodeExtractor.extract(response.content, "diff");
-    
+
     return {
       code: extraction.code,
-      language: extraction.language === "unknown" ? "diff" : extraction.language,
+      language: extraction.language === "unknown"
+        ? "diff"
+        : extraction.language,
       response,
       extractedFromDelimiters: extraction.extractedFromDelimiters,
     };
@@ -82,24 +93,32 @@ export class LocalLLMAdapter implements LLMAdapter {
 
   validateConfig(config: LLMConfig): string[] {
     const errors: string[] = [];
-    
-    if (!config.baseUrl && !Deno.env.get("OLLAMA_HOST") && !Deno.env.get("LOCAL_LLM_ENDPOINT")) {
-      errors.push("Local LLM endpoint is required. Set OLLAMA_HOST, LOCAL_LLM_ENDPOINT, or provide baseUrl in config.");
+
+    if (
+      !config.baseUrl && !Deno.env.get("OLLAMA_HOST") &&
+      !Deno.env.get("LOCAL_LLM_ENDPOINT")
+    ) {
+      errors.push(
+        "Local LLM endpoint is required. Set OLLAMA_HOST, LOCAL_LLM_ENDPOINT, or provide baseUrl in config.",
+      );
     }
-    
+
     if (!config.model) {
       errors.push("Model is required");
     }
     // Local models can be any name - no validation needed
-    
-    if (config.temperature !== undefined && (config.temperature < 0 || config.temperature > 2)) {
+
+    if (
+      config.temperature !== undefined &&
+      (config.temperature < 0 || config.temperature > 2)
+    ) {
       errors.push("Temperature must be between 0 and 2");
     }
-    
+
     if (config.maxTokens !== undefined && config.maxTokens < 1) {
       errors.push("Max tokens must be greater than 0");
     }
-    
+
     return errors;
   }
 
@@ -116,7 +135,7 @@ export class LocalLLMAdapter implements LLMAdapter {
         temperature: 0,
         maxTokens: 5,
       };
-      
+
       await this.callLocalLLM(testRequest);
       return true;
     } catch {
@@ -126,20 +145,20 @@ export class LocalLLMAdapter implements LLMAdapter {
 
   private async callLocalLLM(request: LLMRequest): Promise<LLMResponse> {
     const startTime = Date.now();
-    
+
     // Determine endpoint - try Ollama first, then generic local endpoint
     const endpoint = this.config.baseUrl ||
-                    Deno.env.get("LOCAL_LLM_ENDPOINT") ||
-                    Deno.env.get("OLLAMA_HOST") ||
-                    "http://localhost:11434";
-    
+      Deno.env.get("LOCAL_LLM_ENDPOINT") ||
+      Deno.env.get("OLLAMA_HOST") ||
+      "http://localhost:11434";
+
     // Check if this looks like an Ollama endpoint
     const isOllama = endpoint.includes("11434") || endpoint.includes("ollama");
-    
+
     let url: string;
-    let payload: any;
+    let payload: Record<string, unknown>;
     let headers: Record<string, string>;
-    
+
     if (isOllama) {
       // Use Ollama API format
       url = `${endpoint}/api/generate`;
@@ -153,20 +172,32 @@ export class LocalLLMAdapter implements LLMAdapter {
         },
         stream: false,
       };
+      // Add system prompt if provided (Ollama supports 'system' field)
+      if (request.systemPrompt) {
+        payload.system = request.systemPrompt;
+      }
       headers = {
         "Content-Type": "application/json",
       };
     } else {
       // Use OpenAI-compatible API format
+      // Build messages array with optional system prompt
+      const messages: Array<{ role: string; content: string }> = [];
+      if (request.systemPrompt) {
+        messages.push({
+          role: "system",
+          content: request.systemPrompt,
+        });
+      }
+      messages.push({
+        role: "user",
+        content: request.prompt,
+      });
+
       url = `${endpoint}/v1/chat/completions`;
       payload = {
         model: this.config.model,
-        messages: [
-          {
-            role: "user",
-            content: request.prompt,
-          },
-        ],
+        messages,
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
         max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
         stop: request.stop,
@@ -174,7 +205,7 @@ export class LocalLLMAdapter implements LLMAdapter {
       headers = {
         "Content-Type": "application/json",
       };
-      
+
       // Add API key if provided
       if (this.config.apiKey) {
         headers["Authorization"] = `Bearer ${this.config.apiKey}`;
@@ -202,7 +233,7 @@ export class LocalLLMAdapter implements LLMAdapter {
     if (isOllama) {
       // Parse Ollama response
       content = data.response || "";
-      
+
       // Ollama provides some usage info
       usage = {
         promptTokens: data.prompt_eval_count || 0,
@@ -215,10 +246,10 @@ export class LocalLLMAdapter implements LLMAdapter {
       if (!data.choices || data.choices.length === 0) {
         throw new Error("No response from local LLM API");
       }
-      
+
       const choice = data.choices[0];
       content = choice.message?.content || choice.text || "";
-      
+
       usage = {
         promptTokens: data.usage?.prompt_tokens || 0,
         completionTokens: data.usage?.completion_tokens || 0,

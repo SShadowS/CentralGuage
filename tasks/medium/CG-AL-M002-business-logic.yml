@@ -10,7 +10,7 @@ description: >-
   - ApplyVolumeDiscount(OrderTotal: Decimal; CustomerType: Enum): Decimal - apply tiered discounts
   - ValidateOrderLimits(CustomerNo: Code[20]; OrderAmount: Decimal): Boolean - check credit limits
   - CalculateTaxAmount(NetAmount: Decimal; TaxRate: Decimal): Decimal
-  
+
   Include proper error handling with specific error messages, parameter validation,
   and use of local procedures for code organization. Include logging for audit purposes.
   Follow Business Central patterns for complex business logic with proper Access = Public.

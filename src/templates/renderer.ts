@@ -2,7 +2,14 @@ import { exists } from "@std/fs";
 import { join } from "@std/path";
 
 export interface TemplateContext {
-  [key: string]: string | number | boolean | undefined | null | any[] | Record<string, any>;
+  [key: string]:
+    | string
+    | number
+    | boolean
+    | undefined
+    | null
+    | unknown[]
+    | Record<string, unknown>;
 }
 
 export class TemplateRenderer {
@@ -28,7 +35,10 @@ export class TemplateRenderer {
     return content;
   }
 
-  async render(templateName: string, context: TemplateContext): Promise<string> {
+  async render(
+    templateName: string,
+    context: TemplateContext,
+  ): Promise<string> {
     const template = await this.loadTemplate(templateName);
     return this.renderString(template, context);
   }
@@ -37,7 +47,9 @@ export class TemplateRenderer {
     return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
       const value = context[key];
       if (value === undefined || value === null) {
-        console.warn(`Template variable '${key}' is undefined, leaving placeholder`);
+        console.warn(
+          `Template variable '${key}' is undefined, leaving placeholder`,
+        );
         return match; // Keep the placeholder if variable is missing
       }
       return String(value);
@@ -49,25 +61,36 @@ export class TemplateRenderer {
     let result = template;
 
     // Handle conditionals: {{#if variable}}content{{/if}}
-    result = result.replace(/\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g, (_match, key, content) => {
-      const value = context[key];
-      return value ? content : "";
-    });
+    result = result.replace(
+      /\{\{#if\s+(\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
+      (_match, key, content) => {
+        const value = context[key];
+        return value ? content : "";
+      },
+    );
 
     // Handle inverse conditionals: {{#unless variable}}content{{/unless}}
-    result = result.replace(/\{\{#unless\s+(\w+)\}\}([\s\S]*?)\{\{\/unless\}\}/g, (_match, key, content) => {
-      const value = context[key];
-      return !value ? content : "";
-    });
+    result = result.replace(
+      /\{\{#unless\s+(\w+)\}\}([\s\S]*?)\{\{\/unless\}\}/g,
+      (_match, key, content) => {
+        const value = context[key];
+        return !value ? content : "";
+      },
+    );
 
     // Handle simple loops: {{#each items}}{{.}}{{/each}} - for arrays of strings
-    result = result.replace(/\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g, (_match, key, content) => {
-      const value = context[key];
-      if (Array.isArray(value)) {
-        return value.map(item => content.replace(/\{\{\.\}\}/g, String(item))).join("");
-      }
-      return "";
-    });
+    result = result.replace(
+      /\{\{#each\s+(\w+)\}\}([\s\S]*?)\{\{\/each\}\}/g,
+      (_match, key, content) => {
+        const value = context[key];
+        if (Array.isArray(value)) {
+          return value.map((item) =>
+            content.replace(/\{\{\.\}\}/g, String(item))
+          ).join("");
+        }
+        return "";
+      },
+    );
 
     // Handle basic variable substitution
     result = result.replace(/\{\{(\w+)\}\}/g, (match, key) => {
@@ -96,19 +119,25 @@ export class TemplateRenderer {
     const ifCount = (template.match(/\{\{#if\s+\w+\}\}/g) || []).length;
     const endIfCount = (template.match(/\{\{\/if\}\}/g) || []).length;
     if (ifCount !== endIfCount) {
-      errors.push(`Unmatched {{#if}} blocks: ${ifCount} opening, ${endIfCount} closing`);
+      errors.push(
+        `Unmatched {{#if}} blocks: ${ifCount} opening, ${endIfCount} closing`,
+      );
     }
 
     const unlessCount = (template.match(/\{\{#unless\s+\w+\}\}/g) || []).length;
     const endUnlessCount = (template.match(/\{\{\/unless\}\}/g) || []).length;
     if (unlessCount !== endUnlessCount) {
-      errors.push(`Unmatched {{#unless}} blocks: ${unlessCount} opening, ${endUnlessCount} closing`);
+      errors.push(
+        `Unmatched {{#unless}} blocks: ${unlessCount} opening, ${endUnlessCount} closing`,
+      );
     }
 
     const eachCount = (template.match(/\{\{#each\s+\w+\}\}/g) || []).length;
     const endEachCount = (template.match(/\{\{\/each\}\}/g) || []).length;
     if (eachCount !== endEachCount) {
-      errors.push(`Unmatched {{#each}} blocks: ${eachCount} opening, ${endEachCount} closing`);
+      errors.push(
+        `Unmatched {{#each}} blocks: ${eachCount} opening, ${endEachCount} closing`,
+      );
     }
 
     return errors;
@@ -117,10 +146,10 @@ export class TemplateRenderer {
   // Extract required variables from template
   getRequiredVariables(template: string): string[] {
     const variables = new Set<string>();
-    
+
     // Basic variables
     const basicMatches = template.match(/\{\{(\w+)\}\}/g) || [];
-    basicMatches.forEach(match => {
+    basicMatches.forEach((match) => {
       const variable = match.replace(/[{}]/g, "");
       if (!variable.startsWith("#") && variable !== ".") {
         variables.add(variable);
@@ -128,15 +157,16 @@ export class TemplateRenderer {
     });
 
     // Conditional variables
-    const conditionalMatches = template.match(/\{\{#(if|unless)\s+(\w+)\}\}/g) || [];
-    conditionalMatches.forEach(match => {
+    const conditionalMatches =
+      template.match(/\{\{#(if|unless)\s+(\w+)\}\}/g) || [];
+    conditionalMatches.forEach((match) => {
       const variable = match.replace(/\{\{#(if|unless)\s+(\w+)\}\}/, "$2");
       variables.add(variable);
     });
 
     // Loop variables
     const loopMatches = template.match(/\{\{#each\s+(\w+)\}\}/g) || [];
-    loopMatches.forEach(match => {
+    loopMatches.forEach((match) => {
       const variable = match.replace(/\{\{#each\s+(\w+)\}\}/, "$1");
       variables.add(variable);
     });

@@ -3,11 +3,11 @@ import { join } from "@std/path";
 import { parse } from "@std/yaml";
 
 import type {
-  TaskManifest,
   AttemptResult,
-  TaskExecutionConfig,
   LegacyTaskExecutionResult as TaskExecutionResult,
-  TaskExecutor
+  TaskExecutionConfig,
+  TaskExecutor,
+  TaskManifest,
 } from "./interfaces.ts";
 
 import { LLMAdapterRegistry } from "../llm/registry.ts";
@@ -15,6 +15,13 @@ import { ContainerProviderRegistry } from "../container/registry.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
+import type { LLMAdapter, LLMConfig } from "../llm/types.ts";
+import type { ContainerProvider } from "../container/interface.ts";
+import type {
+  ALProject,
+  CompilationResult,
+  TestResult,
+} from "../container/types.ts";
 
 export class DefaultTaskExecutor implements TaskExecutor {
   private templateRenderer: TemplateRenderer;
@@ -25,7 +32,9 @@ export class DefaultTaskExecutor implements TaskExecutor {
 
   async executeTask(config: TaskExecutionConfig): Promise<TaskExecutionResult> {
     const startTime = Date.now();
-    console.log(`🚀 Executing task: ${config.taskManifest.id} with ${config.llmModel}`);
+    console.log(
+      `🚀 Executing task: ${config.taskManifest.id} with ${config.llmModel}`,
+    );
 
     // Validate configuration
     const validationErrors = await this.validateTask(config.taskManifest);
@@ -36,15 +45,19 @@ export class DefaultTaskExecutor implements TaskExecutor {
     // Initialize adapters with environment-based configuration
     const llmConfig = this.buildLLMConfig(config);
     const llmAdapter = LLMAdapterRegistry.create(config.llmProvider, llmConfig);
-    
+
     // Validate LLM configuration
     const llmValidationErrors = llmAdapter.validateConfig(llmConfig);
     if (llmValidationErrors.length > 0) {
-      throw new Error(`LLM configuration invalid: ${llmValidationErrors.join(", ")}`);
+      throw new Error(
+        `LLM configuration invalid: ${llmValidationErrors.join(", ")}`,
+      );
     }
 
-    const containerProvider = ContainerProviderRegistry.create(config.containerProvider);
-    
+    const containerProvider = ContainerProviderRegistry.create(
+      config.containerProvider,
+    );
+
     // Ensure container is healthy
     if (!await containerProvider.isHealthy(config.containerName)) {
       throw new Error(`Container ${config.containerName} is not healthy`);
@@ -55,11 +68,13 @@ export class DefaultTaskExecutor implements TaskExecutor {
     let passAttempt = 0;
     let totalTokens = 0;
     let totalCost = 0;
-    
+
     // Execute up to maxAttempts
     for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
-      console.log(`📝 Attempt ${attempt}/${config.maxAttempts} for task ${config.taskManifest.id}`);
-      
+      console.log(
+        `📝 Attempt ${attempt}/${config.maxAttempts} for task ${config.taskManifest.id}`,
+      );
+
       try {
         const attemptResult = await this.executeAttempt(
           config,
@@ -68,20 +83,26 @@ export class DefaultTaskExecutor implements TaskExecutor {
           containerProvider,
           attempts[attempt - 2], // Previous attempt (if exists)
         );
-        
+
         attempts.push(attemptResult);
         totalTokens += attemptResult.llmResponse.usage.totalTokens;
         totalCost += attemptResult.llmResponse.usage.estimatedCost || 0;
-        
+
         if (attemptResult.passed && passAttempt === 0) {
           finalResult = "pass";
           passAttempt = attempt;
-          console.log(`✅ Task ${config.taskManifest.id} passed on attempt ${attempt}`);
+          console.log(
+            `✅ Task ${config.taskManifest.id} passed on attempt ${attempt}`,
+          );
           break; // Success! No need to continue
         }
       } catch (error) {
-        console.error(`❌ Attempt ${attempt} failed: ${error instanceof Error ? error.message : String(error)}`);
-        
+        console.error(
+          `❌ Attempt ${attempt} failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+
         // Create a failed attempt result
         attempts.push({
           attempt,
@@ -95,9 +116,18 @@ export class DefaultTaskExecutor implements TaskExecutor {
           generatedCode: "",
           compilationResult: {
             success: false,
-            errors: [{ code: "EXEC_ERROR", message: error instanceof Error ? error.message : String(error), file: "", line: 0, column: 0, severity: "error" }],
+            errors: [{
+              code: "EXEC_ERROR",
+              message: error instanceof Error ? error.message : String(error),
+              file: "",
+              line: 0,
+              column: 0,
+              severity: "error",
+            }],
             warnings: [],
-            output: `Execution error: ${error instanceof Error ? error.message : String(error)}`,
+            output: `Execution error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
             duration: 0,
           },
           passed: false,
@@ -109,7 +139,11 @@ export class DefaultTaskExecutor implements TaskExecutor {
     const totalDuration = Date.now() - startTime;
     const aggregateScore = this.calculateAggregateScore(attempts, passAttempt);
 
-    console.log(`🏁 Task ${config.taskManifest.id} completed: ${finalResult} (attempt ${passAttempt || "none"})`);
+    console.log(
+      `🏁 Task ${config.taskManifest.id} completed: ${finalResult} (attempt ${
+        passAttempt || "none"
+      })`,
+    );
 
     return {
       taskId: config.taskManifest.id,
@@ -132,46 +166,90 @@ export class DefaultTaskExecutor implements TaskExecutor {
   private async executeAttempt(
     config: TaskExecutionConfig,
     attemptNumber: number,
-    llmAdapter: any,
-    containerProvider: any,
+    llmAdapter: LLMAdapter,
+    containerProvider: ContainerProvider,
     previousAttempt?: AttemptResult,
   ): Promise<AttemptResult> {
-    
     // Step 1: Generate prompt from template
-    const prompt = await this.generatePrompt(config, attemptNumber, previousAttempt);
-    
+    const prompt = await this.generatePrompt(
+      config,
+      attemptNumber,
+      previousAttempt,
+    );
+
     // Step 2: Get code from LLM
     const generationResult = attemptNumber === 1
       ? await llmAdapter.generateCode(
-          { prompt, temperature: config.temperature, maxTokens: config.maxTokens },
-          { taskId: config.taskManifest.id, attempt: attemptNumber, description: config.taskManifest.description }
-        )
+        {
+          prompt,
+          temperature: config.temperature,
+          maxTokens: config.maxTokens,
+        },
+        {
+          taskId: config.taskManifest.id,
+          attempt: attemptNumber,
+          description: config.taskManifest.description,
+        },
+      )
       : await llmAdapter.generateFix(
-          previousAttempt!.generatedCode,
-          previousAttempt!.compilationResult.errors.map(e => e.message),
-          { prompt, temperature: config.temperature, maxTokens: config.maxTokens },
-          { taskId: config.taskManifest.id, attempt: attemptNumber, description: config.taskManifest.description }
-        );
+        previousAttempt!.generatedCode,
+        previousAttempt!.compilationResult.errors.map((e) => e.message),
+        {
+          prompt,
+          temperature: config.temperature,
+          maxTokens: config.maxTokens,
+        },
+        {
+          taskId: config.taskManifest.id,
+          attempt: attemptNumber,
+          description: config.taskManifest.description,
+        },
+      );
 
-    console.log(`🎯 Generated ${generationResult.language} code (${generationResult.extractedFromDelimiters ? "from delimiters" : "whole response"})`);
+    console.log(
+      `🎯 Generated ${generationResult.language} code (${
+        generationResult.extractedFromDelimiters
+          ? "from delimiters"
+          : "whole response"
+      })`,
+    );
 
     // Step 3: Create temporary AL project with generated code
-    const tempProject = await this.createTempProject(config, generationResult.code, attemptNumber);
-    
+    const tempProject = await this.createTempProject(
+      config,
+      generationResult.code,
+      attemptNumber,
+    );
+
     // Step 4: Compile the code
     console.log(`🔨 Compiling generated code...`);
-    const compilationResult = await containerProvider.compileProject(config.containerName, tempProject);
-    
+    const compilationResult = await containerProvider.compileProject(
+      config.containerName,
+      tempProject,
+    );
+
     // Step 5: Run tests if compilation succeeded
     let testResult;
     if (compilationResult.success && tempProject.testFiles.length > 0) {
       console.log(`🧪 Running tests...`);
-      testResult = await containerProvider.runTests(config.containerName, tempProject);
+      testResult = await containerProvider.runTests(
+        config.containerName,
+        tempProject,
+      );
     }
 
     // Step 6: Calculate if this attempt passed
-    const passed = this.evaluateSuccess(config.taskManifest, compilationResult, testResult);
-    const score = this.calculateAttemptScore(passed, attemptNumber, compilationResult, testResult);
+    const passed = this.evaluateSuccess(
+      config.taskManifest,
+      compilationResult,
+      testResult,
+    );
+    const score = this.calculateAttemptScore(
+      passed,
+      attemptNumber,
+      compilationResult,
+      testResult,
+    );
 
     return {
       attempt: attemptNumber,
@@ -189,30 +267,35 @@ export class DefaultTaskExecutor implements TaskExecutor {
     attemptNumber: number,
     previousAttempt?: AttemptResult,
   ): Promise<string> {
-    
     if (attemptNumber === 1) {
       // First attempt: use main prompt template
-      return await this.templateRenderer.render(config.taskManifest.prompt_template, {
-        description: config.taskManifest.description,
-        task_id: config.taskManifest.id,
-        attempt: attemptNumber,
-      });
+      return await this.templateRenderer.render(
+        config.taskManifest.prompt_template,
+        {
+          description: config.taskManifest.description,
+          task_id: config.taskManifest.id,
+          attempt: attemptNumber,
+        },
+      );
     } else {
       // Second attempt: use fix template with error feedback
-      const errors = previousAttempt?.compilationResult.errors.map(e => 
+      const errors = previousAttempt?.compilationResult.errors.map((e) =>
         `${e.file}:${e.line} - ${e.message}`
       ).join("\n") || "Unknown compilation errors";
 
       const errorSnippet = this.truncateErrors(errors, 2048);
 
-      return await this.templateRenderer.render(config.taskManifest.fix_template, {
-        description: config.taskManifest.description,
-        task_id: config.taskManifest.id,
-        attempt: attemptNumber,
-        error_snippet: errorSnippet,
-        previous_code: previousAttempt?.generatedCode || "",
-        errors: errors,
-      });
+      return await this.templateRenderer.render(
+        config.taskManifest.fix_template,
+        {
+          description: config.taskManifest.description,
+          task_id: config.taskManifest.id,
+          attempt: attemptNumber,
+          error_snippet: errorSnippet,
+          previous_code: previousAttempt?.generatedCode || "",
+          errors: errors,
+        },
+      );
     }
   }
 
@@ -220,9 +303,13 @@ export class DefaultTaskExecutor implements TaskExecutor {
     config: TaskExecutionConfig,
     generatedCode: string,
     attemptNumber: number,
-  ): Promise<any> {
-    const tempDir = join(config.outputDir, "temp", `${config.taskManifest.id}_attempt_${attemptNumber}`);
-    
+  ): Promise<ALProject> {
+    const tempDir = join(
+      config.outputDir,
+      "temp",
+      `${config.taskManifest.id}_attempt_${attemptNumber}`,
+    );
+
     // Create temporary project
     await ALProjectManager.createProject(tempDir, {
       id: "12345678-1234-1234-1234-123456789999",
@@ -238,15 +325,15 @@ export class DefaultTaskExecutor implements TaskExecutor {
     const codeFile = join(tempDir, "GeneratedCode.al");
     const cleanedCode = CodeExtractor.cleanCode(generatedCode, "al");
     await Deno.writeTextFile(codeFile, cleanedCode);
-    
+
     // Reload project to include the generated file
     return await ALProjectManager.loadProject(tempDir);
   }
 
   private evaluateSuccess(
     manifest: TaskManifest,
-    compilationResult: any,
-    testResult?: any,
+    compilationResult: CompilationResult,
+    testResult?: TestResult,
   ): boolean {
     // Task passes if compilation succeeds and expected conditions are met
     if (!compilationResult.success) {
@@ -266,7 +353,7 @@ export class DefaultTaskExecutor implements TaskExecutor {
     return true;
   }
 
-  private buildLLMConfig(config: TaskExecutionConfig): any {
+  private buildLLMConfig(config: TaskExecutionConfig): LLMConfig {
     const baseConfig = {
       provider: config.llmProvider,
       model: config.llmModel,
@@ -282,37 +369,40 @@ export class DefaultTaskExecutor implements TaskExecutor {
           apiKey: Deno.env.get("OPENAI_API_KEY"),
           baseUrl: Deno.env.get("OPENAI_BASE_URL"),
         };
-        
+
       case "anthropic":
         return {
           ...baseConfig,
           apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
           baseUrl: Deno.env.get("ANTHROPIC_BASE_URL"),
         };
-        
+
       case "gemini":
         return {
           ...baseConfig,
-          apiKey: Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY"),
+          apiKey: Deno.env.get("GOOGLE_API_KEY") ||
+            Deno.env.get("GEMINI_API_KEY"),
           baseUrl: Deno.env.get("GEMINI_BASE_URL"),
         };
-        
+
       case "azure-openai":
         return {
           ...baseConfig,
           apiKey: Deno.env.get("AZURE_OPENAI_API_KEY"),
           baseUrl: Deno.env.get("AZURE_OPENAI_ENDPOINT"),
-          deploymentName: Deno.env.get("AZURE_OPENAI_DEPLOYMENT_NAME") || config.llmModel,
+          deploymentName: Deno.env.get("AZURE_OPENAI_DEPLOYMENT_NAME") ||
+            config.llmModel,
           apiVersion: Deno.env.get("AZURE_OPENAI_API_VERSION"),
         };
-        
+
       case "local":
         return {
           ...baseConfig,
-          baseUrl: Deno.env.get("LOCAL_LLM_ENDPOINT") || Deno.env.get("OLLAMA_HOST"),
+          baseUrl: Deno.env.get("LOCAL_LLM_ENDPOINT") ||
+            Deno.env.get("OLLAMA_HOST"),
           apiKey: Deno.env.get("LOCAL_LLM_API_KEY"), // For secured local endpoints
         };
-        
+
       default:
         return baseConfig;
     }
@@ -321,33 +411,36 @@ export class DefaultTaskExecutor implements TaskExecutor {
   private calculateAttemptScore(
     passed: boolean,
     attemptNumber: number,
-    compilationResult: any,
-    testResult?: any,
+    compilationResult: CompilationResult,
+    testResult?: TestResult,
   ): number {
     if (!passed) return 0;
-    
+
     // Base score for passing
     let score = 1.0;
-    
+
     // Penalty for requiring multiple attempts
     if (attemptNumber > 1) {
       score *= 0.75; // 25% penalty for second attempt
     }
-    
+
     // Bonus for clean compilation (no warnings)
     if (compilationResult.warnings.length === 0) {
       score *= 1.1;
     }
-    
+
     // Bonus for all tests passing with good performance
     if (testResult && testResult.success && testResult.failedTests === 0) {
       score *= 1.1;
     }
-    
+
     return Math.min(score, 1.0); // Cap at 1.0
   }
 
-  private calculateAggregateScore(attempts: AttemptResult[], passAttempt: number): number {
+  private calculateAggregateScore(
+    attempts: AttemptResult[],
+    passAttempt: number,
+  ): number {
     if (passAttempt === 0) return 0; // Never passed
 
     const passingAttempt = attempts[passAttempt - 1];
@@ -356,48 +449,50 @@ export class DefaultTaskExecutor implements TaskExecutor {
 
   private truncateErrors(errors: string, maxLength: number): string {
     if (errors.length <= maxLength) return errors;
-    
+
     return errors.substring(0, maxLength - 3) + "...";
   }
 
   async validateTask(manifest: TaskManifest): Promise<string[]> {
     const errors: string[] = [];
-    
+
     // Check required fields
     if (!manifest.id) errors.push("Task ID is required");
     if (!manifest.description) errors.push("Task description is required");
     if (!manifest.prompt_template) errors.push("Prompt template is required");
     if (!manifest.fix_template) errors.push("Fix template is required");
-    
+
     // Check templates exist
     try {
       await this.templateRenderer.loadTemplate(manifest.prompt_template);
     } catch {
       errors.push(`Prompt template not found: ${manifest.prompt_template}`);
     }
-    
+
     try {
       await this.templateRenderer.loadTemplate(manifest.fix_template);
     } catch {
       errors.push(`Fix template not found: ${manifest.fix_template}`);
     }
-    
+
     // Validate max attempts
     if (manifest.max_attempts < 1 || manifest.max_attempts > 5) {
       errors.push("Max attempts must be between 1 and 5");
     }
-    
+
     return errors;
   }
 }
 
-export async function loadTaskManifest(manifestPath: string): Promise<TaskManifest> {
+export async function loadTaskManifest(
+  manifestPath: string,
+): Promise<TaskManifest> {
   if (!await exists(manifestPath)) {
     throw new Error(`Task manifest not found: ${manifestPath}`);
   }
-  
+
   const content = await Deno.readTextFile(manifestPath);
   const manifest = parse(content) as TaskManifest;
-  
+
   return manifest;
 }

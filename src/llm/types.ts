@@ -9,10 +9,17 @@ export interface LLMConfig {
   // Azure OpenAI specific
   deploymentName?: string;
   apiVersion?: string;
+  // OpenRouter specific
+  siteUrl?: string;
+  siteName?: string;
+  // Extended thinking (Claude 4.5+)
+  thinkingBudget?: number;
 }
 
 export interface LLMRequest {
   prompt: string;
+  /** System prompt - sent as separate system role message (if provider supports it) */
+  systemPrompt?: string;
   temperature?: number;
   maxTokens?: number;
   stop?: string[];
@@ -52,16 +59,16 @@ export interface CodeGenerationResult {
 export interface LLMAdapter {
   readonly name: string;
   readonly supportedModels: string[];
-  
+
   // Configuration
   configure(config: LLMConfig): void;
-  
+
   // Code generation
   generateCode(
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult>;
-  
+
   // Fix generation (for second attempt)
   generateFix(
     originalCode: string,
@@ -69,7 +76,7 @@ export interface LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult>;
-  
+
   // Utility methods
   validateConfig(config: LLMConfig): string[]; // Returns validation errors
   estimateCost(promptTokens: number, completionTokens: number): number;

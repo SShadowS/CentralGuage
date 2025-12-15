@@ -8,7 +8,7 @@ description: >-
   - Subscribes to the OnAfterInsert event of the Item table
   - Updates a custom log or displays a message when a new item is created
   - Includes proper EventSubscriber attributes
-  
+
   The codeunit should have Access = Internal and include proper event subscriber syntax.
   Use appropriate procedure naming and ensure the event subscription follows Business Central patterns.
 expected:

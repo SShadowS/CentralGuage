@@ -1,29 +1,33 @@
-# CentralGauge Configuration File
-# Place this file as .centralgauge.yml in your project root or home directory
+# CentralGauge Configuration
+# Configuration for Business Central AL code generation benchmark
 
 # Default models for different scenarios
 defaultModels:
-  benchmark: [sonnet, gpt-4o]      # Models for production benchmarks
-  development: [mock]              # Models for development/testing
-  comparison: [flagship]           # Models for side-by-side comparison
+  benchmark: [sonnet, gpt-4o] # Models for production benchmarks
+  development: [mock] # Models for development/testing
+  comparison: [claude-4.5, gpt-5] # Flagship models for comparison
 
 # LLM provider settings
 llm:
-  temperature: 0.1                 # Lower = more deterministic
-  maxTokens: 4000                  # Maximum response length
-  timeout: 30000                   # Request timeout in milliseconds
+  temperature: 0.1 # Lower = more deterministic
+  maxTokens: 4000 # Maximum response length
+  timeout: 60000 # Request timeout in milliseconds (60s for complex tasks)
 
 # Benchmark execution settings
 benchmark:
-  attempts: 2                      # Number of attempts per task
-  outputDir: results               # Directory for benchmark results
-  templateDir: templates           # Directory for prompt templates
+  attempts: 2 # Number of attempts per task
+  outputDir: results # Directory for benchmark results
+  templateDir: templates # Directory for prompt templates
 
-# Container settings
+# Container settings - configured for Cronus27
 container:
-  provider: mock                   # Container provider (mock, bc-container)
-  bcVersion: "24.0"               # Business Central version
-  memoryLimit: 8G                  # Container memory limit
+  provider: bccontainer # Use real BC container (bccontainer, docker, mock)
+  name: Cronus27 # Container name
+  bcVersion: "27.0" # Business Central version
+  memoryLimit: 8G # Container memory limit
+  credentials:
+    username: sshadows # Container authentication username
+    password: "1234" # Container authentication password
 
 # Environment variable overrides (optional)
 # These will be set during execution

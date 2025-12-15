@@ -6,10 +6,10 @@ description: >-
   Create a simple AL enum called "Priority Level" with ID 70000.
   The enum should have the following values:
   - Low (value 0)
-  - Medium (value 1) 
+  - Medium (value 1)
   - High (value 2)
   - Critical (value 3)
-  
+
   Include proper captions for each value.
   Follow Business Central enum conventions and ensure the enum can be used as a field type.
 expected:

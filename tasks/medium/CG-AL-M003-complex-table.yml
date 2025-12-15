@@ -11,13 +11,13 @@ description: >-
   - Contract Value (Decimal with minimum value validation)
   - Status (Option: Draft, Active, Suspended, Terminated)
   - Payment Terms (Code[10] with TableRelation)
-  
+
   Include complex validation in triggers:
   - OnValidate for dates (End Date must be after Start Date)
   - OnValidate for Contract Value (must be positive, warn if over threshold)
   - OnInsert trigger to auto-generate Contract No.
   - OnDelete trigger to prevent deletion of Active contracts
-  
+
   Include proper captions, data classification, and field validation patterns.
 expected:
   compile: true

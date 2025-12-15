@@ -9,12 +9,12 @@
 // Task Types (from src/tasks/interfaces.ts)
 // =============================================================================
 export type {
-  TaskManifest,
-  TaskType,
+  ExecutionAttempt,
   TaskExecutionContext,
   TaskExecutionRequest,
   TaskExecutionResult,
-  ExecutionAttempt,
+  TaskManifest,
+  TaskType,
   TaskValidationResult,
 } from "../src/tasks/interfaces.ts";
 
@@ -22,27 +22,27 @@ export type {
 // LLM Types (from src/llm/types.ts)
 // =============================================================================
 export type {
+  CodeGenerationResult,
+  GenerationContext,
   LLMAdapter,
   LLMConfig,
   LLMRequest,
   LLMResponse,
   TokenUsage,
-  GenerationContext,
-  CodeGenerationResult,
 } from "../src/llm/types.ts";
 
 // =============================================================================
 // Container Types (from src/container/types.ts)
 // =============================================================================
 export type {
-  ContainerConfig,
-  CompilationResult,
-  CompilationError,
-  CompilationWarning,
-  TestResult,
-  TestCaseResult,
-  ContainerStatus,
   ALProject,
+  CompilationError,
+  CompilationResult,
+  CompilationWarning,
+  ContainerConfig,
+  ContainerStatus,
+  TestCaseResult,
+  TestResult,
 } from "../src/container/types.ts";
 
 // =============================================================================
@@ -95,9 +95,9 @@ export interface BenchmarkOptions {
 // Legacy Executor Types (for backward compatibility with DefaultTaskExecutor)
 // =============================================================================
 export type {
-  TaskExecutionConfig,
-  BenchmarkProgress,
   AttemptResult as LegacyAttemptResult,
+  BenchmarkProgress,
   LegacyTaskExecutionResult,
+  TaskExecutionConfig,
   TaskExecutor,
 } from "../src/tasks/interfaces.ts";

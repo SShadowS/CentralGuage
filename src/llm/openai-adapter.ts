@@ -1,3 +1,4 @@
+import OpenAI from "@openai/openai";
 import type {
   CodeGenerationResult,
   GenerationContext,
@@ -13,13 +14,25 @@ import { DebugLogger } from "../utils/debug-logger.ts";
 export class OpenAIAdapter implements LLMAdapter {
   readonly name = "openai";
   readonly supportedModels = [
+    // 2025 GPT-5 models
+    "gpt-5.1",
+    "gpt-5.2",
+    "gpt-5-pro",
+    "gpt-5.1-codex-mini",
+    // GPT-4 models
     "gpt-4o",
-    "gpt-4o-mini", 
+    "gpt-4o-mini",
     "gpt-4-turbo",
     "gpt-4",
+    // Reasoning models
+    "o1-preview",
+    "o1-mini",
+    "o3-high",
+    "o3-mini",
+    // Legacy
     "gpt-3.5-turbo",
   ];
-  
+
   private config: LLMConfig = {
     provider: "openai",
     model: "gpt-4o",
@@ -28,40 +41,49 @@ export class OpenAIAdapter implements LLMAdapter {
     timeout: 30000,
   };
 
+  private client: OpenAI | null = null;
+
   configure(config: LLMConfig): void {
     this.config = { ...this.config, ...config };
+    this.client = new OpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseUrl,
+      timeout: config.timeout,
+    });
   }
 
   async generateCode(
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(`🤖 [OpenAI] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`);
-    
-    let rawResponse: any;
+    console.log(
+      `[OpenAI] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+    );
+
+    let rawResponse: unknown;
     let response: LLMResponse;
-    
+
     try {
-      const result = await this.callOpenAI(request, true); // Request raw response for debugging
-      if (typeof result === 'object' && 'response' in result) {
-        response = result.response;
-        rawResponse = result.rawResponse;
-      } else {
-        response = result;
-        rawResponse = undefined;
-      }
+      const result = await this.callOpenAI(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
     } catch (error) {
-      // Log error to debug if enabled
       const debugLogger = DebugLogger.getInstance();
       if (debugLogger) {
-        await debugLogger.logError("openai", "generateCode", request, context, error as Error, rawResponse);
+        await debugLogger.logError(
+          "openai",
+          "generateCode",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
       }
       throw error;
     }
-    
+
     const extraction = CodeExtractor.extract(response.content, "al");
-    
-    // Log successful interaction to debug if enabled
+
     const debugLogger = DebugLogger.getInstance();
     if (debugLogger) {
       await debugLogger.logInteraction(
@@ -73,10 +95,10 @@ export class OpenAIAdapter implements LLMAdapter {
         extraction.code,
         extraction.extractedFromDelimiters,
         "al",
-        rawResponse
+        rawResponse,
       );
     }
-    
+
     return {
       code: extraction.code,
       language: "al",
@@ -91,32 +113,34 @@ export class OpenAIAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(`🤖 [OpenAI] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`);
-    
-    let rawResponse: any;
+    console.log(
+      `[OpenAI] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
+    );
+
+    let rawResponse: unknown;
     let response: LLMResponse;
-    
+
     try {
-      const result = await this.callOpenAI(request, true); // Request raw response for debugging
-      if (typeof result === 'object' && 'response' in result) {
-        response = result.response;
-        rawResponse = result.rawResponse;
-      } else {
-        response = result;
-        rawResponse = undefined;
-      }
+      const result = await this.callOpenAI(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
     } catch (error) {
-      // Log error to debug if enabled
       const debugLogger = DebugLogger.getInstance();
       if (debugLogger) {
-        await debugLogger.logError("openai", "generateFix", request, context, error as Error, rawResponse);
+        await debugLogger.logError(
+          "openai",
+          "generateFix",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
       }
       throw error;
     }
-    
+
     const extraction = CodeExtractor.extract(response.content, "diff");
-    
-    // Log successful interaction to debug if enabled
+
     const debugLogger = DebugLogger.getInstance();
     if (debugLogger) {
       await debugLogger.logInteraction(
@@ -128,13 +152,15 @@ export class OpenAIAdapter implements LLMAdapter {
         extraction.code,
         extraction.extractedFromDelimiters,
         extraction.language === "unknown" ? "diff" : extraction.language,
-        rawResponse
+        rawResponse,
       );
     }
-    
+
     return {
       code: extraction.code,
-      language: extraction.language === "unknown" ? "diff" : extraction.language,
+      language: extraction.language === "unknown"
+        ? "diff"
+        : extraction.language,
       response,
       extractedFromDelimiters: extraction.extractedFromDelimiters,
     };
@@ -142,65 +168,99 @@ export class OpenAIAdapter implements LLMAdapter {
 
   validateConfig(config: LLMConfig): string[] {
     const errors: string[] = [];
-    
+
     if (!config.apiKey) {
       errors.push("API key is required for OpenAI");
     }
-    
+
     if (!config.model) {
       errors.push("Model is required");
-    } else if (!this.supportedModels.includes(config.model) && !this.isCustomModel(config.model)) {
-      console.warn(`⚠️  Custom/unknown model: ${config.model}. Known models: ${this.supportedModels.join(", ")}`);
+    } else if (
+      !this.supportedModels.includes(config.model) &&
+      !this.isCustomModel(config.model)
+    ) {
+      console.warn(
+        `Custom/unknown model: ${config.model}. Known models: ${
+          this.supportedModels.join(", ")
+        }`,
+      );
     }
-    
-    if (config.temperature !== undefined && (config.temperature < 0 || config.temperature > 2)) {
+
+    if (
+      config.temperature !== undefined &&
+      (config.temperature < 0 || config.temperature > 2)
+    ) {
       errors.push("Temperature must be between 0 and 2");
     }
-    
+
     if (config.maxTokens !== undefined && config.maxTokens < 1) {
       errors.push("Max tokens must be greater than 0");
     }
-    
+
     return errors;
   }
-  
+
   private isCustomModel(model: string): boolean {
-    // Allow custom model names that follow OpenAI patterns
-    return model.startsWith("gpt-") || 
-           model.startsWith("o1-") || 
-           model.startsWith("o3-") ||
-           model.includes("turbo") ||
-           model.includes("high") ||  // For reasoning modes
-           model.includes("low") ||
-           model.includes("medium");
+    return (
+      model.startsWith("gpt-") ||
+      model.startsWith("o1-") ||
+      model.startsWith("o3-") ||
+      model.includes("turbo") ||
+      model.includes("high") ||
+      model.includes("low") ||
+      model.includes("medium") ||
+      model.includes("codex")
+    );
+  }
+
+  /**
+   * Check if the model uses max_completion_tokens instead of max_tokens
+   * GPT-5 series and reasoning models (o1, o3) use the new parameter
+   */
+  private usesMaxCompletionTokens(model: string): boolean {
+    return (
+      model.startsWith("gpt-5") ||
+      model.startsWith("o1") ||
+      model.startsWith("o3")
+    );
   }
 
   estimateCost(promptTokens: number, completionTokens: number): number {
-    // Rough cost estimation for OpenAI models (as of 2024)
     const modelCosts: Record<string, { input: number; output: number }> = {
+      // 2025 GPT-5 pricing (estimated)
+      "gpt-5.1": { input: 0.01, output: 0.03 },
+      "gpt-5.2": { input: 0.015, output: 0.045 },
+      "gpt-5-pro": { input: 0.03, output: 0.09 },
+      "gpt-5.1-codex-mini": { input: 0.003, output: 0.012 },
+      // GPT-4 pricing
       "gpt-4o": { input: 0.0025, output: 0.01 },
       "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
       "gpt-4-turbo": { input: 0.01, output: 0.03 },
       "gpt-4": { input: 0.03, output: 0.06 },
+      // Reasoning models
+      "o1-preview": { input: 0.015, output: 0.06 },
+      "o1-mini": { input: 0.003, output: 0.012 },
+      "o3-high": { input: 0.02, output: 0.08 },
+      "o3-mini": { input: 0.005, output: 0.02 },
+      // Legacy
       "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
     };
-    
-    const costs = modelCosts[this.config.model] || modelCosts["gpt-4o"];
+
+    const costs = modelCosts[this.config.model] ?? modelCosts["gpt-4o"];
     const inputCost = (promptTokens / 1000) * costs!.input;
     const outputCost = (completionTokens / 1000) * costs!.output;
-    
+
     return inputCost + outputCost;
   }
 
   async isHealthy(): Promise<boolean> {
     try {
-      // Simple health check with minimal request
       const testRequest: LLMRequest = {
         prompt: "Say 'OK' if you can respond.",
         temperature: 0,
         maxTokens: 5,
       };
-      
+
       await this.callOpenAI(testRequest);
       return true;
     } catch {
@@ -208,80 +268,82 @@ export class OpenAIAdapter implements LLMAdapter {
     }
   }
 
-  private async callOpenAI(request: LLMRequest, includeRaw = false): Promise<LLMResponse | { response: LLMResponse; rawResponse: any }> {
+  private async callOpenAI(
+    request: LLMRequest,
+    includeRaw = false,
+  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
-    
-    if (!this.config.apiKey) {
-      throw new Error("OpenAI API key not configured");
+
+    if (!this.client) {
+      if (!this.config.apiKey) {
+        throw new Error(
+          "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
+        );
+      }
+      this.client = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl,
+        timeout: this.config.timeout,
+      });
     }
 
-    const url = this.config.baseUrl || "https://api.openai.com/v1/chat/completions";
-    
-    const payload = {
-      model: this.config.model,
-      messages: [
-        {
-          role: "user",
-          content: request.prompt,
-        },
-      ],
-      temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
-      stop: request.stop,
-    };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(this.config.timeout || 30000),
+    // Build messages array with optional system prompt
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (request.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: request.systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: request.prompt,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${errorText}`);
-    }
+    // Newer OpenAI models (GPT-5, o1, o3) use max_completion_tokens instead of max_tokens
+    const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
+    const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
 
-    const data = await response.json();
+    const completion = await this.client.chat.completions.create({
+      model: this.config.model,
+      messages,
+      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      ...(usesNewTokenParam
+        ? { max_completion_tokens: maxTokensValue }
+        : { max_tokens: maxTokensValue }),
+      ...(request.stop ? { stop: request.stop } : {}),
+    });
+
     const duration = Date.now() - startTime;
+    const choice = completion.choices[0];
 
-    if (!data.choices || data.choices.length === 0) {
-      throw new Error("No response from OpenAI API");
-    }
-
-    const choice = data.choices[0];
     const usage: TokenUsage = {
-      promptTokens: data.usage?.prompt_tokens || 0,
-      completionTokens: data.usage?.completion_tokens || 0,
-      totalTokens: data.usage?.total_tokens || 0,
+      promptTokens: completion.usage?.prompt_tokens ?? 0,
+      completionTokens: completion.usage?.completion_tokens ?? 0,
+      totalTokens: completion.usage?.total_tokens ?? 0,
       estimatedCost: this.estimateCost(
-        data.usage?.prompt_tokens || 0,
-        data.usage?.completion_tokens || 0,
+        completion.usage?.prompt_tokens ?? 0,
+        completion.usage?.completion_tokens ?? 0,
       ),
     };
 
     const llmResponse: LLMResponse = {
-      content: choice.message?.content || "",
+      content: choice?.message?.content ?? "",
       model: this.config.model,
       usage,
       duration,
-      finishReason: this.mapFinishReason(choice.finish_reason),
+      finishReason: this.mapFinishReason(choice?.finish_reason),
     };
 
-    if (includeRaw) {
-      return {
-        response: llmResponse,
-        rawResponse: data,
-      };
-    }
-
-    return llmResponse;
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? completion : undefined,
+    };
   }
 
-  private mapFinishReason(reason: string | undefined): "stop" | "length" | "content_filter" | "error" {
+  private mapFinishReason(
+    reason: string | undefined | null,
+  ): "stop" | "length" | "content_filter" | "error" {
     switch (reason) {
       case "stop":
         return "stop";

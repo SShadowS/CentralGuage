@@ -8,18 +8,19 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import * as colors from "@std/fmt/colors";
 
 export class MockLLMAdapter implements LLMAdapter {
   readonly name = "mock";
   readonly supportedModels = ["mock-gpt-4", "mock-claude-3", "mock-local"];
-  
+
   private config: LLMConfig = {
     provider: "mock",
     model: "mock-gpt-4",
     temperature: 0.1,
     maxTokens: 4000,
   };
-  
+
   private readonly codeTemplates = {
     simpleTable: `table 70000 "Test Table"
 {
@@ -136,15 +137,19 @@ export class MockLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(`🤖 [Mock LLM] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`);
-    
+    console.log(
+      colors.magenta(
+        `[Mock LLM] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+      ),
+    );
+
     await this.simulateDelay(1500);
-    
+
     const code = this.generateMockCode(request.prompt, context);
     const response = this.createMockResponse(code, request);
-    
+
     const extraction = CodeExtractor.extract(code, "al");
-    
+
     return {
       code: extraction.code,
       language: "al",
@@ -159,18 +164,24 @@ export class MockLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(`🤖 [Mock LLM] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`);
-    
+    console.log(
+      colors.magenta(
+        `[Mock LLM] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
+      ),
+    );
+
     await this.simulateDelay(1200);
-    
+
     const fixedCode = this.generateMockFix(originalCode, errors);
     const response = this.createMockResponse(fixedCode, request);
-    
+
     const extraction = CodeExtractor.extract(fixedCode, "diff");
-    
+
     return {
       code: extraction.code,
-      language: extraction.language === "unknown" ? "diff" : extraction.language,
+      language: extraction.language === "unknown"
+        ? "diff"
+        : extraction.language,
       response,
       extractedFromDelimiters: extraction.extractedFromDelimiters,
     };
@@ -178,21 +189,28 @@ export class MockLLMAdapter implements LLMAdapter {
 
   validateConfig(config: LLMConfig): string[] {
     const errors: string[] = [];
-    
+
     if (!config.model) {
       errors.push("Model is required");
     } else if (!this.supportedModels.includes(config.model)) {
-      errors.push(`Unsupported model: ${config.model}. Supported: ${this.supportedModels.join(", ")}`);
+      errors.push(
+        `Unsupported model: ${config.model}. Supported: ${
+          this.supportedModels.join(", ")
+        }`,
+      );
     }
-    
-    if (config.temperature !== undefined && (config.temperature < 0 || config.temperature > 2)) {
+
+    if (
+      config.temperature !== undefined &&
+      (config.temperature < 0 || config.temperature > 2)
+    ) {
       errors.push("Temperature must be between 0 and 2");
     }
-    
+
     if (config.maxTokens !== undefined && config.maxTokens < 1) {
       errors.push("maxTokens must be greater than 0");
     }
-    
+
     return errors;
   }
 
@@ -201,57 +219,68 @@ export class MockLLMAdapter implements LLMAdapter {
     return 0;
   }
 
-  async isHealthy(): Promise<boolean> {
-    return true;
+  isHealthy(): Promise<boolean> {
+    return Promise.resolve(true);
   }
 
   private generateMockCode(prompt: string, context: GenerationContext): string {
     const lowerPrompt = prompt.toLowerCase();
-    
+
     // Determine what type of AL object to generate based on prompt
     if (lowerPrompt.includes("table")) {
       return this.wrapInBeginCode(this.codeTemplates.simpleTable);
     } else if (lowerPrompt.includes("api") || lowerPrompt.includes("page")) {
       return this.wrapInBeginCode(this.codeTemplates.apiPage);
-    } else if (lowerPrompt.includes("extension") || lowerPrompt.includes("extend")) {
+    } else if (
+      lowerPrompt.includes("extension") || lowerPrompt.includes("extend")
+    ) {
       return this.wrapInBeginCode(this.codeTemplates.tableExtension);
     } else {
       // Default to simple codeunit with potential intentional errors
       let code = this.codeTemplates.simpleCodeunit;
-      
-      // Sometimes introduce errors to test the fix flow  
+
+      // Sometimes introduce errors to test the fix flow
       if (context.attempt === 1 && Math.random() < 0.3) {
         code = this.introduceErrors(code);
       }
-      
+
       return this.wrapInBeginCode(code);
     }
   }
 
   private generateMockFix(_originalCode: string, errors: string[]): string {
     console.log(`🔧 [Mock LLM] Attempting to fix errors: ${errors.join(", ")}`);
-    
+
     // Instead of generating a diff, generate the fixed AL code directly
     let fixedCode = this.codeTemplates.simpleCodeunit;
-    
+
     // Address specific error patterns by ensuring the code is correct
     for (const error of errors) {
       if (error.includes("Field identifier must be enclosed in quotes")) {
         // Ensure quotes are present
         fixedCode = fixedCode.replace(/Item\.Unit Cost/g, 'Item."Unit Cost"');
-      } 
+      }
       if (error.includes("Missing semicolon")) {
         // Ensure semicolons are present
-        fixedCode = fixedCode.replace(/exit\(TotalValue\)(?!;)/g, 'exit(TotalValue);');
-      } 
+        fixedCode = fixedCode.replace(
+          /exit\(TotalValue\)(?!;)/g,
+          "exit(TotalValue);",
+        );
+      }
       if (error.includes("Missing 'if' keyword")) {
         // Ensure if keyword is present
-        fixedCode = fixedCode.replace(/(?<!if )Item\.FindSet\(\) then/g, 'if Item.FindSet() then');
-      } 
+        fixedCode = fixedCode.replace(
+          /(?<!if )Item\.FindSet\(\) then/g,
+          "if Item.FindSet() then",
+        );
+      }
       if (error.includes("Access property should be specified")) {
         // Ensure Access property is present
         if (!fixedCode.includes("Access =")) {
-          fixedCode = fixedCode.replace(/(codeunit \d+ "[^"]+"\s*\{)/, '$1\n    Access = Public;');
+          fixedCode = fixedCode.replace(
+            /(codeunit \d+ "[^"]+"\s*\{)/,
+            "$1\n    Access = Public;",
+          );
         }
       }
     }
@@ -261,24 +290,30 @@ export class MockLLMAdapter implements LLMAdapter {
 
   private introduceErrors(code: string): string {
     let errorCode = code;
-    
+
     // Randomly introduce common AL errors
     const errorTypes = [
-      () => errorCode = errorCode.replace('"Unit Cost"', 'Unit Cost'), // Missing quotes
-      () => errorCode = errorCode.replace('exit(TotalValue);', 'exit(TotalValue)'), // Missing semicolon  
-      () => errorCode = errorCode.replace('if Item.FindSet() then', 'Item.FindSet() then'), // Missing if
-      () => errorCode = errorCode.replace('Access = Public;', ''), // Missing Access property
+      () => errorCode = errorCode.replace('"Unit Cost"', "Unit Cost"), // Missing quotes
+      () =>
+        errorCode = errorCode.replace("exit(TotalValue);", "exit(TotalValue)"), // Missing semicolon
+      () =>
+        errorCode = errorCode.replace(
+          "if Item.FindSet() then",
+          "Item.FindSet() then",
+        ), // Missing if
+      () => errorCode = errorCode.replace("Access = Public;", ""), // Missing Access property
     ];
-    
+
     // Introduce 1-2 random errors
     const numErrors = Math.floor(Math.random() * 2) + 1;
     for (let i = 0; i < numErrors; i++) {
-      const errorType = errorTypes[Math.floor(Math.random() * errorTypes.length)];
+      const errorType =
+        errorTypes[Math.floor(Math.random() * errorTypes.length)];
       if (errorType) {
         errorType();
       }
     }
-    
+
     return errorCode;
   }
 
@@ -292,7 +327,10 @@ END-CODE
 This code follows Business Central AL conventions and should compile successfully.`;
   }
 
-  private createMockResponse(content: string, request: LLMRequest): LLMResponse {
+  private createMockResponse(
+    content: string,
+    request: LLMRequest,
+  ): LLMResponse {
     const usage: TokenUsage = {
       promptTokens: Math.floor(request.prompt.length / 4), // Rough estimate
       completionTokens: Math.floor(content.length / 4),
@@ -312,6 +350,6 @@ This code follows Business Central AL conventions and should compile successfull
 
   private async simulateDelay(ms: number): Promise<void> {
     const actualDelay = ms + (Math.random() * 500 - 250); // Add some randomness
-    await new Promise(resolve => setTimeout(resolve, actualDelay));
+    await new Promise((resolve) => setTimeout(resolve, actualDelay));
   }
 }

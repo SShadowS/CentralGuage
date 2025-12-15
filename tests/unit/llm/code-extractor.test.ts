@@ -1,5 +1,5 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { CodeExtractor } from "../../../src/llm/code-extractor.ts";
 
 describe("CodeExtractor", () => {
@@ -22,7 +22,7 @@ END-CODE
 This code calculates the total with tax.`;
 
         const result = CodeExtractor.extract(response, "al");
-        
+
         assertEquals(result.language, "al");
         assertEquals(result.extractedFromDelimiters, true);
         assertEquals(result.confidence, 0.95);
@@ -49,7 +49,7 @@ table 50100 "Customer Extension"
 \`\`\``;
 
         const result = CodeExtractor.extract(response, "al");
-        
+
         assertEquals(result.language, "al");
         assertEquals(result.extractedFromDelimiters, true);
         assertEquals(result.confidence, 0.9);
@@ -59,8 +59,8 @@ table 50100 "Customer Extension"
 
       it("should extract AL code from various markdown language hints", () => {
         const languages = ["csharp", "c#", "cs", "pascal"];
-        
-        languages.forEach(lang => {
+
+        languages.forEach((lang) => {
           const response = `\`\`\`${lang}
 procedure TestProc()
 begin
@@ -88,7 +88,7 @@ end;
 }`;
 
         const result = CodeExtractor.extract(response, "al");
-        
+
         assertEquals(result.language, "al");
         assertEquals(result.confidence, 0.7);
         assert(result.code.includes("codeunit 50100"));
@@ -99,7 +99,10 @@ end;
         assertEquals(emptyResult.confidence, 0.1);
         assertEquals(emptyResult.code, "");
 
-        const invalidResult = CodeExtractor.extract("This is just plain text", "al");
+        const invalidResult = CodeExtractor.extract(
+          "This is just plain text",
+          "al",
+        );
         assert(invalidResult.confidence <= 0.3);
       });
     });
@@ -123,7 +126,7 @@ BEGIN-DIFF
 END-DIFF`;
 
         const result = CodeExtractor.extract(response, "diff");
-        
+
         assertEquals(result.language, "diff");
         assertEquals(result.extractedFromDelimiters, true);
         assertEquals(result.confidence, 0.95);
@@ -144,7 +147,7 @@ END-DIFF`;
 \`\`\``;
 
         const result = CodeExtractor.extract(response, "diff");
-        
+
         assertEquals(result.language, "diff");
         assertEquals(result.confidence, 0.9);
         assert(result.code.includes("-        OldVar: Integer;"));
@@ -161,7 +164,7 @@ END-DIFF`;
      procedure Calculate()`;
 
         const result = CodeExtractor.extract(response, "diff");
-        
+
         assertEquals(result.language, "diff");
         assert(result.confidence >= 0.7);
         assert(result.code.includes("+// New comment"));
@@ -218,7 +221,7 @@ codeunit 50100 "Test"
 \`\`\``;
 
       const cleaned = CodeExtractor.cleanCode(dirtyCode, "al");
-      
+
       assert(!cleaned.includes("```"));
       assert(!cleaned.includes("Here's the AL code"));
       assert(cleaned.startsWith("codeunit 50100"));
@@ -227,10 +230,10 @@ codeunit 50100 "Test"
     it("should normalize line endings", () => {
       const windowsEndings = "line1\r\nline2\r\nline3";
       const macEndings = "line1\rline2\rline3";
-      
+
       const cleanedWindows = CodeExtractor.cleanCode(windowsEndings, "al");
       const cleanedMac = CodeExtractor.cleanCode(macEndings, "al");
-      
+
       assertEquals(cleanedWindows, "line1\nline2\nline3");
       assertEquals(cleanedMac, "line1\nline2\nline3");
     });
@@ -241,7 +244,7 @@ codeunit 50100 "Test"
 +new line`;
 
       const cleaned = CodeExtractor.cleanCode(diffWithoutHeaders, "diff");
-      
+
       assert(cleaned.includes("--- a/file.al"));
       assert(cleaned.includes("+++ b/file.al"));
     });
@@ -280,7 +283,7 @@ codeunit 50100 "Test"
 \`\`\``;
 
       const errors = CodeExtractor.validateCode(codeWithText, "al");
-      assert(errors.some(e => e.includes("explanatory text")));
+      assert(errors.some((e) => e.includes("explanatory text")));
     });
 
     it("should validate diff format", () => {
@@ -298,7 +301,7 @@ codeunit 50100 "Test"
       const invalidDiff = "Just some regular text";
       const errors = CodeExtractor.validateCode(invalidDiff, "diff");
       assert(errors.length > 0);
-      assert(errors.some(e => e.includes("doesn't contain any changes")));
+      assert(errors.some((e) => e.includes("doesn't contain any changes")));
     });
 
     it("should handle empty code", () => {

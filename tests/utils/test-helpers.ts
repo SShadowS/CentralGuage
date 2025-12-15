@@ -24,7 +24,9 @@ export function createMockLLMConfig(overrides?: Partial<LLMConfig>): LLMConfig {
 /**
  * Create a mock LLM response for testing
  */
-export function createMockLLMResponse(overrides?: Partial<LLMResponse>): LLMResponse {
+export function createMockLLMResponse(
+  overrides?: Partial<LLMResponse>,
+): LLMResponse {
   return {
     content: "Mock response content",
     usage: {
@@ -66,12 +68,15 @@ export function assertValidLLMResponse(response: LLMResponse): void {
   assertExists(response.content, "Response should have content");
   assertExists(response.usage, "Response should have usage information");
   assertExists(response.usage.promptTokens, "Usage should have prompt tokens");
-  assertExists(response.usage.completionTokens, "Usage should have completion tokens");
+  assertExists(
+    response.usage.completionTokens,
+    "Usage should have completion tokens",
+  );
   assertExists(response.usage.totalTokens, "Usage should have total tokens");
   assertEquals(
     response.usage.totalTokens,
     response.usage.promptTokens + response.usage.completionTokens,
-    "Total tokens should equal prompt + completion tokens"
+    "Total tokens should equal prompt + completion tokens",
   );
 }
 
@@ -87,7 +92,9 @@ export function assertValidCostEstimate(cost: number): void {
 /**
  * Create a temporary directory for testing
  */
-export async function createTempDir(prefix = "centralgauge-test"): Promise<string> {
+export async function createTempDir(
+  prefix = "centralgauge-test",
+): Promise<string> {
   return await Deno.makeTempDir({ prefix });
 }
 
@@ -106,7 +113,7 @@ export async function cleanupTempDir(path: string): Promise<void> {
  * Wait for a specified amount of time (for testing timing)
  */
 export function wait(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -115,7 +122,7 @@ export function wait(ms: number): Promise<void> {
 export async function assertThrowsWithMessage(
   fn: () => Promise<unknown> | unknown,
   expectedMessage: string,
-  msg?: string
+  msg?: string,
 ): Promise<void> {
   await assertRejects(
     async () => {
@@ -123,7 +130,7 @@ export async function assertThrowsWithMessage(
     },
     Error,
     expectedMessage,
-    msg
+    msg,
   );
 }
 
@@ -225,5 +232,5 @@ export const MockALCode = {
     begin
         exit(Amount + (Amount * VAT / 100));
     end;
-}`
+}`,
 };

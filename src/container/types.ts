@@ -1,3 +1,8 @@
+export interface ContainerCredentials {
+  username: string;
+  password: string;
+}
+
 export interface ContainerConfig {
   name: string;
   bcVersion: string;
@@ -5,6 +10,7 @@ export interface ContainerConfig {
   acceptEula: boolean;
   includeAL: boolean;
   includeTestToolkit: boolean;
+  credentials?: ContainerCredentials;
 }
 
 export interface CompilationResult {

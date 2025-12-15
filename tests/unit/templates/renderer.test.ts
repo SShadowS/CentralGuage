@@ -1,5 +1,5 @@
-import { describe, it, beforeEach, afterEach } from "@std/testing/bdd";
-import { assertEquals, assert, assertRejects } from "@std/assert";
+import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { TemplateRenderer } from "../../../src/templates/renderer.ts";
 
@@ -49,10 +49,10 @@ describe("TemplateRenderer", () => {
 
       // First load
       const loaded1 = await renderer.loadTemplate("cached.txt");
-      
+
       // Delete the file
       await Deno.remove(templatePath);
-      
+
       // Should still work from cache
       const loaded2 = await renderer.loadTemplate("cached.txt");
       assertEquals(loaded1, loaded2);
@@ -62,7 +62,7 @@ describe("TemplateRenderer", () => {
       await assertRejects(
         async () => await renderer.loadTemplate("non-existent.txt"),
         Error,
-        "Template not found"
+        "Template not found",
       );
     });
   });
@@ -71,7 +71,7 @@ describe("TemplateRenderer", () => {
     it("should replace simple variables", () => {
       const template = "Hello {{name}}, you are {{age}} years old!";
       const context = { name: "Alice", age: 25 };
-      
+
       const result = renderer.renderString(template, context);
       assertEquals(result, "Hello Alice, you are 25 years old!");
     });
@@ -79,30 +79,30 @@ describe("TemplateRenderer", () => {
     it("should handle missing variables", () => {
       const template = "Hello {{name}}, welcome to {{place}}!";
       const context = { name: "Bob" };
-      
+
       const result = renderer.renderString(template, context);
       assertEquals(result, "Hello Bob, welcome to {{place}}!");
     });
 
     it("should handle different value types", () => {
       const template = "String: {{str}}, Number: {{num}}, Boolean: {{bool}}";
-      const context = { 
-        str: "text", 
-        num: 42, 
-        bool: true 
+      const context = {
+        str: "text",
+        num: 42,
+        bool: true,
       };
-      
+
       const result = renderer.renderString(template, context);
       assertEquals(result, "String: text, Number: 42, Boolean: true");
     });
 
     it("should handle null and undefined values", () => {
       const template = "Null: {{nullVal}}, Undefined: {{undefVal}}";
-      const context = { 
+      const context = {
         nullVal: null,
-        undefVal: undefined 
+        undefVal: undefined,
       };
-      
+
       const result = renderer.renderString(template, context);
       assertEquals(result, "Null: {{nullVal}}, Undefined: {{undefVal}}");
     });
@@ -123,12 +123,12 @@ describe("TemplateRenderer", () => {
     it("should load and render template", async () => {
       const templateContent = "Project: {{project}}, Version: {{version}}";
       await Deno.writeTextFile(join(tempDir, "project.txt"), templateContent);
-      
+
       const result = await renderer.render("project.txt", {
         project: "CentralGauge",
-        version: "1.0.0"
+        version: "1.0.0",
       });
-      
+
       assertEquals(result, "Project: CentralGauge, Version: 1.0.0");
     });
   });
@@ -137,20 +137,26 @@ describe("TemplateRenderer", () => {
     describe("conditionals", () => {
       it("should handle if conditionals", () => {
         const template = "{{#if premium}}You are a premium user!{{/if}}";
-        
-        const premiumResult = renderer.renderAdvanced(template, { premium: true });
+
+        const premiumResult = renderer.renderAdvanced(template, {
+          premium: true,
+        });
         assertEquals(premiumResult, "You are a premium user!");
-        
-        const regularResult = renderer.renderAdvanced(template, { premium: false });
+
+        const regularResult = renderer.renderAdvanced(template, {
+          premium: false,
+        });
         assertEquals(regularResult, "");
       });
 
       it("should handle unless conditionals", () => {
         const template = "{{#unless loggedIn}}Please log in{{/unless}}";
-        
-        const notLoggedIn = renderer.renderAdvanced(template, { loggedIn: false });
+
+        const notLoggedIn = renderer.renderAdvanced(template, {
+          loggedIn: false,
+        });
         assertEquals(notLoggedIn, "Please log in");
-        
+
         const loggedIn = renderer.renderAdvanced(template, { loggedIn: true });
         assertEquals(loggedIn, "");
       });
@@ -160,13 +166,13 @@ describe("TemplateRenderer", () => {
 Name: {{name}}
 Age: {{age}}
 {{/if}}`;
-        
+
         const result = renderer.renderAdvanced(template, {
           showDetails: true,
           name: "Charlie",
-          age: 30
+          age: 30,
         });
-        
+
         assert(result.includes("Name: Charlie"));
         assert(result.includes("Age: 30"));
       });
@@ -176,7 +182,7 @@ Age: {{age}}
       it("should handle each loops with arrays", () => {
         const template = "Items: {{#each items}}{{.}}, {{/each}}";
         const context = { items: ["apple", "banana", "orange"] };
-        
+
         const result = renderer.renderAdvanced(template, context);
         assertEquals(result, "Items: apple, banana, orange, ");
       });
@@ -184,7 +190,7 @@ Age: {{age}}
       it("should handle empty arrays", () => {
         const template = "Items: {{#each items}}{{.}}{{/each}}";
         const context = { items: [] };
-        
+
         const result = renderer.renderAdvanced(template, context);
         assertEquals(result, "Items: ");
       });
@@ -192,7 +198,7 @@ Age: {{age}}
       it("should handle non-array values in each", () => {
         const template = "{{#each notArray}}{{.}}{{/each}}";
         const context = { notArray: "string" };
-        
+
         const result = renderer.renderAdvanced(template, context);
         assertEquals(result, "");
       });
@@ -209,9 +215,9 @@ List of {{category}}:
       const withList = renderer.renderAdvanced(template, {
         showList: true,
         category: "fruits",
-        items: ["apple", "banana"]
+        items: ["apple", "banana"],
       });
-      
+
       assert(withList.includes("List of fruits:"));
       assert(withList.includes("- apple"));
       assert(withList.includes("- banana"));
@@ -220,9 +226,9 @@ List of {{category}}:
       const withoutList = renderer.renderAdvanced(template, {
         showList: false,
         category: "fruits",
-        items: []
+        items: [],
       });
-      
+
       assertEquals(withoutList.trim(), "No items to display");
     });
   });
@@ -265,7 +271,7 @@ List of {{category}}:
 {{#each items}}
   {{#unless hidden}}{{.}}{{/unless}}
 {{/each}}`;
-      
+
       const errors = renderer.validateTemplate(template);
       assertEquals(errors.length, 0);
     });
@@ -275,28 +281,29 @@ List of {{category}}:
     it("should extract basic variables", () => {
       const template = "Hello {{name}}, your score is {{score}}";
       const vars = renderer.getRequiredVariables(template);
-      
+
       assertEquals(vars, ["name", "score"]);
     });
 
     it("should extract conditional variables", () => {
-      const template = "{{#if premium}}Premium{{/if}} {{#unless trial}}Full{{/unless}}";
+      const template =
+        "{{#if premium}}Premium{{/if}} {{#unless trial}}Full{{/unless}}";
       const vars = renderer.getRequiredVariables(template);
-      
+
       assertEquals(vars, ["premium", "trial"]);
     });
 
     it("should extract loop variables", () => {
       const template = "{{#each products}}{{.}}{{/each}}";
       const vars = renderer.getRequiredVariables(template);
-      
+
       assertEquals(vars, ["products"]);
     });
 
     it("should handle duplicates", () => {
       const template = "{{name}} {{name}} {{#if name}}{{name}}{{/if}}";
       const vars = renderer.getRequiredVariables(template);
-      
+
       assertEquals(vars, ["name"]);
     });
 
@@ -307,15 +314,22 @@ List of {{category}}:
   {{#each tags}}{{.}}{{/each}}
 {{/if}}
 {{#unless hideFooter}}{{footer}}{{/unless}}`;
-      
+
       const vars = renderer.getRequiredVariables(template);
-      assertEquals(vars, ["footer", "hideFooter", "name", "showDetails", "tags", "title"]);
+      assertEquals(vars, [
+        "footer",
+        "hideFooter",
+        "name",
+        "showDetails",
+        "tags",
+        "title",
+      ]);
     });
 
     it("should ignore special placeholders", () => {
       const template = "{{#each items}}Item: {{.}}{{/each}}";
       const vars = renderer.getRequiredVariables(template);
-      
+
       assertEquals(vars, ["items"]); // Should not include "."
     });
   });
@@ -324,21 +338,21 @@ List of {{category}}:
     it("should clear template cache", async () => {
       const templatePath = join(tempDir, "cached.txt");
       await Deno.writeTextFile(templatePath, "Cached content");
-      
+
       // Load to cache
       await renderer.loadTemplate("cached.txt");
-      
+
       // Clear cache
       renderer.clearCache();
-      
+
       // Delete file
       await Deno.remove(templatePath);
-      
+
       // Should fail now since cache is cleared
       await assertRejects(
         async () => await renderer.loadTemplate("cached.txt"),
         Error,
-        "Template not found"
+        "Template not found",
       );
     });
   });

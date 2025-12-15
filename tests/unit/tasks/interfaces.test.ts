@@ -1,11 +1,11 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import type {
-  TaskType,
-  TaskExecutionContext,
   ExecutionAttempt,
+  TaskExecutionContext,
   TaskExecutionRequest,
-  TaskValidationResult
+  TaskType,
+  TaskValidationResult,
 } from "../../../src/tasks/interfaces.ts";
 import type { TaskManifest } from "../../../types/index.ts";
 
@@ -16,12 +16,15 @@ describe("Task Interfaces", () => {
         "code_generation",
         "code_fix",
         "refactoring",
-        "test_generation"
+        "test_generation",
       ];
-      
+
       // This test ensures our TaskType union is exhaustive
-      validTypes.forEach(type => {
-        assert(["code_generation", "code_fix", "refactoring", "test_generation"].includes(type));
+      validTypes.forEach((type) => {
+        assert(
+          ["code_generation", "code_fix", "refactoring", "test_generation"]
+            .includes(type),
+        );
       });
     });
 
@@ -33,7 +36,7 @@ describe("Task Interfaces", () => {
         fix_template: "fix.md",
         max_attempts: 2,
         expected: { compile: true, testApp: "" },
-        metrics: []
+        metrics: [],
       };
 
       const context: TaskExecutionContext = {
@@ -60,20 +63,20 @@ describe("Task Interfaces", () => {
             mustCompile: true,
             mustPass: false,
             mustContain: ["procedure"],
-            mustNotContain: []
-          }
+            mustNotContain: [],
+          },
         },
         evaluation: {
           requiredElements: ["procedure"],
           forbiddenElements: [],
-          customChecks: []
+          customChecks: [],
         },
         metadata: {
           difficulty: "medium",
           category: "implementation",
           tags: ["procedure", "code_generation"],
-          estimatedTokens: 1000
-        }
+          estimatedTokens: 1000,
+        },
       };
 
       // Verify all required fields are present
@@ -97,10 +100,10 @@ describe("Task Interfaces", () => {
             promptTokens: 100,
             completionTokens: 200,
             totalTokens: 300,
-            estimatedCost: 0.01
+            estimatedCost: 0.01,
           },
           duration: 1500,
-          finishReason: "stop"
+          finishReason: "stop",
         },
         extractedCode: "codeunit 50100 Test {}",
         codeLanguage: "al",
@@ -109,7 +112,7 @@ describe("Task Interfaces", () => {
           errors: [],
           warnings: [],
           duration: 500,
-          output: "Success"
+          output: "Success",
         },
         testResult: {
           success: true,
@@ -118,14 +121,14 @@ describe("Task Interfaces", () => {
           failedTests: 0,
           duration: 1000,
           results: [],
-          output: ""
+          output: "",
         },
         success: true,
         score: 100,
         failureReasons: [],
         tokensUsed: 300,
         cost: 0.01,
-        duration: 3000
+        duration: 3000,
       };
 
       // Verify structure
@@ -143,7 +146,7 @@ describe("Task Interfaces", () => {
         fix_template: "fix.md",
         max_attempts: 2,
         expected: { compile: true, testApp: "" },
-        metrics: []
+        metrics: [],
       };
 
       const request: TaskExecutionRequest = {
@@ -157,7 +160,7 @@ describe("Task Interfaces", () => {
         outputDir: "/custom/output",
         debugMode: true,
         temperature: 0.2,
-        maxTokens: 8000
+        maxTokens: 8000,
       };
 
       // Verify required and optional fields
@@ -172,7 +175,7 @@ describe("Task Interfaces", () => {
         valid: true,
         errors: [],
         warnings: ["Max attempts is high"],
-        suggestions: ["Consider adding metrics"]
+        suggestions: ["Consider adding metrics"],
       };
 
       assert(validResult.valid);
@@ -184,7 +187,7 @@ describe("Task Interfaces", () => {
         valid: false,
         errors: ["Missing task ID", "Invalid template path"],
         warnings: [],
-        suggestions: []
+        suggestions: [],
       };
 
       assert(!invalidResult.valid);

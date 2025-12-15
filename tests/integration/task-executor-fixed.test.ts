@@ -1,5 +1,5 @@
-import { describe, it, beforeEach, afterEach } from "@std/testing/bdd";
-import { assertEquals, assert, assertExists } from "@std/assert";
+import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
+import { assert, assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { DefaultTaskExecutor } from "../../src/tasks/executor.ts";
@@ -7,7 +7,7 @@ import { LLMAdapterRegistry } from "../../src/llm/registry.ts";
 import { ContainerProviderRegistry } from "../../src/container/registry.ts";
 import { MockLLMAdapter } from "../../src/llm/mock-adapter.ts";
 import { MockContainerProvider } from "../../src/container/mock-provider.ts";
-import type { TaskManifest, TaskExecutionConfig } from "../../types/index.ts";
+import type { TaskExecutionConfig, TaskManifest } from "../../types/index.ts";
 
 describe("TaskExecutor Integration Tests - Fixed", () => {
   let executor: DefaultTaskExecutor;
@@ -36,12 +36,12 @@ Original code:
 
     await Deno.writeTextFile(
       join(templateDir, "prompt.md"),
-      promptTemplate
+      promptTemplate,
     );
 
     await Deno.writeTextFile(
       join(templateDir, "fix.md"),
-      fixTemplate
+      fixTemplate,
     );
 
     // Initialize executor with test template directory
@@ -84,9 +84,9 @@ Original code:
         max_attempts: 2,
         expected: {
           compile: true,
-          testApp: "TestApp"
+          testApp: "TestApp",
         },
-        metrics: ["compile_success", "token_usage"]
+        metrics: ["compile_success", "token_usage"],
       };
 
       // Configure execution matching the actual interface
@@ -100,7 +100,7 @@ Original code:
         outputDir: join(tempDir, "output"),
         maxAttempts: 2,
         temperature: 0.1,
-        maxTokens: 4000
+        maxTokens: 4000,
       };
 
       // Execute task
@@ -124,9 +124,9 @@ Original code:
         max_attempts: 0, // Invalid
         expected: {
           compile: true,
-          testApp: ""
+          testApp: "",
         },
-        metrics: []
+        metrics: [],
       };
 
       const config: TaskExecutionConfig = {
@@ -139,7 +139,7 @@ Original code:
         outputDir: join(tempDir, "output"),
         maxAttempts: 2,
         temperature: 0.1,
-        maxTokens: 4000
+        maxTokens: 4000,
       };
 
       let errorThrown = false;
@@ -167,9 +167,9 @@ Original code:
         max_attempts: 3,
         expected: {
           compile: true,
-          testApp: "TestApp"
+          testApp: "TestApp",
         },
-        metrics: ["attempts", "compile_success"]
+        metrics: ["attempts", "compile_success"],
       };
 
       const config: TaskExecutionConfig = {
@@ -182,7 +182,7 @@ Original code:
         outputDir: join(tempDir, "output"),
         maxAttempts: 3,
         temperature: 0.1,
-        maxTokens: 4000
+        maxTokens: 4000,
       };
 
       const result = await executor.executeTask(config);
@@ -194,10 +194,22 @@ Original code:
       // If passed, should stop early; if failed, should have used all attempts
       if (result.finalResult === "pass") {
         assert(result.passAttempt > 0, "Pass attempt should be recorded");
-        assertEquals(result.attempts.length, result.passAttempt, "Should stop on success");
+        assertEquals(
+          result.attempts.length,
+          result.passAttempt,
+          "Should stop on success",
+        );
       } else {
-        assertEquals(result.attempts.length, 3, "Should use all attempts on failure");
-        assertEquals(result.passAttempt, 0, "Should have no pass attempt on failure");
+        assertEquals(
+          result.attempts.length,
+          3,
+          "Should use all attempts on failure",
+        );
+        assertEquals(
+          result.passAttempt,
+          0,
+          "Should have no pass attempt on failure",
+        );
       }
     });
   });

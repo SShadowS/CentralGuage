@@ -9,7 +9,7 @@ description: >-
   - Supplier Rating (Option with values: Not Rated, Bronze, Silver, Gold, Platinum)
   - Last Maintenance Date (Date)
   - Special Instructions (Text[250])
-  
+
   Include proper captions, data classification, and ensure all fields follow Business Central conventions.
   Use proper field numbering starting from 70000.
 expected:

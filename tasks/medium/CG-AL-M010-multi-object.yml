@@ -4,7 +4,7 @@ fix_template: bugfix.md
 max_attempts: 2
 description: >-
   Create a complete multi-object scenario for a "Project Management" system with related objects:
-  
+
   1. Create a Project table (ID 70003) with fields:
      - Project No. (Code[20], primary key)
      - Project Name (Text[100])
@@ -12,7 +12,7 @@ description: >-
      - Status (Option: Planning, Active, On Hold, Completed)
      - Budget Amount (Decimal)
      - Actual Cost (Decimal, calculated from tasks)
-  
+
   2. Create a Project Task table (ID 70004) with fields:
      - Project No. (Code[20], TableRelation to Project)
      - Task No. (Code[20])
@@ -21,17 +21,17 @@ description: >-
      - Actual Hours (Decimal)
      - Hourly Rate (Decimal)
      - Task Status (Option: Not Started, In Progress, Completed)
-  
+
   3. Create a Project Card page (ID 70102) with:
      - Project header information
      - Subpage showing related tasks
      - Actions to calculate totals and update status
-  
+
   4. Create a Project Management codeunit (ID 70005) with procedures:
      - UpdateProjectCosts(ProjectNo: Code[20]) - calculate actual costs from tasks
      - ValidateProjectDates(var Project: Record) - business validation
      - CompleteProject(ProjectNo: Code[20]) - finalize project
-  
+
   Include proper relationships, validations, and business logic across all objects.
 expected:
   compile: true
