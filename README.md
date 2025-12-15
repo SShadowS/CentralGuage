@@ -58,50 +58,9 @@ deno run --allow-all cli/centralgauge.ts models flagship      # Test model resol
 deno task report results/ --html --output reports/
 ```
 
-## 🏗️ Project Status
-
-**Phase 0: Inception** ✅ *Complete*
-- [x] Project scaffolding with Deno + TypeScript
-- [x] CLI interface with full command support
-- [x] Type definitions and project structure
-
-**Phase 1: Container Layer** ✅ *Complete*
-- [x] Mock container provider for development
-- [x] AL compilation and error detection
-- [x] Container lifecycle management
-
-**Phase 2: Core Engine** ✅ *Complete*
-- [x] LLM adapter system (Mock + OpenAI)
-- [x] Template rendering with advanced features
-- [x] Two-pass evaluation loop with error feedback
-- [x] End-to-end task execution
-
-**Phase 3: Core Task-set** ✅ *Complete*
-- [x] 10 easy AL coding tasks
-- [x] 10 medium complexity tasks
-
-**Phase 4: HTML Reporter** ✅ *Complete*
-- [x] SvelteKit static site generation
-- [x] JSON data integration and visualization
-- [x] Automated report building
-
-**Phase 5: Multi-Provider LLM** ✅ *Complete*
-- [x] OpenAI, Anthropic, Gemini adapters
-- [x] Azure OpenAI and local model support
-- [x] Provider/model format standardization
-- [x] Model presets and aliases (sonnet, gpt-4o, haiku, etc.)
-- [x] Model groups (flagship, budget, coding, etc.)
-- [x] Configuration file system (.centralgauge.yml)
-- [x] Environment-based defaults and overrides
-
-**Phase 6: Production Ready** 🚧 *Next*
-- [ ] CI/CD pipeline with GitHub Actions
-- [ ] Real Business Central container support
-- [ ] Performance optimization and scaling
-
 ## 🤝 Contributing
 
-We welcome contributions! Check out our [development roadmap](PLAN.md) and submit a PR.
+We welcome contributions! Feel free to open issues or submit a PR.
 
 ## 📄 License
 
