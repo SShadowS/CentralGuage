@@ -261,6 +261,97 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
+   * Execute a single LLM attempt and return the result
+   */
+  private async executeLLMAttempt(
+    manifest: TaskManifest,
+    variant: ModelVariant,
+    context: TaskExecutionContext,
+    attemptNumber: number,
+    attempts: ExecutionAttempt[],
+  ): Promise<LLMWorkResult | undefined> {
+    this.emit({
+      type: "llm_started",
+      taskId: manifest.id,
+      model: variant.variantId,
+      attempt: attemptNumber,
+    });
+
+    const modelCompat = { provider: variant.provider, model: variant.model };
+    const workItems = createWorkItems(
+      manifest,
+      context,
+      [modelCompat],
+      attemptNumber,
+      attempts,
+    );
+
+    const llmResults = await this.llmPool.submitBatch(workItems);
+    const llmResult = llmResults.get(variant.model);
+
+    this.emit({
+      type: "llm_completed",
+      taskId: manifest.id,
+      model: variant.variantId,
+      attempt: attemptNumber,
+      success: llmResult?.success ?? false,
+    });
+
+    return llmResult;
+  }
+
+  /**
+   * Execute compilation for an LLM result
+   */
+  private async executeCompilation(
+    manifest: TaskManifest,
+    variant: ModelVariant,
+    context: TaskExecutionContext,
+    executionId: string,
+    attemptNumber: number,
+    llmResult: LLMWorkResult,
+    workItemId: string,
+  ): Promise<{
+    compilationResult: import("./types.ts").CompilationResult;
+    testResult?: import("./types.ts").TestResult;
+    duration: number;
+  }> {
+    const compileItem: CompileWorkItem = {
+      id: `compile_${executionId}_${attemptNumber}`,
+      llmWorkItemId: workItemId,
+      code: llmResult.code!,
+      context,
+      attemptNumber,
+      llmResponse: llmResult.llmResponse!,
+      createdAt: new Date(),
+    };
+
+    this.emit({
+      type: "compile_queued",
+      taskId: manifest.id,
+      model: variant.variantId,
+      queuePosition: this.compileQueue?.length ?? 0,
+    });
+
+    this.emit({
+      type: "compile_started",
+      taskId: manifest.id,
+      model: variant.variantId,
+    });
+
+    const compileResult = await this.compileQueue!.enqueue(compileItem);
+
+    this.emit({
+      type: "compile_completed",
+      taskId: manifest.id,
+      model: variant.variantId,
+      success: compileResult.compilationResult.success,
+    });
+
+    return compileResult;
+  }
+
+  /**
    * Process a single task for a single model variant (with retry attempts)
    */
   private async processTaskForVariant(
@@ -271,8 +362,6 @@ export class ParallelBenchmarkOrchestrator {
     const executionId = `${manifest.id}_${variant.variantId}_${Date.now()}`;
     const startTime = Date.now();
     const attempts: ExecutionAttempt[] = [];
-
-    // Build execution context with variant config applied
     const context = await this.buildContext(manifest, variant, options);
 
     let success = false;
@@ -280,85 +369,36 @@ export class ParallelBenchmarkOrchestrator {
     let finalCode: string | undefined;
     let passedAttemptNumber = 0;
 
-    // Attempt loop
     for (
       let attemptNumber = 1;
       attemptNumber <= options.attemptLimit;
       attemptNumber++
     ) {
-      this.emit({
-        type: "llm_started",
-        taskId: manifest.id,
-        model: variant.variantId,
-        attempt: attemptNumber,
-      });
-
-      // Create work items - pass variant as model for compatibility
-      const modelCompat = { provider: variant.provider, model: variant.model };
-      const workItems = createWorkItems(
+      const llmResult = await this.executeLLMAttempt(
         manifest,
+        variant,
         context,
-        [modelCompat],
         attemptNumber,
         attempts,
       );
 
-      // Execute LLM call
-      const llmResults = await this.llmPool.submitBatch(workItems);
-      const llmResult = llmResults.get(variant.model);
-
-      this.emit({
-        type: "llm_completed",
-        taskId: manifest.id,
-        model: variant.variantId,
-        attempt: attemptNumber,
-        success: llmResult?.success ?? false,
-      });
-
       if (!llmResult?.success || !llmResult.code) {
-        // LLM call failed
         attempts.push(this.createFailedAttempt(attemptNumber, llmResult));
         continue;
       }
 
-      // Queue compilation
-      const workItem = workItems[0];
-      if (!workItem) {
-        throw new Error("No work item created");
-      }
-      const compileItem: CompileWorkItem = {
-        id: `compile_${executionId}_${attemptNumber}`,
-        llmWorkItemId: workItem.id,
-        code: llmResult.code,
+      const workItemId =
+        `${manifest.id}_${variant.model}_${attemptNumber}_${Date.now()}`;
+      const compileResult = await this.executeCompilation(
+        manifest,
+        variant,
         context,
+        executionId,
         attemptNumber,
-        llmResponse: llmResult.llmResponse!,
-        createdAt: new Date(),
-      };
+        llmResult,
+        workItemId,
+      );
 
-      this.emit({
-        type: "compile_queued",
-        taskId: manifest.id,
-        model: variant.variantId,
-        queuePosition: this.compileQueue?.length ?? 0,
-      });
-
-      this.emit({
-        type: "compile_started",
-        taskId: manifest.id,
-        model: variant.variantId,
-      });
-
-      const compileResult = await this.compileQueue!.enqueue(compileItem);
-
-      this.emit({
-        type: "compile_completed",
-        taskId: manifest.id,
-        model: variant.variantId,
-        success: compileResult.compilationResult.success,
-      });
-
-      // Evaluate result
       const attempt = this.createAttempt(
         attemptNumber,
         llmResult,
@@ -372,14 +412,13 @@ export class ParallelBenchmarkOrchestrator {
         finalCode = llmResult.code;
         passedAttemptNumber = attemptNumber;
         finalScore = this.calculateFinalScore(attempt.score, attemptNumber);
-        break; // Stop on success
+        break;
       }
     }
 
-    // Calculate final metrics and build result
     const metrics = this.calculateAttemptMetrics(attempts, success, finalScore);
-    return this.buildTaskResult(
-      manifest.id,
+    return this.buildTaskResult({
+      taskId: manifest.id,
       executionId,
       context,
       attempts,
@@ -388,7 +427,7 @@ export class ParallelBenchmarkOrchestrator {
       passedAttemptNumber,
       finalCode,
       startTime,
-    );
+    });
   }
 
   /**
@@ -413,19 +452,31 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
-   * Build the final task execution result
+   * Options for building a task execution result
    */
-  private buildTaskResult(
-    taskId: string,
-    executionId: string,
-    context: TaskExecutionContext,
-    attempts: ExecutionAttempt[],
-    success: boolean,
-    metrics: { finalScore: number; totalTokensUsed: number; totalCost: number },
-    passedAttemptNumber: number,
-    finalCode: string | undefined,
-    startTime: number,
-  ): TaskExecutionResult {
+  private buildTaskResult(options: {
+    taskId: string;
+    executionId: string;
+    context: TaskExecutionContext;
+    attempts: ExecutionAttempt[];
+    success: boolean;
+    metrics: { finalScore: number; totalTokensUsed: number; totalCost: number };
+    passedAttemptNumber: number;
+    finalCode: string | undefined;
+    startTime: number;
+  }): TaskExecutionResult {
+    const {
+      taskId,
+      executionId,
+      context,
+      attempts,
+      success,
+      metrics,
+      passedAttemptNumber,
+      finalCode,
+      startTime,
+    } = options;
+
     const result: TaskExecutionResult = {
       taskId,
       executionId,

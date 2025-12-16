@@ -202,6 +202,37 @@ export function isCompilationSuccessful(
 }
 
 /**
+ * Parse a single TESTRESULT line into a TestCaseResult
+ *
+ * @param testInfo - The content after "TESTRESULT:" prefix
+ * @returns Parsed test case result, or undefined if not parseable
+ */
+function parseTestResultLine(testInfo: string): TestCaseResult | undefined {
+  const passMatch = testInfo.match(/(?:Test\s+)?(\w+).*?(?:passed|success)/i);
+  if (passMatch) {
+    return {
+      name: passMatch[1] || "unknown",
+      passed: true,
+      duration: 0,
+    };
+  }
+
+  const failMatch = testInfo.match(
+    /(?:Test\s+)?(\w+).*?(?:failed|error)(?:.*?:\s*(.+))?/i,
+  );
+  if (failMatch) {
+    return {
+      name: failMatch[1] || "unknown",
+      passed: false,
+      duration: 0,
+      error: failMatch[2] || "Test failed",
+    };
+  }
+
+  return undefined;
+}
+
+/**
  * Parse test result output from Run-TestsInBcContainer
  *
  * Handles various AL test result formats including:
@@ -219,13 +250,12 @@ export function parseTestResults(output: string): {
   const results: TestCaseResult[] = [];
   let allPassed = false;
   let publishFailed = false;
-
-  const lines = output.split("\n");
   let inTest = false;
 
-  for (const line of lines) {
+  for (const line of output.split("\n")) {
     const trimmedLine = line.trim();
 
+    // Handle state markers
     if (trimmedLine === "TEST_START") {
       inTest = true;
       continue;
@@ -235,44 +265,21 @@ export function parseTestResults(output: string): {
       continue;
     }
 
+    // Handle status markers
     if (trimmedLine.startsWith("PUBLISH_FAILED:")) {
       publishFailed = true;
       continue;
     }
-
     if (trimmedLine === "ALL_TESTS_PASSED") {
       allPassed = true;
       continue;
     }
 
+    // Parse test results within TEST_START/TEST_END block
     if (inTest && trimmedLine.startsWith("TESTRESULT:")) {
-      const testInfo = trimmedLine.substring(11);
-      // Parse various AL test result formats
-      const passMatch = testInfo.match(
-        /(?:Test\s+)?(\w+).*?(?:passed|success)/i,
-      );
-      const failMatch = testInfo.match(
-        /(?:Test\s+)?(\w+).*?(?:failed|error)(?:.*?:\s*(.+))?/i,
-      );
-
-      if (passMatch) {
-        results.push({
-          name: passMatch[1] || "unknown",
-          passed: true,
-          duration: 0,
-        });
-      } else if (failMatch) {
-        const testCase: TestCaseResult = {
-          name: failMatch[1] || "unknown",
-          passed: false,
-          duration: 0,
-        };
-        if (failMatch[2]) {
-          testCase.error = failMatch[2];
-        } else {
-          testCase.error = "Test failed";
-        }
-        results.push(testCase);
+      const testResult = parseTestResultLine(trimmedLine.substring(11));
+      if (testResult) {
+        results.push(testResult);
       }
     }
   }

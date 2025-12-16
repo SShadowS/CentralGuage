@@ -8,7 +8,7 @@
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertEquals, assertArrayIncludes } from "@std/assert";
+import { assertArrayIncludes, assertEquals } from "@std/assert";
 import { AnthropicAdapter } from "../../../src/llm/anthropic-adapter.ts";
 
 // =============================================================================
@@ -354,5 +354,238 @@ Deno.test("AnthropicAdapter - constructor", async (t) => {
     const cost2 = adapter2.estimateCost(1000, 1000);
 
     assertEquals(cost1 !== cost2, true);
+  });
+});
+
+// =============================================================================
+// Model Validation Edge Cases
+// =============================================================================
+
+Deno.test("AnthropicAdapter - custom model validation", async (t) => {
+  await t.step("accepts model containing 'claude'", () => {
+    const adapter = new AnthropicAdapter();
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "my-custom-claude-model",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("accepts model containing 'sonnet'", () => {
+    const adapter = new AnthropicAdapter();
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "custom-sonnet-v2",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("accepts model containing 'haiku'", () => {
+    const adapter = new AnthropicAdapter();
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "haiku-fine-tuned",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("accepts model containing 'opus'", () => {
+    const adapter = new AnthropicAdapter();
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "opus-special-edition",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("accepts model containing 'think'", () => {
+    const adapter = new AnthropicAdapter();
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "claude-think-beta",
+    });
+    assertEquals(errors.length, 0);
+  });
+
+  await t.step("warns but accepts completely unknown model", () => {
+    const adapter = new AnthropicAdapter();
+    // This should log a warning but not add to errors
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "completely-unknown-model-xyz",
+    });
+    // No errors - just warning logged
+    assertEquals(errors.length, 0);
+  });
+});
+
+// =============================================================================
+// Cost Estimation Edge Cases
+// =============================================================================
+
+Deno.test("AnthropicAdapter - estimateCost edge cases", async (t) => {
+  await t.step("calculates cost for claude-3.5-haiku model", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-3-5-haiku-20241022",
+      apiKey: "test-key",
+    });
+
+    // Claude 3.5 Haiku pricing: $0.0008/1K input, $0.004/1K output
+    const cost = adapter.estimateCost(1000, 1000);
+    // 1000/1000 * 0.0008 + 1000/1000 * 0.004 = 0.0048
+    assertEquals(Math.abs(cost - 0.0048) < 0.0001, true);
+  });
+
+  await t.step("calculates cost for claude-3-haiku model", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-3-haiku-20240307",
+      apiKey: "test-key",
+    });
+
+    // Claude 3 Haiku pricing: $0.00025/1K input, $0.00125/1K output
+    const cost = adapter.estimateCost(1000, 1000);
+    // 1000/1000 * 0.00025 + 1000/1000 * 0.00125 = 0.0015
+    assertEquals(Math.abs(cost - 0.0015) < 0.0001, true);
+  });
+
+  await t.step("calculates cost for claude-opus-4-1 model", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-opus-4-1",
+      apiKey: "test-key",
+    });
+
+    // Claude Opus 4.1 pricing: $0.015/1K input, $0.075/1K output
+    const cost = adapter.estimateCost(1000, 1000);
+    // 1000/1000 * 0.015 + 1000/1000 * 0.075 = 0.090
+    assertEquals(Math.abs(cost - 0.090) < 0.001, true);
+  });
+
+  await t.step("handles large token counts", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+    });
+
+    // 100K tokens each
+    const cost = adapter.estimateCost(100000, 100000);
+    // 100000/1000 * 0.003 + 100000/1000 * 0.015 = 0.3 + 1.5 = 1.8
+    assertEquals(Math.abs(cost - 1.8) < 0.01, true);
+  });
+
+  await t.step("handles fractional token counts", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+    });
+
+    // 500 tokens
+    const cost = adapter.estimateCost(500, 250);
+    // 500/1000 * 0.003 + 250/1000 * 0.015 = 0.0015 + 0.00375 = 0.00525
+    assertEquals(Math.abs(cost - 0.00525) < 0.00001, true);
+  });
+});
+
+// =============================================================================
+// Configuration Merge Tests
+// =============================================================================
+
+Deno.test("AnthropicAdapter - configuration merging", async (t) => {
+  await t.step("preserves default values when not overridden", () => {
+    const adapter = new AnthropicAdapter();
+    // Configure with minimal config
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+    });
+
+    // Should still work with default temperature
+    const cost = adapter.estimateCost(1000, 1000);
+    assertEquals(cost > 0, true);
+  });
+
+  await t.step("overrides multiple settings at once", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+      apiKey: "test-key",
+      temperature: 0.8,
+      maxTokens: 8000,
+      timeout: 60000,
+      baseUrl: "https://custom.anthropic.com",
+    });
+
+    // After configuration, cost should reflect opus model
+    const cost = adapter.estimateCost(1000, 1000);
+    assertEquals(Math.abs(cost - 0.030) < 0.001, true);
+  });
+
+  await t.step("handles undefined optional parameters", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+      temperature: undefined,
+      maxTokens: undefined,
+    });
+
+    // Should not throw
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+    });
+    assertEquals(errors.length, 0);
+  });
+});
+
+// =============================================================================
+// All Supported Models Tests
+// =============================================================================
+
+Deno.test("AnthropicAdapter - all supported models", async (t) => {
+  const adapter = new AnthropicAdapter();
+
+  await t.step("supportedModels has expected count", () => {
+    // Should have at least 10 models (aliases + specific versions)
+    assertEquals(adapter.supportedModels.length >= 10, true);
+  });
+
+  await t.step("all listed models are unique", () => {
+    const uniqueModels = new Set(adapter.supportedModels);
+    assertEquals(uniqueModels.size, adapter.supportedModels.length);
+  });
+
+  await t.step("contains Claude 4 legacy models", () => {
+    assertArrayIncludes(adapter.supportedModels, [
+      "claude-opus-4-1-20250805",
+      "claude-opus-4-20250514",
+      "claude-sonnet-4-20250514",
+    ]);
+  });
+
+  await t.step("contains Claude 3.7 model", () => {
+    assertArrayIncludes(adapter.supportedModels, [
+      "claude-3-7-sonnet-20250219",
+      "claude-3-7-sonnet-latest",
+    ]);
   });
 });

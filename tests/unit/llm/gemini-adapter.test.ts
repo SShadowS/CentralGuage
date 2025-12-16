@@ -8,7 +8,7 @@
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertEquals, assertArrayIncludes } from "@std/assert";
+import { assertArrayIncludes, assertEquals } from "@std/assert";
 import { GeminiAdapter } from "../../../src/llm/gemini-adapter.ts";
 
 // =============================================================================

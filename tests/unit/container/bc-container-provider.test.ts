@@ -12,11 +12,7 @@
  * cover actual PowerShell execution with real BC containers.
  */
 
-import {
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { BcContainerProvider } from "../../../src/container/bc-container-provider.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 
@@ -388,7 +384,10 @@ Deno.test({
       mock.mockPowerShell(["Get-BcContainer"], "");
 
       // Mock: create new container
-      mock.mockPowerShell(["New-BcContainer"], "Container TestContainer created successfully");
+      mock.mockPowerShell(
+        ["New-BcContainer"],
+        "Container TestContainer created successfully",
+      );
 
       const provider = new BcContainerProvider();
       await provider.setup({
@@ -424,7 +423,10 @@ Deno.test({
       mock.mockPowerShell(["Get-BcContainer"], "");
 
       // Mock: create new container
-      mock.mockPowerShell(["New-BcContainer"], "Container TestContainer created successfully");
+      mock.mockPowerShell(
+        ["New-BcContainer"],
+        "Container TestContainer created successfully",
+      );
 
       const provider = new BcContainerProvider();
       await provider.setup({
@@ -460,7 +462,11 @@ Deno.test({
       mock.mockPowerShell(["Get-BcContainer"], "");
 
       // Mock: container creation fails
-      mock.mockPowerShellError(["New-BcContainer"], "License validation failed", 1);
+      mock.mockPowerShellError(
+        ["New-BcContainer"],
+        "License validation failed",
+        1,
+      );
 
       const provider = new BcContainerProvider();
 
@@ -493,7 +499,10 @@ Deno.test({
       mock.install();
 
       // Mock: start container succeeds
-      mock.mockPowerShell(["Start-BcContainer"], "Container TestContainer started");
+      mock.mockPowerShell(
+        ["Start-BcContainer"],
+        "Container TestContainer started",
+      );
 
       const provider = new BcContainerProvider();
       await provider.start("TestContainer");
@@ -517,7 +526,10 @@ Deno.test({
       mock.install();
 
       // Mock: stop container succeeds
-      mock.mockPowerShell(["Stop-BcContainer"], "Container TestContainer stopped");
+      mock.mockPowerShell(
+        ["Stop-BcContainer"],
+        "Container TestContainer stopped",
+      );
 
       const provider = new BcContainerProvider();
       await provider.stop("TestContainer");
@@ -540,7 +552,10 @@ Deno.test({
       mock.install();
 
       // Mock: remove container succeeds
-      mock.mockPowerShell(["Remove-BcContainer"], "Container TestContainer removed");
+      mock.mockPowerShell(
+        ["Remove-BcContainer"],
+        "Container TestContainer removed",
+      );
 
       const provider = new BcContainerProvider();
       await provider.remove("TestContainer");
@@ -684,7 +699,8 @@ Deno.test({
 // =============================================================================
 
 Deno.test({
-  name: "BcContainerProvider - compileProject returns success on successful compilation",
+  name:
+    "BcContainerProvider - compileProject returns success on successful compilation",
   ignore: !isWindows,
   async fn() {
     const mock = createCommandMock();
@@ -714,7 +730,11 @@ Deno.test({
       const provider = new BcContainerProvider();
       const result = await provider.compileProject("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [`${tempDir}/Hello.al`],
         testFiles: [],
       });
@@ -762,7 +782,11 @@ DETAIL:test.al(10,5): error AL0118: The name 'InvalidFunction' does not exist
       const provider = new BcContainerProvider();
       const result = await provider.compileProject("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [`${tempDir}/test.al`],
         testFiles: [],
       });
@@ -802,7 +826,11 @@ Deno.test({
       const provider = new BcContainerProvider();
       const result = await provider.compileProject("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -850,7 +878,11 @@ Deno.test({
       // First compilation
       const result1 = await provider.compileProject("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -860,7 +892,11 @@ Deno.test({
       // Second compilation should also succeed
       const result2 = await provider.compileProject("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -889,7 +925,10 @@ Deno.test({
 
       // Create output directory with compiled app
       await Deno.mkdir(`${tempDir}/output`, { recursive: true });
-      await Deno.writeTextFile(`${tempDir}/output/TestApp.app`, "mock app content");
+      await Deno.writeTextFile(
+        `${tempDir}/output/TestApp.app`,
+        "mock app content",
+      );
 
       // Mock: the runTests PowerShell script (contains all operations in one script)
       mock.mockPowerShell(
@@ -905,7 +944,11 @@ Deno.test({
 
       const result = await provider.runTests("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [`${tempDir}/Test.al`],
       });
@@ -955,7 +998,11 @@ Deno.test({
 
       const result = await provider.runTests("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -982,7 +1029,10 @@ Deno.test({
 
       // Create output directory with compiled app
       await Deno.mkdir(`${tempDir}/output`, { recursive: true });
-      await Deno.writeTextFile(`${tempDir}/output/TestApp.app`, "mock app content");
+      await Deno.writeTextFile(
+        `${tempDir}/output/TestApp.app`,
+        "mock app content",
+      );
 
       // Mock: publish fails
       mock.mockPowerShell([], "PUBLISH_FAILED:Unable to sync database");
@@ -991,7 +1041,11 @@ Deno.test({
 
       const result = await provider.runTests("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -1016,7 +1070,10 @@ Deno.test({
 
       // Create output directory with compiled app
       await Deno.mkdir(`${tempDir}/output`, { recursive: true });
-      await Deno.writeTextFile(`${tempDir}/output/TestApp.app`, "mock app content");
+      await Deno.writeTextFile(
+        `${tempDir}/output/TestApp.app`,
+        "mock app content",
+      );
 
       // Mock: publish succeeds
       mock.mockPowerShell(["Publish-BcContainerApp"], "PUBLISH_SUCCESS");
@@ -1031,7 +1088,11 @@ Deno.test({
 
       const result = await provider.runTests("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -1056,7 +1117,10 @@ Deno.test({
 
       // Create output directory with compiled app
       await Deno.mkdir(`${tempDir}/output`, { recursive: true });
-      await Deno.writeTextFile(`${tempDir}/output/TestApp.app`, "mock app content");
+      await Deno.writeTextFile(
+        `${tempDir}/output/TestApp.app`,
+        "mock app content",
+      );
 
       // Mock: all operations succeed
       mock.mockPowerShell([], "PUBLISH_SUCCESS\nALL_TESTS_PASSED\nTEST_END");
@@ -1069,7 +1133,11 @@ Deno.test({
 
       await provider.runTests("TestContainer", {
         path: tempDir,
-        appJson: { name: "TestApp", publisher: "TestPublisher", version: "1.0.0.0" },
+        appJson: {
+          name: "TestApp",
+          publisher: "TestPublisher",
+          version: "1.0.0.0",
+        },
         sourceFiles: [],
         testFiles: [],
       });
@@ -1106,7 +1174,11 @@ Deno.test({
       );
 
       const provider = new BcContainerProvider();
-      await provider.copyToContainer("TestContainer", "/local/path", "/container/path");
+      await provider.copyToContainer(
+        "TestContainer",
+        "/local/path",
+        "/container/path",
+      );
 
       assertEquals(mock.wasCalledWith("pwsh", ["Copy-ToNavContainer"]), true);
       assertEquals(mock.wasCalledWith("pwsh", ["TestContainer"]), true);
@@ -1131,7 +1203,11 @@ Deno.test({
       );
 
       const provider = new BcContainerProvider();
-      await provider.copyFromContainer("TestContainer", "/container/path", "/local/path");
+      await provider.copyFromContainer(
+        "TestContainer",
+        "/container/path",
+        "/local/path",
+      );
 
       assertEquals(mock.wasCalledWith("pwsh", ["Copy-FromNavContainer"]), true);
     } finally {
@@ -1155,7 +1231,10 @@ Deno.test({
       );
 
       const provider = new BcContainerProvider();
-      const result = await provider.executeCommand("TestContainer", "Get-Service");
+      const result = await provider.executeCommand(
+        "TestContainer",
+        "Get-Service",
+      );
 
       assertEquals(result.exitCode, 0);
       assertStringIncludes(result.output, "Command output here");
@@ -1226,7 +1305,11 @@ Deno.test({
     try {
       mock.install();
 
-      mock.mockPowerShellError(["Remove-BcContainer"], "Container not found", 1);
+      mock.mockPowerShellError(
+        ["Remove-BcContainer"],
+        "Container not found",
+        1,
+      );
 
       const provider = new BcContainerProvider();
 

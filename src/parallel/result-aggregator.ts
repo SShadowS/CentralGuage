@@ -69,21 +69,19 @@ export class ResultAggregator {
   }
 
   /**
-   * Calculate model/variant statistics
-   * Keys by variantId to distinguish same model with different configs
+   * Get or create a ModelStats entry for a variant
    */
-  private calculateModelStats(): Map<string, ModelStats> {
-    const stats = new Map<string, ModelStats>();
+  private getOrCreateModelStat(
+    stats: Map<string, ModelStats>,
+    result: TaskExecutionResult,
+  ): ModelStats {
+    const { llmModel: model, llmProvider: provider, variantConfig } =
+      result.context;
+    const variantId = result.context.variantId || `${provider}/${model}`;
 
-    for (const result of this.results) {
-      const model = result.context.llmModel;
-      const provider = result.context.llmProvider;
-      // Use variantId to key results - this distinguishes same model with different configs
-      const variantId = result.context.variantId || `${provider}/${model}`;
-      const variantConfig = result.context.variantConfig;
-
-      const existingStat = stats.get(variantId);
-      const modelStat: ModelStats = existingStat ?? {
+    let modelStat = stats.get(variantId);
+    if (!modelStat) {
+      modelStat = {
         model,
         provider,
         variantId,
@@ -94,40 +92,67 @@ export class ResultAggregator {
         tokens: 0,
         cost: 0,
         avgAttempts: 0,
-        // New detailed stats
         passedOnAttempt1: 0,
         passedOnAttempt2: 0,
         compileFailures: 0,
         testFailures: 0,
         malformedResponses: 0,
       };
-      if (!existingStat) {
-        stats.set(variantId, modelStat);
+      stats.set(variantId, modelStat);
+    }
+    return modelStat;
+  }
+
+  /**
+   * Update model stats for a successful result
+   */
+  private recordSuccess(modelStat: ModelStats, attemptNumber: number): void {
+    modelStat.tasksPassed++;
+    if (attemptNumber === 1) {
+      modelStat.passedOnAttempt1++;
+      modelStat.passedOnAttempt2++;
+    } else if (attemptNumber === 2) {
+      modelStat.passedOnAttempt2++;
+    }
+  }
+
+  /**
+   * Update model stats for a failed result
+   */
+  private recordFailure(
+    modelStat: ModelStats,
+    result: TaskExecutionResult,
+  ): void {
+    modelStat.tasksFailed++;
+    const lastAttempt = result.attempts[result.attempts.length - 1];
+    if (!lastAttempt) return;
+
+    if (this.isMalformedResponse(lastAttempt)) {
+      modelStat.malformedResponses++;
+    } else {
+      const reasons = lastAttempt.failureReasons.join(" ");
+      if (reasons.includes("Tests failed")) {
+        modelStat.testFailures++;
+      } else if (reasons.includes("Compilation failed")) {
+        modelStat.compileFailures++;
       }
+    }
+  }
+
+  /**
+   * Calculate model/variant statistics
+   * Keys by variantId to distinguish same model with different configs
+   */
+  private calculateModelStats(): Map<string, ModelStats> {
+    const stats = new Map<string, ModelStats>();
+
+    for (const result of this.results) {
+      const modelStat = this.getOrCreateModelStat(stats, result);
 
       if (result.success) {
-        modelStat.tasksPassed++;
-        // Track which attempt passed
-        if (result.passedAttemptNumber === 1) {
-          modelStat.passedOnAttempt1++;
-          modelStat.passedOnAttempt2++;
-        } else if (result.passedAttemptNumber === 2) {
-          modelStat.passedOnAttempt2++;
-        }
+        this.recordSuccess(modelStat, result.passedAttemptNumber);
       } else {
-        modelStat.tasksFailed++;
-        // Analyze failure type from the last attempt
-        const lastAttempt = result.attempts[result.attempts.length - 1];
-        if (lastAttempt) {
-          const failureReasons = lastAttempt.failureReasons.join(" ");
-          if (this.isMalformedResponse(lastAttempt)) {
-            modelStat.malformedResponses++;
-          } else if (failureReasons.includes("Tests failed")) {
-            modelStat.testFailures++;
-          } else if (failureReasons.includes("Compilation failed")) {
-            modelStat.compileFailures++;
-          }
-        }
+        this.recordFailure(modelStat, result);
       }
 
       modelStat.tokens += result.totalTokensUsed;

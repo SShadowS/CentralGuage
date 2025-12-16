@@ -19,6 +19,7 @@ CentralGauge evaluates large language models on their ability to generate, debug
 - **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, OpenRouter, and local LLMs
 - **Model variants** - Compare same model with different temperatures/prompts
 - **Debug logging** - Capture raw LLM requests/responses for analysis
+- **Historical stats** - SQLite persistence for tracking results, regressions, and costs over time
 - **Fast & deterministic** - Consistent results across identical runs
 
 ## Quick Start
@@ -71,6 +72,12 @@ deno run --allow-all cli/centralgauge.ts models flagship      # Test model resol
 
 # HTML Reports
 deno task report results/ --html --output reports/
+
+# Stats & Analytics
+deno run --allow-all cli/centralgauge.ts stats-import results/   # Import JSON results
+deno run --allow-all cli/centralgauge.ts stats-runs              # View run history
+deno run --allow-all cli/centralgauge.ts stats-compare opus gpt  # Compare models
+deno run --allow-all cli/centralgauge.ts stats-cost              # Cost breakdown
 ```
 
 ## Model Variants
@@ -162,6 +169,42 @@ Debug output includes:
 - Extracted code blocks
 - Compilation results
 - Timing information
+
+## Historical Stats & Analytics
+
+Track benchmark results over time with SQLite-based persistence. Compare models, detect regressions, and analyze costs across runs.
+
+```bash
+# Import existing JSON results into the database
+deno run --allow-all cli/centralgauge.ts stats-import results/
+
+# View recent benchmark runs
+deno run --allow-all cli/centralgauge.ts stats-runs
+
+# Filter runs by task set hash (same tasks = comparable results)
+deno run --allow-all cli/centralgauge.ts stats-runs --task-set c71a992f
+
+# View performance trend for a specific model
+deno run --allow-all cli/centralgauge.ts stats-runs --model anthropic/claude-sonnet-4-20250514
+
+# Compare two models head-to-head
+deno run --allow-all cli/centralgauge.ts stats-compare anthropic/claude-sonnet-4 openai/gpt-4o
+
+# Detect performance regressions
+deno run --allow-all cli/centralgauge.ts stats-regression --threshold 10
+
+# View cost breakdown by model or task
+deno run --allow-all cli/centralgauge.ts stats-cost --group-by model
+deno run --allow-all cli/centralgauge.ts stats-cost --group-by task
+```
+
+### Task Set Hash
+
+The task set hash uniquely identifies which tasks were run in a benchmark. Runs with the same hash tested the same set of tasks, making them directly comparable for model performance analysis. Use `--task-set` to filter and compare runs across identical task sets.
+
+### Database Location
+
+Stats are stored in `results/centralgauge.db` by default. Use `--db <path>` to specify a different location.
 
 ## Supported Providers
 

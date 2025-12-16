@@ -8,7 +8,7 @@
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertEquals, assertArrayIncludes } from "@std/assert";
+import { assertArrayIncludes, assertEquals } from "@std/assert";
 import { AzureOpenAIAdapter } from "../../../src/llm/azure-openai-adapter.ts";
 import { LocalLLMAdapter } from "../../../src/llm/local-adapter.ts";
 import { OpenRouterAdapter } from "../../../src/llm/openrouter-adapter.ts";
@@ -85,20 +85,23 @@ Deno.test("AzureOpenAIAdapter - validateConfig", async (t) => {
     }
   });
 
-  await t.step("returns error when deployment name and model are missing", () => {
-    const adapter = new AzureOpenAIAdapter();
-    const errors = adapter.validateConfig({
-      provider: "azure-openai",
-      apiKey: "test-key",
-      baseUrl: "https://test.openai.azure.com",
-      model: "",
-    });
+  await t.step(
+    "returns error when deployment name and model are missing",
+    () => {
+      const adapter = new AzureOpenAIAdapter();
+      const errors = adapter.validateConfig({
+        provider: "azure-openai",
+        apiKey: "test-key",
+        baseUrl: "https://test.openai.azure.com",
+        model: "",
+      });
 
-    assertEquals(
-      errors.some((e) => e.includes("Deployment")),
-      true,
-    );
-  });
+      assertEquals(
+        errors.some((e) => e.includes("Deployment")),
+        true,
+      );
+    },
+  );
 
   await t.step("validates temperature range", () => {
     const adapter = new AzureOpenAIAdapter();
@@ -207,30 +210,38 @@ Deno.test("LocalLLMAdapter - validateConfig", async (t) => {
     );
   });
 
-  await t.step("returns error when endpoint is missing and no env vars set", () => {
-    const adapter = new LocalLLMAdapter();
-    // Clear environment variables for this test
-    const originalHost = Deno.env.get("OLLAMA_HOST");
-    const originalEndpoint = Deno.env.get("LOCAL_LLM_ENDPOINT");
-    try {
-      Deno.env.delete("OLLAMA_HOST");
-      Deno.env.delete("LOCAL_LLM_ENDPOINT");
+  await t.step(
+    "returns error when endpoint is missing and no env vars set",
+    () => {
+      const adapter = new LocalLLMAdapter();
+      // Clear environment variables for this test
+      const originalHost = Deno.env.get("OLLAMA_HOST");
+      const originalEndpoint = Deno.env.get("LOCAL_LLM_ENDPOINT");
+      try {
+        Deno.env.delete("OLLAMA_HOST");
+        Deno.env.delete("LOCAL_LLM_ENDPOINT");
 
-      const errors = adapter.validateConfig({
-        provider: "local",
-        model: "codellama:latest",
-        // No baseUrl provided
-      });
+        const errors = adapter.validateConfig({
+          provider: "local",
+          model: "codellama:latest",
+          // No baseUrl provided
+        });
 
-      assertEquals(
-        errors.some((e) => e.includes("endpoint")),
-        true,
-      );
-    } finally {
-      if (originalHost) Deno.env.set("OLLAMA_HOST", originalHost);
-      if (originalEndpoint) Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
-    }
-  });
+        assertEquals(
+          errors.some((e) => e.includes("endpoint")),
+          true,
+        );
+      } finally {
+        if (originalHost) Deno.env.set("OLLAMA_HOST", originalHost);
+        if (originalEndpoint) {
+          Deno.env.set(
+            "LOCAL_LLM_ENDPOINT",
+            originalEndpoint,
+          );
+        }
+      }
+    },
+  );
 
   await t.step("returns no error when baseUrl is provided", () => {
     const adapter = new LocalLLMAdapter();
@@ -252,7 +263,9 @@ Deno.test("LocalLLMAdapter - validateConfig", async (t) => {
       );
     } finally {
       if (originalHost) Deno.env.set("OLLAMA_HOST", originalHost);
-      if (originalEndpoint) Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
+      if (originalEndpoint) {
+        Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
+      }
     }
   });
 
@@ -279,36 +292,41 @@ Deno.test("LocalLLMAdapter - validateConfig", async (t) => {
       } else {
         Deno.env.delete("OLLAMA_HOST");
       }
-      if (originalEndpoint) Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
-    }
-  });
-
-  await t.step("returns no error when LOCAL_LLM_ENDPOINT env var is set", () => {
-    const adapter = new LocalLLMAdapter();
-    const originalHost = Deno.env.get("OLLAMA_HOST");
-    const originalEndpoint = Deno.env.get("LOCAL_LLM_ENDPOINT");
-    try {
-      Deno.env.delete("OLLAMA_HOST");
-      Deno.env.set("LOCAL_LLM_ENDPOINT", "http://localhost:8080");
-
-      const errors = adapter.validateConfig({
-        provider: "local",
-        model: "codellama:latest",
-      });
-
-      assertEquals(
-        errors.some((e) => e.includes("endpoint")),
-        false,
-      );
-    } finally {
-      if (originalHost) Deno.env.set("OLLAMA_HOST", originalHost);
       if (originalEndpoint) {
         Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
-      } else {
-        Deno.env.delete("LOCAL_LLM_ENDPOINT");
       }
     }
   });
+
+  await t.step(
+    "returns no error when LOCAL_LLM_ENDPOINT env var is set",
+    () => {
+      const adapter = new LocalLLMAdapter();
+      const originalHost = Deno.env.get("OLLAMA_HOST");
+      const originalEndpoint = Deno.env.get("LOCAL_LLM_ENDPOINT");
+      try {
+        Deno.env.delete("OLLAMA_HOST");
+        Deno.env.set("LOCAL_LLM_ENDPOINT", "http://localhost:8080");
+
+        const errors = adapter.validateConfig({
+          provider: "local",
+          model: "codellama:latest",
+        });
+
+        assertEquals(
+          errors.some((e) => e.includes("endpoint")),
+          false,
+        );
+      } finally {
+        if (originalHost) Deno.env.set("OLLAMA_HOST", originalHost);
+        if (originalEndpoint) {
+          Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
+        } else {
+          Deno.env.delete("LOCAL_LLM_ENDPOINT");
+        }
+      }
+    },
+  );
 
   await t.step("validates temperature range - too high", () => {
     const adapter = new LocalLLMAdapter();
@@ -591,7 +609,9 @@ Deno.test("LocalLLMAdapter - isHealthy with mocked fetch", async (t) => {
 
       const originalFetch = globalThis.fetch;
       try {
-        globalThis.fetch = createOpenAICompatibleFetchMock("OK") as typeof fetch;
+        globalThis.fetch = createOpenAICompatibleFetchMock(
+          "OK",
+        ) as typeof fetch;
         const healthy = await adapter.isHealthy();
         assertEquals(healthy, true);
       } finally {
@@ -650,7 +670,7 @@ Deno.test("LocalLLMAdapter - generateCode with mocked fetch", async (t) => {
     });
 
     const codeResponse =
-      '```al\ncodeunit 50100 "Test Codeunit"\n{\n    procedure Hello(): Text\n    begin\n        exit(\'Hello World\');\n    end;\n}\n```';
+      "```al\ncodeunit 50100 \"Test Codeunit\"\n{\n    procedure Hello(): Text\n    begin\n        exit('Hello World');\n    end;\n}\n```";
 
     const originalFetch = globalThis.fetch;
     try {
@@ -743,7 +763,7 @@ Deno.test("LocalLLMAdapter - generateCode with mocked fetch", async (t) => {
 
     // Response without code fences
     const plainResponse =
-      'codeunit 50100 "Plain Codeunit"\n{\n    procedure Test(): Text\n    begin\n        exit(\'Test\');\n    end;\n}';
+      "codeunit 50100 \"Plain Codeunit\"\n{\n    procedure Test(): Text\n    begin\n        exit('Test');\n    end;\n}";
 
     const originalFetch = globalThis.fetch;
     try {
@@ -855,7 +875,7 @@ Deno.test("LocalLLMAdapter - generateFix with mocked fetch", async (t) => {
 
     // Fix response that contains AL code instead of diff
     const alFixResponse =
-      '```al\ncodeunit 50100 "Fixed Codeunit"\n{\n    procedure Fixed(): Text\n    begin\n        exit(\'Fixed\');\n    end;\n}\n```';
+      "```al\ncodeunit 50100 \"Fixed Codeunit\"\n{\n    procedure Fixed(): Text\n    begin\n        exit('Fixed');\n    end;\n}\n```";
 
     const originalFetch = globalThis.fetch;
     try {
@@ -991,44 +1011,51 @@ Deno.test("LocalLLMAdapter - callLocalLLM endpoint detection", async (t) => {
     }
   });
 
-  await t.step("uses OpenAI-compatible API for non-Ollama endpoints", async () => {
-    const adapter = new LocalLLMAdapter();
-    adapter.configure({
-      provider: "local",
-      model: "codellama:latest",
-      baseUrl: "http://localhost:8080",
-    });
+  await t.step(
+    "uses OpenAI-compatible API for non-Ollama endpoints",
+    async () => {
+      const adapter = new LocalLLMAdapter();
+      adapter.configure({
+        provider: "local",
+        model: "codellama:latest",
+        baseUrl: "http://localhost:8080",
+      });
 
-    let calledUrl = "";
-    const mockFetch = (
-      input: string | URL | Request,
-      _init?: RequestInit,
-    ): Promise<Response> => {
-      calledUrl = typeof input === "string"
-        ? input
-        : input instanceof URL
-        ? input.toString()
-        : input.url;
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: "OK" } }],
-            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          }),
-          { status: 200 },
-        ),
-      );
-    };
+      let calledUrl = "";
+      const mockFetch = (
+        input: string | URL | Request,
+        _init?: RequestInit,
+      ): Promise<Response> => {
+        calledUrl = typeof input === "string"
+          ? input
+          : input instanceof URL
+          ? input.toString()
+          : input.url;
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              choices: [{ message: { content: "OK" } }],
+              usage: {
+                prompt_tokens: 1,
+                completion_tokens: 1,
+                total_tokens: 2,
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      };
 
-    const originalFetch = globalThis.fetch;
-    try {
-      globalThis.fetch = mockFetch as typeof fetch;
-      await adapter.isHealthy();
-      assertEquals(calledUrl.includes("/v1/chat/completions"), true);
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
+      const originalFetch = globalThis.fetch;
+      try {
+        globalThis.fetch = mockFetch as typeof fetch;
+        await adapter.isHealthy();
+        assertEquals(calledUrl.includes("/v1/chat/completions"), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    },
+  );
 
   await t.step(
     "adds Authorization header when apiKey is provided for OpenAI-compatible",
@@ -1113,7 +1140,9 @@ Deno.test("LocalLLMAdapter - callLocalLLM endpoint detection", async (t) => {
     } finally {
       globalThis.fetch = originalFetch;
       if (originalHost) Deno.env.set("OLLAMA_HOST", originalHost);
-      if (originalEndpoint) Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
+      if (originalEndpoint) {
+        Deno.env.set("LOCAL_LLM_ENDPOINT", originalEndpoint);
+      }
     }
   });
 

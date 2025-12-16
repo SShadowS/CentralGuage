@@ -8,7 +8,7 @@
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertEquals, assertArrayIncludes } from "@std/assert";
+import { assertArrayIncludes, assertEquals } from "@std/assert";
 import { OpenAIAdapter } from "../../../src/llm/openai-adapter.ts";
 
 // =============================================================================

@@ -324,6 +324,72 @@ export class BcContainerProvider implements ContainerProvider {
     return compilerFolder;
   }
 
+  /**
+   * Build the PowerShell script for compiling an AL project
+   */
+  private buildCompileScript(
+    compilerFolder: string,
+    projectPath: string,
+    outputDir: string,
+  ): string {
+    return `
+      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+
+      try {
+        $result = Compile-AppWithBcCompilerFolder \`
+          -compilerFolder "${compilerFolder}" \`
+          -appProjectFolder "${projectPath}" \`
+          -appOutputFolder "${outputDir}" \`
+          -ErrorAction Stop 2>&1
+
+        # Check for compiled app file
+        $appFile = Get-ChildItem -Path "${outputDir}" -Filter "*.app" -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($appFile) {
+          Write-Output "COMPILE_SUCCESS"
+          Write-Output "APP_FILE:$($appFile.FullName)"
+        } else {
+          Write-Output "COMPILE_ERROR"
+          Write-Output "ERROR:No .app file was generated"
+        }
+      } catch {
+        Write-Output "COMPILE_ERROR"
+        Write-Output "ERROR:$($_.Exception.Message)"
+        # Output the full error for parsing
+        $_ | Out-String | ForEach-Object { Write-Output "DETAIL:$_" }
+      }
+    `;
+  }
+
+  /**
+   * Build a compilation result from PowerShell output
+   */
+  private buildCompilationResult(
+    output: string,
+    duration: number,
+  ): CompilationResult {
+    const errors = parseCompilationErrors(output);
+    const warnings = parseCompilationWarnings(output);
+    const artifactPath = extractArtifactPath(output);
+    const success = isCompilationSuccessful(output, errors.length);
+
+    console.log(
+      (success ? colors.green : colors.red)(
+        `[BC Container] Compilation ${
+          success ? "succeeded" : "failed"
+        }: ${errors.length} errors, ${warnings.length} warnings`,
+      ),
+    );
+
+    return {
+      success,
+      errors,
+      warnings,
+      output,
+      duration,
+      ...(artifactPath && { artifactPath }),
+    };
+  }
+
   async compileProject(
     containerName: string,
     project: ALProject,
@@ -335,76 +401,26 @@ export class BcContainerProvider implements ContainerProvider {
     );
 
     const startTime = Date.now();
-
-    // Escape paths for PowerShell
     const projectPath = project.path.replace(/\\/g, "\\\\");
     const outputDir = `${project.path}\\output`.replace(/\\/g, "\\\\");
 
     try {
-      // Get or create compiler folder (cached)
       const compilerFolder = await this.getOrCreateCompilerFolder(
         containerName,
       );
       const escapedCompilerFolder = compilerFolder.replace(/\\/g, "\\\\");
 
-      // Create output directory
       await Deno.mkdir(`${project.path}\\output`, { recursive: true });
 
-      // Compile on HOST using the compiler folder
-      const script = `
-        Import-Module bccontainerhelper -WarningAction SilentlyContinue
-
-        try {
-          $result = Compile-AppWithBcCompilerFolder \`
-            -compilerFolder "${escapedCompilerFolder}" \`
-            -appProjectFolder "${projectPath}" \`
-            -appOutputFolder "${outputDir}" \`
-            -ErrorAction Stop 2>&1
-
-          # Check for compiled app file
-          $appFile = Get-ChildItem -Path "${outputDir}" -Filter "*.app" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($appFile) {
-            Write-Output "COMPILE_SUCCESS"
-            Write-Output "APP_FILE:$($appFile.FullName)"
-          } else {
-            Write-Output "COMPILE_ERROR"
-            Write-Output "ERROR:No .app file was generated"
-          }
-        } catch {
-          Write-Output "COMPILE_ERROR"
-          Write-Output "ERROR:$($_.Exception.Message)"
-          # Output the full error for parsing
-          $_ | Out-String | ForEach-Object { Write-Output "DETAIL:$_" }
-        }
-      `;
-
-      const result = await this.executePowerShell(script);
-      const duration = Date.now() - startTime;
-
-      // Parse compilation results using extracted functions
-      const errors = parseCompilationErrors(result.output);
-      const warnings = parseCompilationWarnings(result.output);
-      const artifactPath = extractArtifactPath(result.output);
-      const success = isCompilationSuccessful(result.output, errors.length);
-
-      console.log(
-        (success ? colors.green : colors.red)(
-          `[BC Container] Compilation ${
-            success ? "succeeded" : "failed"
-          }: ${errors.length} errors, ${warnings.length} warnings`,
-        ),
+      const script = this.buildCompileScript(
+        escapedCompilerFolder,
+        projectPath,
+        outputDir,
       );
+      const result = await this.executePowerShell(script);
 
-      return {
-        success,
-        errors,
-        warnings,
-        output: result.output,
-        duration,
-        ...(artifactPath && { artifactPath }),
-      };
+      return this.buildCompilationResult(result.output, Date.now() - startTime);
     } catch (error) {
-      const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error
         ? error.message
         : String(error);
@@ -421,7 +437,7 @@ export class BcContainerProvider implements ContainerProvider {
         }],
         warnings: [],
         output: errorMessage,
-        duration,
+        duration: Date.now() - startTime,
       };
     }
   }

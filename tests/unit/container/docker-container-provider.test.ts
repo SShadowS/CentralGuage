@@ -9,11 +9,7 @@
  * 5. Error handling scenarios
  */
 
-import {
-  assertEquals,
-  assertRejects,
-  assertStringIncludes,
-} from "@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { DockerContainerProvider } from "../../../src/container/docker-container-provider.ts";
 import { createCommandMock } from "../../utils/command-mock.ts";
 
@@ -476,7 +472,10 @@ Deno.test("DockerContainerProvider - compileProject copies project and compiles"
     mock.mockDocker(["cp"], "");
 
     // Mock: compile succeeds
-    mock.mockDocker(["exec"], "Compilation object written to /tmp/build/app.app");
+    mock.mockDocker(
+      ["exec"],
+      "Compilation object written to /tmp/build/app.app",
+    );
 
     const provider = new DockerContainerProvider();
     const result = await provider.compileProject("TestContainer", {
@@ -657,7 +656,11 @@ Deno.test("DockerContainerProvider - copyToContainer executes docker cp", async 
     mock.mockDocker(["cp"], "");
 
     const provider = new DockerContainerProvider();
-    await provider.copyToContainer("TestContainer", "/local/path", "/container/path");
+    await provider.copyToContainer(
+      "TestContainer",
+      "/local/path",
+      "/container/path",
+    );
 
     assertEquals(mock.wasCalledWith("docker", ["cp"]), true);
   } finally {
@@ -677,7 +680,11 @@ Deno.test("DockerContainerProvider - copyToContainer throws on failure", async (
 
     await assertRejects(
       async () =>
-        await provider.copyToContainer("TestContainer", "/local/path", "/container/path"),
+        await provider.copyToContainer(
+          "TestContainer",
+          "/local/path",
+          "/container/path",
+        ),
       Error,
       "Failed to copy to container",
     );
@@ -695,7 +702,11 @@ Deno.test("DockerContainerProvider - copyFromContainer executes docker cp", asyn
     mock.mockDocker(["cp"], "");
 
     const provider = new DockerContainerProvider();
-    await provider.copyFromContainer("TestContainer", "/container/path", "/local/path");
+    await provider.copyFromContainer(
+      "TestContainer",
+      "/container/path",
+      "/local/path",
+    );
 
     assertEquals(mock.wasCalledWith("docker", ["cp"]), true);
   } finally {
@@ -715,7 +726,11 @@ Deno.test("DockerContainerProvider - copyFromContainer throws on failure", async
 
     await assertRejects(
       async () =>
-        await provider.copyFromContainer("TestContainer", "/container/path", "/local/path"),
+        await provider.copyFromContainer(
+          "TestContainer",
+          "/container/path",
+          "/local/path",
+        ),
       Error,
       "Failed to copy from container",
     );
@@ -737,7 +752,10 @@ Deno.test("DockerContainerProvider - executeCommand runs command in container", 
     mock.mockDocker(["exec"], "Command output here");
 
     const provider = new DockerContainerProvider();
-    const result = await provider.executeCommand("TestContainer", "Get-Service");
+    const result = await provider.executeCommand(
+      "TestContainer",
+      "Get-Service",
+    );
 
     assertEquals(result.exitCode, 0);
     assertStringIncludes(result.output, "Command output here");
@@ -756,7 +774,10 @@ Deno.test("DockerContainerProvider - executeCommand returns error code on failur
     mock.mockDockerError(["exec"], "Command failed", 1);
 
     const provider = new DockerContainerProvider();
-    const result = await provider.executeCommand("TestContainer", "InvalidCommand");
+    const result = await provider.executeCommand(
+      "TestContainer",
+      "InvalidCommand",
+    );
 
     assertEquals(result.exitCode, 1);
   } finally {

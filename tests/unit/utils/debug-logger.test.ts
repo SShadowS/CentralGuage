@@ -619,7 +619,11 @@ describe("DebugLogger", () => {
       await logger.logError(
         "gemini",
         "generateCode",
-        { prompt: "Generate code for testing", temperature: 0.1, maxTokens: 1000 },
+        {
+          prompt: "Generate code for testing",
+          temperature: 0.1,
+          maxTokens: 1000,
+        },
         { taskId: "task-error", attempt: 1, description: "Error test" },
         testError,
       );

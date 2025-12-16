@@ -45,7 +45,8 @@
     "@anthropic-ai/sdk": "npm:@anthropic-ai/sdk@0.71.2",
     "@openai/openai": "jsr:@openai/openai@6.10.0",
     "@google/genai": "npm:@google/genai@1.33.0",
-    "@openrouter/sdk": "npm:@openrouter/sdk@0.2.11"
+    "@openrouter/sdk": "npm:@openrouter/sdk@0.2.11",
+    "@db/sqlite": "jsr:@db/sqlite@0.12.0"
   },
   "lint": {
     "rules": {
