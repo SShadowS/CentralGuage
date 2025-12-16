@@ -9,14 +9,19 @@ description: >-
   - Customer No. (Code[20], with TableRelation to Customer)
   - Start Date and End Date (Date fields with validation)
   - Contract Value (Decimal with minimum value validation)
-  - Status (Option: Draft, Active, Suspended, Terminated)
+  - Status (Option: Draft, Active, Suspended, Terminated, Closed)
   - Payment Terms (Code[10] with TableRelation)
 
   Include complex validation in triggers:
-  - OnValidate for dates (End Date must be after Start Date)
-  - OnValidate for Contract Value (must be positive, warn if over threshold)
-  - OnInsert trigger to auto-generate Contract No.
-  - OnDelete trigger to prevent deletion of Active contracts
+  - OnValidate for End Date: Must validate that End Date is after Start Date.
+    Error message must be exactly: "End Date must be after Start Date"
+  - OnValidate for Contract Value: Must be positive (greater than 0).
+    Error message must be exactly: "Contract Value must be positive"
+  - OnInsert trigger to:
+    * Auto-generate Contract No. if not already set
+    * Set default Status to Draft
+  - OnDelete trigger to prevent deletion of Active contracts.
+    Error message must be exactly: "Cannot delete active contract"
 
   Include proper captions, data classification, and field validation patterns.
 expected:

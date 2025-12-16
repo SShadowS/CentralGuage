@@ -6,18 +6,18 @@ description: >-
   Create a comprehensive interface implementation for a shipping service.
 
   First, define an interface called "Shipping Provider" with ID 70001:
-  - CalculateShippingCost(Weight: Decimal; Distance: Decimal; ServiceType: Enum): Decimal
-  - EstimateDeliveryTime(SourceAddress: Text; DestinationAddress: Text): Integer
-  - CreateShipment(ShipmentDetails: JsonObject): Text - returns tracking number
-  - TrackShipment(TrackingNumber: Text): JsonObject - returns status info
-  - ValidateAddress(Address: Text): Boolean
+  - CalculateShippingCost(Weight: Decimal; FromCountry: Text; ToCountry: Text): Decimal
+  - EstimateDeliveryTime(FromCountry: Text; ToCountry: Text; ServiceType: Text): Integer
+  - CreateShipment(OrderNumber: Text; FromAddress: Text; ToAddress: Text; Weight: Decimal): Text[50] - returns tracking number
+  - TrackShipment(TrackingNumber: Text): Text[100] - returns status info as text
+  - ValidateAddress(Street: Text; City: Text; State: Text; ZipCode: Text; Country: Text): Boolean
 
   Then create a concrete implementation codeunit called "Standard Shipping Provider" with ID 70004 that implements the interface:
-  - Include realistic shipping calculations based on weight/distance
-  - Implement delivery time estimation with business rules
+  - Include realistic shipping calculations based on weight and country routing (heavier packages cost more)
+  - Implement delivery time estimation considering service type (Standard vs Express - Express should be faster)
   - Handle shipment creation with proper validation
-  - Provide tracking functionality with status updates
-  - Include comprehensive address validation logic
+  - Provide tracking functionality with status updates as text
+  - Include comprehensive address validation logic for all address components
 
   Use proper interface syntax, implements keyword, and include error handling
   for all procedures. Add logging and audit trail functionality.

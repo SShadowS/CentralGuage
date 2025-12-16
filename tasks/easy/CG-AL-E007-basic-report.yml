@@ -5,14 +5,14 @@ max_attempts: 2
 description: >-
   Create a simple AL report called "Customer List Report" with ID 70000.
   The report should use the Customer table as its data source and display:
-  - Customer No.
-  - Customer Name
-  - City
-  - Phone No.
+  - Customer No. (column name: No_Customer, source: "No.")
+  - Customer Name (column name: Name_Customer, source: Name)
+  - City (column name: City_Customer, source: City)
+  - Phone No. (column name: PhoneNo_Customer, source: "Phone No.")
 
-  Include proper dataset structure with a single data item for Customer.
-  Add appropriate column captions and ensure the report follows Business Central conventions.
-  Include basic report properties like UsageCategory and ApplicationArea.
+  Include proper dataset structure with a single data item named "Customer".
+  Use the naming convention column({FieldName}_{DataItemName}; SourceField) for dataset columns.
+  Include basic report properties like UsageCategory = ReportsAndAnalysis and ApplicationArea = All.
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E007.Test.al

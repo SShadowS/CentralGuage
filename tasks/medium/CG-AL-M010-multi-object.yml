@@ -6,21 +6,26 @@ description: >-
   Create a complete multi-object scenario for a "Project Management" system with related objects:
 
   1. Create a Project table (ID 70003) with fields:
-     - Project No. (Code[20], primary key)
-     - Project Name (Text[100])
-     - Start Date, End Date (Date)
+     - "Project Code" (Code[20], primary key)
+     - Name (Text[100])
+     - "Start Date", "End Date" (Date)
      - Status (Option: Planning, Active, On Hold, Completed)
-     - Budget Amount (Decimal)
-     - Actual Cost (Decimal, calculated from tasks)
+     - "Budget Amount" (Decimal)
+     - "Actual Cost" (Decimal, calculated from tasks)
+
+     Add a method on the table:
+     - CalculateTotalEstimatedHours(): Decimal - returns sum of Estimated Hours from all related tasks
 
   2. Create a Project Task table (ID 70004) with fields:
-     - Project No. (Code[20], TableRelation to Project)
-     - Task No. (Code[20])
+     - "Project Code" (Code[20], TableRelation to Project)
+     - "Task Code" (Code[20])
      - Description (Text[100])
-     - Estimated Hours (Decimal)
-     - Actual Hours (Decimal)
-     - Hourly Rate (Decimal)
-     - Task Status (Option: Not Started, In Progress, Completed)
+     - "Estimated Hours" (Decimal)
+     - "Actual Hours" (Decimal)
+     - "Hourly Rate" (Decimal)
+     - Status (Option: Open, "In Progress", Completed)
+
+     Primary key should be "Project Code" + "Task Code"
 
   3. Create a Project Card page (ID 70102) with:
      - Project header information
@@ -28,9 +33,11 @@ description: >-
      - Actions to calculate totals and update status
 
   4. Create a Project Management codeunit (ID 70005) with procedures:
-     - UpdateProjectCosts(ProjectNo: Code[20]) - calculate actual costs from tasks
-     - ValidateProjectDates(var Project: Record) - business validation
-     - CompleteProject(ProjectNo: Code[20]) - finalize project
+     - CreateProject(Name: Text[100]; StartDate: Date): Code[20] - creates a new project and returns the generated Project Code
+     - ActivateProject(ProjectCode: Code[20]) - changes project status to Active
+     - CompleteProject(ProjectCode: Code[20]) - finalizes project, but raises error "Cannot complete project with open tasks" if any tasks have Status::Open
+
+  5. Implement cascade delete: When a Project is deleted with Delete(true), all related Project Tasks should also be deleted.
 
   Include proper relationships, validations, and business logic across all objects.
 expected:
