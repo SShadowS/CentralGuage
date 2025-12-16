@@ -9,212 +9,417 @@ codeunit 80015 "CG-AL-M005 Test"
         ExternalPaymentService: Codeunit "External Payment Service";
 
     [Test]
-    procedure TestCodeunitExists()
-    begin
-        // [SCENARIO] External Payment Service codeunit exists
-        // [GIVEN] The codeunit definition
-        // [WHEN] We reference the codeunit
-        // [THEN] No error occurs
-        Assert.IsTrue(true, 'Codeunit exists');
-    end;
-
-    [Test]
-    procedure TestSendPaymentRequestSuccess()
+    procedure TestSendPaymentRequestReturnsBoolean()
     var
         ResponseJson: JsonObject;
-        Success: Boolean;
+        Result: Boolean;
     begin
-        // [SCENARIO] SendPaymentRequest returns success for valid request
-        // [GIVEN] Valid payment data
-        // [WHEN] We send payment request
-        // Note: In real scenario, would use mock HTTP handler
-        Success := ExternalPaymentService.SendPaymentRequest(
+        // [SCENARIO] SendPaymentRequest procedure exists with correct signature
+        // [GIVEN] Valid payment parameters
+        // [WHEN] We call SendPaymentRequest
+        Result := ExternalPaymentService.SendPaymentRequest(
             'ORD001',
             100.00,
             'USD',
             ResponseJson
         );
 
-        // [THEN] Request succeeds (with mock)
-        // Assert.IsTrue(Success, 'Payment request should succeed');
-        Assert.IsTrue(true, 'Test structure verified');
+        // [THEN] Procedure returns a boolean (no compilation error means signature is correct)
+        // Note: Actual HTTP call behavior depends on implementation
+        Assert.IsTrue(true or not Result, 'SendPaymentRequest returns boolean');
     end;
 
     [Test]
-    procedure TestValidatePaymentResponseValid()
+    procedure TestValidatePaymentResponseApproved()
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
     begin
-        // [SCENARIO] ValidatePaymentResponse validates correct response
-        // [GIVEN] A valid payment response
+        // [SCENARIO] ValidatePaymentResponse returns true for approved response with all required fields
+        // [GIVEN] A valid approved payment response with status, transactionId, and amount
         ResponseJson.Add('status', 'approved');
-        ResponseJson.Add('transactionId', 'TXN123');
+        ResponseJson.Add('transactionId', 'TXN123456');
         ResponseJson.Add('amount', 100.00);
 
         // [WHEN] We validate the response
         IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
 
         // [THEN] Validation passes
-        Assert.IsTrue(IsValid, 'Valid response should pass validation');
+        Assert.IsTrue(IsValid, 'Response with status=approved and all required fields should be valid');
     end;
 
     [Test]
-    procedure TestValidatePaymentResponseInvalid()
+    procedure TestValidatePaymentResponseMissingStatus()
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
     begin
-        // [SCENARIO] ValidatePaymentResponse rejects invalid response
-        // [GIVEN] An invalid payment response (missing required fields)
-        ResponseJson.Add('status', 'error');
+        // [SCENARIO] ValidatePaymentResponse returns false when status field is missing
+        // [GIVEN] A response missing the status field
+        ResponseJson.Add('transactionId', 'TXN123456');
+        ResponseJson.Add('amount', 100.00);
 
         // [WHEN] We validate the response
         IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
 
         // [THEN] Validation fails
-        Assert.IsFalse(IsValid, 'Invalid response should fail validation');
+        Assert.IsFalse(IsValid, 'Response missing status field should be invalid');
     end;
 
     [Test]
-    procedure TestGetPaymentStatus()
+    procedure TestValidatePaymentResponseMissingTransactionId()
+    var
+        ResponseJson: JsonObject;
+        IsValid: Boolean;
+    begin
+        // [SCENARIO] ValidatePaymentResponse returns false when transactionId is missing
+        // [GIVEN] A response missing the transactionId field
+        ResponseJson.Add('status', 'approved');
+        ResponseJson.Add('amount', 100.00);
+
+        // [WHEN] We validate the response
+        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+
+        // [THEN] Validation fails
+        Assert.IsFalse(IsValid, 'Response missing transactionId field should be invalid');
+    end;
+
+    [Test]
+    procedure TestValidatePaymentResponseMissingAmount()
+    var
+        ResponseJson: JsonObject;
+        IsValid: Boolean;
+    begin
+        // [SCENARIO] ValidatePaymentResponse returns false when amount is missing
+        // [GIVEN] A response missing the amount field
+        ResponseJson.Add('status', 'approved');
+        ResponseJson.Add('transactionId', 'TXN123456');
+
+        // [WHEN] We validate the response
+        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+
+        // [THEN] Validation fails
+        Assert.IsFalse(IsValid, 'Response missing amount field should be invalid');
+    end;
+
+    [Test]
+    procedure TestValidatePaymentResponseDeclined()
+    var
+        ResponseJson: JsonObject;
+        IsValid: Boolean;
+    begin
+        // [SCENARIO] ValidatePaymentResponse returns false for declined status
+        // [GIVEN] A response with status=declined (even with all fields present)
+        ResponseJson.Add('status', 'declined');
+        ResponseJson.Add('transactionId', 'TXN123456');
+        ResponseJson.Add('amount', 100.00);
+
+        // [WHEN] We validate the response
+        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+
+        // [THEN] Validation fails because status is not approved
+        Assert.IsFalse(IsValid, 'Response with status=declined should be invalid');
+    end;
+
+    [Test]
+    procedure TestValidatePaymentResponsePending()
+    var
+        ResponseJson: JsonObject;
+        IsValid: Boolean;
+    begin
+        // [SCENARIO] ValidatePaymentResponse returns false for pending status
+        // [GIVEN] A response with status=pending
+        ResponseJson.Add('status', 'pending');
+        ResponseJson.Add('transactionId', 'TXN123456');
+        ResponseJson.Add('amount', 100.00);
+
+        // [WHEN] We validate the response
+        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+
+        // [THEN] Validation fails because status is not approved
+        Assert.IsFalse(IsValid, 'Response with status=pending should be invalid');
+    end;
+
+    [Test]
+    procedure TestValidatePaymentResponseEmptyJson()
+    var
+        ResponseJson: JsonObject;
+        IsValid: Boolean;
+    begin
+        // [SCENARIO] ValidatePaymentResponse returns false for empty JSON
+        // [GIVEN] An empty JSON object
+
+        // [WHEN] We validate the empty response
+        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+
+        // [THEN] Validation fails
+        Assert.IsFalse(IsValid, 'Empty response should be invalid');
+    end;
+
+    [Test]
+    procedure TestGetPaymentStatusReturnsText()
     var
         Status: Text;
     begin
-        // [SCENARIO] GetPaymentStatus retrieves transaction status
+        // [SCENARIO] GetPaymentStatus returns status for a transaction
         // [GIVEN] A transaction ID
         // [WHEN] We get the status
-        Status := ExternalPaymentService.GetPaymentStatus('TXN123');
+        Status := ExternalPaymentService.GetPaymentStatus('TXN123456');
 
-        // [THEN] Status is returned
-        Assert.AreNotEqual('', Status, 'Status should be returned');
+        // [THEN] A status text is returned (non-empty expected for valid transaction)
+        Assert.AreNotEqual('', Status, 'GetPaymentStatus should return a non-empty status');
     end;
 
     [Test]
-    procedure TestHandlePaymentWebhook()
+    procedure TestHandlePaymentWebhookPaymentCompleted()
     var
         WebhookPayload: JsonObject;
         Handled: Boolean;
     begin
-        // [SCENARIO] HandlePaymentWebhook processes webhook events
-        // [GIVEN] A webhook payload
+        // [SCENARIO] HandlePaymentWebhook processes payment.completed events
+        // [GIVEN] A webhook payload with payment.completed event
         WebhookPayload.Add('event', 'payment.completed');
-        WebhookPayload.Add('transactionId', 'TXN123');
+        WebhookPayload.Add('transactionId', 'TXN123456');
         WebhookPayload.Add('status', 'success');
 
         // [WHEN] We handle the webhook
         Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
 
-        // [THEN] Webhook is processed
-        Assert.IsTrue(Handled, 'Webhook should be handled');
+        // [THEN] Webhook is successfully handled
+        Assert.IsTrue(Handled, 'payment.completed webhook should be handled');
     end;
 
     [Test]
-    procedure TestLogPaymentTransaction()
+    procedure TestHandlePaymentWebhookPaymentFailed()
+    var
+        WebhookPayload: JsonObject;
+        Handled: Boolean;
+    begin
+        // [SCENARIO] HandlePaymentWebhook processes payment.failed events
+        // [GIVEN] A webhook payload with payment.failed event
+        WebhookPayload.Add('event', 'payment.failed');
+        WebhookPayload.Add('transactionId', 'TXN123456');
+        WebhookPayload.Add('status', 'failed');
+        WebhookPayload.Add('error', 'Card declined');
+
+        // [WHEN] We handle the webhook
+        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
+
+        // [THEN] Webhook is successfully handled
+        Assert.IsTrue(Handled, 'payment.failed webhook should be handled');
+    end;
+
+    [Test]
+    procedure TestHandlePaymentWebhookMissingEvent()
+    var
+        WebhookPayload: JsonObject;
+        Handled: Boolean;
+    begin
+        // [SCENARIO] HandlePaymentWebhook rejects webhooks without event type
+        // [GIVEN] A webhook payload missing the event field
+        WebhookPayload.Add('transactionId', 'TXN123456');
+        WebhookPayload.Add('status', 'success');
+
+        // [WHEN] We handle the webhook
+        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
+
+        // [THEN] Webhook is not handled due to missing event
+        Assert.IsFalse(Handled, 'Webhook without event type should not be handled');
+    end;
+
+    [Test]
+    procedure TestHandlePaymentWebhookEmptyPayload()
+    var
+        WebhookPayload: JsonObject;
+        Handled: Boolean;
+    begin
+        // [SCENARIO] HandlePaymentWebhook rejects empty payloads
+        // [GIVEN] An empty webhook payload
+
+        // [WHEN] We handle the webhook
+        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
+
+        // [THEN] Webhook is not handled
+        Assert.IsFalse(Handled, 'Empty webhook payload should not be handled');
+    end;
+
+    [Test]
+    procedure TestLogPaymentTransactionExecutes()
     var
         TransactionId: Text[50];
         Amount: Decimal;
         Status: Text[20];
     begin
-        // [SCENARIO] LogPaymentTransaction records transaction
+        // [SCENARIO] LogPaymentTransaction records transaction without error
         // [GIVEN] Transaction details
-        TransactionId := 'TXN123';
+        TransactionId := 'TXN123456';
         Amount := 100.00;
         Status := 'Completed';
 
         // [WHEN] We log the transaction
         ExternalPaymentService.LogPaymentTransaction(TransactionId, Amount, Status);
 
-        // [THEN] Transaction is logged (would verify in log table)
-        Assert.IsTrue(true, 'Transaction logged');
+        // [THEN] No error occurs (procedure completes successfully)
+        Assert.IsTrue(true, 'LogPaymentTransaction executed without error');
     end;
 
     [Test]
-    procedure TestErrorHandlingNetworkFailure()
+    procedure TestLogPaymentTransactionDifferentStatuses()
     var
-        ResponseJson: JsonObject;
-        Success: Boolean;
+        TransactionId: Text[50];
+        Amount: Decimal;
     begin
-        // [SCENARIO] Network failures are handled gracefully
-        // [GIVEN] A simulated network failure
-        // [WHEN] We send payment request
-        // Note: Would use mock that simulates failure
+        // [SCENARIO] LogPaymentTransaction handles various status values
+        // [GIVEN] Different transaction statuses
+        TransactionId := 'TXN789';
+        Amount := 250.00;
 
-        // [THEN] Error is handled without crashing
-        Assert.IsTrue(true, 'Error handling verified');
+        // [WHEN] We log transactions with different statuses
+        // [THEN] All log operations complete without error
+        ExternalPaymentService.LogPaymentTransaction(TransactionId, Amount, 'Pending');
+        ExternalPaymentService.LogPaymentTransaction(TransactionId, Amount, 'Completed');
+        ExternalPaymentService.LogPaymentTransaction(TransactionId, Amount, 'Failed');
+        ExternalPaymentService.LogPaymentTransaction(TransactionId, Amount, 'Refunded');
+
+        Assert.IsTrue(true, 'All status types logged successfully');
     end;
 
     [Test]
-    procedure TestRetryLogic()
+    procedure TestJsonSerializationRoundtrip()
     var
-        ResponseJson: JsonObject;
-        Success: Boolean;
-        RetryCount: Integer;
-    begin
-        // [SCENARIO] Failed requests are retried
-        // [GIVEN] A request that fails initially
-        RetryCount := 0;
-
-        // [WHEN] Request fails and retry is attempted
-        // Note: Would verify retry count in mock
-
-        // [THEN] Retry is attempted up to max retries
-        Assert.IsTrue(true, 'Retry logic verified');
-    end;
-
-    [Test]
-    procedure TestTimeoutHandling()
-    var
-        ResponseJson: JsonObject;
-        Success: Boolean;
-    begin
-        // [SCENARIO] Request timeouts are handled
-        // [GIVEN] A slow-responding endpoint
-        // [WHEN] Request times out
-        // Note: Would use mock with delay
-
-        // [THEN] Timeout error is raised appropriately
-        Assert.IsTrue(true, 'Timeout handling verified');
-    end;
-
-    [Test]
-    procedure TestJsonSerialization()
-    var
-        PaymentRequest: JsonObject;
+        OriginalJson: JsonObject;
+        ParsedJson: JsonObject;
         JsonText: Text;
+        Token: JsonToken;
+        ParsedStatus: Text;
+        ParsedAmount: Decimal;
     begin
-        // [SCENARIO] Payment request is properly serialized
-        // [GIVEN] Payment data
-        PaymentRequest.Add('orderId', 'ORD001');
-        PaymentRequest.Add('amount', 100.00);
-        PaymentRequest.Add('currency', 'USD');
+        // [SCENARIO] JSON serialization and deserialization work correctly
+        // [GIVEN] A payment response JSON
+        OriginalJson.Add('status', 'approved');
+        OriginalJson.Add('transactionId', 'TXN-TEST-001');
+        OriginalJson.Add('amount', 199.99);
 
-        // [WHEN] We serialize to text
-        PaymentRequest.WriteTo(JsonText);
+        // [WHEN] We serialize and deserialize
+        OriginalJson.WriteTo(JsonText);
+        ParsedJson.ReadFrom(JsonText);
 
-        // [THEN] JSON is valid
-        Assert.IsTrue(JsonText.Contains('orderId'), 'JSON should contain orderId');
-        Assert.IsTrue(JsonText.Contains('amount'), 'JSON should contain amount');
+        // [THEN] Values are preserved
+        ParsedJson.Get('status', Token);
+        ParsedStatus := Token.AsValue().AsText();
+        Assert.AreEqual('approved', ParsedStatus, 'Status should be preserved');
+
+        ParsedJson.Get('amount', Token);
+        ParsedAmount := Token.AsValue().AsDecimal();
+        Assert.AreEqual(199.99, ParsedAmount, 'Amount should be preserved');
     end;
 
     [Test]
-    procedure TestJsonDeserialization()
+    procedure TestJsonDeserializationWithNestedObjects()
     var
         ResponseJson: JsonObject;
         JsonText: Text;
         Token: JsonToken;
-        Status: Text;
+        MetadataObj: JsonObject;
     begin
-        // [SCENARIO] Payment response is properly deserialized
-        // [GIVEN] JSON response text
-        JsonText := '{"status":"approved","transactionId":"TXN123"}';
+        // [SCENARIO] Deserialization handles nested JSON objects
+        // [GIVEN] JSON with nested structure
+        JsonText := '{"status":"approved","transactionId":"TXN123","amount":100.00,"metadata":{"source":"web","timestamp":"2025-01-15T10:30:00Z"}}';
 
         // [WHEN] We parse the JSON
         ResponseJson.ReadFrom(JsonText);
 
-        // [THEN] Values are accessible
-        ResponseJson.Get('status', Token);
-        Status := Token.AsValue().AsText();
-        Assert.AreEqual('approved', Status, 'Status should be parsed correctly');
+        // [THEN] Nested objects are accessible
+        Assert.IsTrue(ResponseJson.Contains('metadata'), 'Should contain metadata field');
+        ResponseJson.Get('metadata', Token);
+        Assert.IsTrue(Token.IsObject(), 'Metadata should be an object');
+    end;
+
+    [Test]
+    procedure TestSendPaymentRequestWithVariousCurrencies()
+    var
+        ResponseJson: JsonObject;
+        ResultUSD: Boolean;
+        ResultEUR: Boolean;
+        ResultGBP: Boolean;
+    begin
+        // [SCENARIO] SendPaymentRequest accepts various currency codes
+        // [GIVEN] Payment requests with different currencies
+        // [WHEN] We send requests with USD, EUR, and GBP
+        ResultUSD := ExternalPaymentService.SendPaymentRequest('ORD-USD-001', 100.00, 'USD', ResponseJson);
+        Clear(ResponseJson);
+        ResultEUR := ExternalPaymentService.SendPaymentRequest('ORD-EUR-001', 85.00, 'EUR', ResponseJson);
+        Clear(ResponseJson);
+        ResultGBP := ExternalPaymentService.SendPaymentRequest('ORD-GBP-001', 75.00, 'GBP', ResponseJson);
+
+        // [THEN] All currency codes are accepted (procedure executes without error)
+        Assert.IsTrue(true, 'All currency codes processed without error');
+    end;
+
+    [Test]
+    procedure TestSendPaymentRequestWithZeroAmount()
+    var
+        ResponseJson: JsonObject;
+        Result: Boolean;
+    begin
+        // [SCENARIO] SendPaymentRequest handles zero amount
+        // [GIVEN] A payment request with zero amount
+        // [WHEN] We send the request
+        Result := ExternalPaymentService.SendPaymentRequest('ORD-ZERO', 0.00, 'USD', ResponseJson);
+
+        // [THEN] Request is processed (implementation may return false for invalid amount)
+        // The key test is that no unhandled error occurs
+        Assert.IsTrue(true or not Result, 'Zero amount request handled without crash');
+    end;
+
+    [Test]
+    procedure TestSendPaymentRequestWithNegativeAmount()
+    var
+        ResponseJson: JsonObject;
+        Result: Boolean;
+    begin
+        // [SCENARIO] SendPaymentRequest handles negative amount (refund scenario)
+        // [GIVEN] A payment request with negative amount
+        // [WHEN] We send the request
+        Result := ExternalPaymentService.SendPaymentRequest('ORD-REFUND', -50.00, 'USD', ResponseJson);
+
+        // [THEN] Request is processed without unhandled error
+        Assert.IsTrue(true or not Result, 'Negative amount request handled without crash');
+    end;
+
+    [Test]
+    procedure TestSendPaymentRequestWithLargeAmount()
+    var
+        ResponseJson: JsonObject;
+        Result: Boolean;
+    begin
+        // [SCENARIO] SendPaymentRequest handles large amounts
+        // [GIVEN] A payment request with large amount
+        // [WHEN] We send the request
+        Result := ExternalPaymentService.SendPaymentRequest('ORD-LARGE', 999999999.99, 'USD', ResponseJson);
+
+        // [THEN] Request is processed without overflow error
+        Assert.IsTrue(true or not Result, 'Large amount request handled without overflow');
+    end;
+
+    [Test]
+    procedure TestHandlePaymentWebhookRefundEvent()
+    var
+        WebhookPayload: JsonObject;
+        Handled: Boolean;
+    begin
+        // [SCENARIO] HandlePaymentWebhook processes refund events
+        // [GIVEN] A webhook payload with payment.refunded event
+        WebhookPayload.Add('event', 'payment.refunded');
+        WebhookPayload.Add('transactionId', 'TXN-REFUND-001');
+        WebhookPayload.Add('originalTransactionId', 'TXN123456');
+        WebhookPayload.Add('refundAmount', 50.00);
+        WebhookPayload.Add('status', 'refunded');
+
+        // [WHEN] We handle the webhook
+        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
+
+        // [THEN] Refund webhook is handled
+        Assert.IsTrue(Handled, 'payment.refunded webhook should be handled');
     end;
 }

@@ -10,12 +10,15 @@ codeunit 80018 "CG-AL-M008 Test"
 
     [Test]
     procedure TestCodeunitExists()
+    var
+        CodeunitId: Integer;
     begin
         // [SCENARIO] Purchase Approval Workflow codeunit exists
         // [GIVEN] The codeunit definition
-        // [WHEN] We reference the codeunit
-        // [THEN] No error occurs
-        Assert.IsTrue(true, 'Codeunit exists');
+        // [WHEN] We get the codeunit ID
+        CodeunitId := Codeunit::"Purchase Approval Workflow";
+        // [THEN] The ID matches expected value (70003)
+        Assert.AreEqual(70003, CodeunitId, 'Codeunit ID should be 70003');
     end;
 
     [Test]
@@ -229,15 +232,37 @@ codeunit 80018 "CG-AL-M008 Test"
         PurchaseHeader: Record "Purchase Header";
         LibraryPurchase: Codeunit "Library - Purchase";
     begin
-        // [SCENARIO] Email notifications are sent
+        // [SCENARIO] Email notifications can be sent without error
         // [GIVEN] A purchase order
         LibraryPurchase.CreatePurchHeader(PurchaseHeader, PurchaseHeader."Document Type"::Order, '');
 
         // [WHEN] We send notification
+        ClearLastError();
         PurchaseApprovalWorkflow.SendEmailNotification(PurchaseHeader, 'Approval Required');
 
-        // [THEN] Email is queued (would verify in email queue)
-        Assert.IsTrue(true, 'Email notification sent');
+        // [THEN] No error occurs during notification
+        Assert.AreEqual('', GetLastErrorText(), 'SendEmailNotification should not produce errors');
+
+        // Cleanup
+        PurchaseHeader.Delete(true);
+    end;
+
+    [Test]
+    procedure TestEmailNotificationWithEmptySubject()
+    var
+        PurchaseHeader: Record "Purchase Header";
+        LibraryPurchase: Codeunit "Library - Purchase";
+    begin
+        // [SCENARIO] Email notification handles empty subject gracefully
+        // [GIVEN] A purchase order
+        LibraryPurchase.CreatePurchHeader(PurchaseHeader, PurchaseHeader."Document Type"::Order, '');
+
+        // [WHEN] We send notification with empty subject
+        ClearLastError();
+        PurchaseApprovalWorkflow.SendEmailNotification(PurchaseHeader, '');
+
+        // [THEN] No error occurs (implementation should handle empty subject)
+        Assert.AreEqual('', GetLastErrorText(), 'Empty subject should be handled gracefully');
 
         // Cleanup
         PurchaseHeader.Delete(true);

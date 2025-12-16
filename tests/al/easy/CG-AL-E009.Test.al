@@ -12,13 +12,16 @@ codeunit 80009 "CG-AL-E009 Test"
     [Test]
     procedure TestXMLportExists()
     var
-        ItemExport: XMLport "Item Export";
+        AllObj: Record AllObj;
     begin
-        // [SCENARIO] Item Export XMLport can be instantiated
+        // [SCENARIO] Item Export XMLport exists with correct ID
         // [GIVEN] The XMLport definition
-        // [WHEN] We create a variable of the XMLport type
-        // [THEN] No error occurs
-        Assert.IsTrue(true, 'XMLport can be instantiated');
+        // [WHEN] We check for the XMLport in system objects
+        // [THEN] XMLport 70000 "Item Export" exists
+        AllObj.SetRange("Object Type", AllObj."Object Type"::XMLport);
+        AllObj.SetRange("Object ID", 70000);
+        Assert.IsTrue(AllObj.FindFirst(), 'XMLport 70000 should exist');
+        Assert.AreEqual('Item Export', AllObj."Object Name", 'XMLport should be named "Item Export"');
     end;
 
     [Test]
@@ -52,7 +55,7 @@ codeunit 80009 "CG-AL-E009 Test"
     end;
 
     [Test]
-    procedure TestXMLportContainsItemData()
+    procedure TestXMLportContainsAllRequiredFields()
     var
         Item: Record Item;
         ItemExport: XMLport "Item Export";
@@ -61,11 +64,12 @@ codeunit 80009 "CG-AL-E009 Test"
         InStream: InStream;
         XMLText: Text;
     begin
-        // [SCENARIO] Exported XML contains item data
+        // [SCENARIO] Exported XML contains all required fields: No, Description, Unit Price, Inventory
         // [GIVEN] An item with specific data
         LibraryInventory.CreateItem(Item);
         Item.Description := 'Test Item Description';
         Item."Unit Price" := 99.99;
+        Item.Inventory := 50;
         Item.Modify();
 
         // [WHEN] We export using the XMLport
@@ -75,10 +79,13 @@ codeunit 80009 "CG-AL-E009 Test"
         ItemExport.SetDestination(OutStream);
         ItemExport.Export();
 
-        // [THEN] XML contains the item number
+        // [THEN] XML contains all required fields
         TempBlob.CreateInStream(InStream);
         InStream.Read(XMLText);
-        Assert.IsTrue(XMLText.Contains(Item."No."), 'XML should contain item number');
+        Assert.IsTrue(XMLText.Contains(Item."No."), 'XML should contain item No');
+        Assert.IsTrue(XMLText.Contains('Test Item Description'), 'XML should contain Description');
+        Assert.IsTrue(XMLText.Contains('99.99') or XMLText.Contains('99,99'), 'XML should contain Unit Price');
+        Assert.IsTrue(XMLText.Contains('50'), 'XML should contain Inventory');
 
         // Cleanup
         Item.Delete();
@@ -120,7 +127,7 @@ codeunit 80009 "CG-AL-E009 Test"
     end;
 
     [Test]
-    procedure TestXMLportRootElement()
+    procedure TestXMLportElementStructure()
     var
         Item: Record Item;
         ItemExport: XMLport "Item Export";
@@ -129,7 +136,7 @@ codeunit 80009 "CG-AL-E009 Test"
         InStream: InStream;
         XMLText: Text;
     begin
-        // [SCENARIO] Exported XML has correct root element
+        // [SCENARIO] Exported XML has correct element structure (Items root with Item children)
         // [GIVEN] An item record
         LibraryInventory.CreateItem(Item);
 
@@ -140,10 +147,12 @@ codeunit 80009 "CG-AL-E009 Test"
         ItemExport.SetDestination(OutStream);
         ItemExport.Export();
 
-        // [THEN] XML has Items root element
+        // [THEN] XML has Items root element and Item child element
         TempBlob.CreateInStream(InStream);
         InStream.Read(XMLText);
         Assert.IsTrue(XMLText.Contains('<Items'), 'XML should have Items root element');
+        Assert.IsTrue(XMLText.Contains('<Item'), 'XML should have Item child elements');
+        Assert.IsTrue(XMLText.Contains('</Items>'), 'XML should have closing Items tag');
 
         // Cleanup
         Item.Delete();

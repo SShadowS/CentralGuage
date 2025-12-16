@@ -86,11 +86,11 @@ codeunit 80013 "CG-AL-M003 Test"
     end;
 
     [Test]
-    procedure TestStatusField()
+    procedure TestStatusFieldOptions()
     var
         SalesContract: Record "Sales Contract";
     begin
-        // [SCENARIO] Status field has correct options
+        // [SCENARIO] Status field has all correct options: Draft, Active, Suspended, Terminated, Closed
         // [GIVEN] A contract record
         SalesContract.Init();
         SalesContract."Customer No." := CreateCustomer();
@@ -98,7 +98,7 @@ codeunit 80013 "CG-AL-M003 Test"
         SalesContract."End Date" := CalcDate('<+1Y>', WorkDate());
         SalesContract.Insert(true);
 
-        // [WHEN] We set different status values
+        // [WHEN/THEN] We can set all status values
         SalesContract.Status := SalesContract.Status::Draft;
         SalesContract.Modify();
         Assert.AreEqual(SalesContract.Status::Draft, SalesContract.Status, 'Status should be Draft');
@@ -106,6 +106,18 @@ codeunit 80013 "CG-AL-M003 Test"
         SalesContract.Status := SalesContract.Status::Active;
         SalesContract.Modify();
         Assert.AreEqual(SalesContract.Status::Active, SalesContract.Status, 'Status should be Active');
+
+        SalesContract.Status := SalesContract.Status::Suspended;
+        SalesContract.Modify();
+        Assert.AreEqual(SalesContract.Status::Suspended, SalesContract.Status, 'Status should be Suspended');
+
+        SalesContract.Status := SalesContract.Status::Terminated;
+        SalesContract.Modify();
+        Assert.AreEqual(SalesContract.Status::Terminated, SalesContract.Status, 'Status should be Terminated');
+
+        SalesContract.Status := SalesContract.Status::Closed;
+        SalesContract.Modify();
+        Assert.AreEqual(SalesContract.Status::Closed, SalesContract.Status, 'Status should be Closed');
 
         // Cleanup
         SalesContract.Delete();
@@ -177,27 +189,30 @@ codeunit 80013 "CG-AL-M003 Test"
     end;
 
     [Test]
-    procedure TestOnModifyTrigger()
+    procedure TestPaymentTermsTableRelation()
     var
         SalesContract: Record "Sales Contract";
-        OriginalValue: Decimal;
+        PaymentTerms: Record "Payment Terms";
     begin
-        // [SCENARIO] OnModify trigger validates changes
-        // [GIVEN] An existing contract
+        // [SCENARIO] Payment Terms field has table relation to Payment Terms
+        // [GIVEN] A valid payment terms record
+        if not PaymentTerms.FindFirst() then begin
+            PaymentTerms.Init();
+            PaymentTerms.Code := 'NET30';
+            PaymentTerms.Description := 'Net 30 Days';
+            PaymentTerms.Insert();
+        end;
+
+        // [WHEN] We set Payment Terms to valid code
         SalesContract.Init();
         SalesContract."Customer No." := CreateCustomer();
         SalesContract."Start Date" := WorkDate();
         SalesContract."End Date" := CalcDate('<+1Y>', WorkDate());
-        SalesContract."Contract Value" := 1000;
+        SalesContract."Payment Terms" := PaymentTerms.Code;
         SalesContract.Insert(true);
-        OriginalValue := SalesContract."Contract Value";
 
-        // [WHEN] We modify the contract value
-        SalesContract."Contract Value" := 2000;
-        SalesContract.Modify(true);
-
-        // [THEN] Modification is logged (audit)
-        // Note: Actual audit logging would need additional verification
+        // [THEN] Record is saved with Payment Terms
+        Assert.AreEqual(PaymentTerms.Code, SalesContract."Payment Terms", 'Payment Terms should be saved');
 
         // Cleanup
         SalesContract.Delete();

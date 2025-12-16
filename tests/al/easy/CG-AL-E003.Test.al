@@ -15,11 +15,18 @@ codeunit 80003 "CG-AL-E003 Test"
         // [SCENARIO] Priority Level enum has all required values
         // [GIVEN] The Priority Level enum
         // [WHEN] We access each value
-        // [THEN] All values exist
+        // [THEN] All values exist and are distinct
         Priority := Priority::Low;
+        Assert.AreEqual(Priority::Low, Priority, 'Low value should exist');
+
         Priority := Priority::Medium;
+        Assert.AreEqual(Priority::Medium, Priority, 'Medium value should exist');
+
         Priority := Priority::High;
+        Assert.AreEqual(Priority::High, Priority, 'High value should exist');
+
         Priority := Priority::Critical;
+        Assert.AreEqual(Priority::Critical, Priority, 'Critical value should exist');
     end;
 
     [Test]
@@ -66,16 +73,17 @@ codeunit 80003 "CG-AL-E003 Test"
     end;
 
     [Test]
-    procedure TestEnumCanBeUsedAsFieldType()
-    var
-        TempRecord: Record "Sales Header" temporary;
+    procedure TestEnumComparisons()
     begin
-        // [SCENARIO] Enum can be assigned and compared
-        // [GIVEN] A Priority Level variable
+        // [SCENARIO] Enum values can be compared using ordinal ordering
+        // [GIVEN] Priority Level enum values
         // [WHEN] We perform comparisons
-        // [THEN] Comparisons work correctly
+        // [THEN] Comparisons work correctly based on ordinal values
         Assert.IsTrue("Priority Level"::Critical > "Priority Level"::Low, 'Critical should be greater than Low');
+        Assert.IsTrue("Priority Level"::Critical > "Priority Level"::Medium, 'Critical should be greater than Medium');
+        Assert.IsTrue("Priority Level"::Critical > "Priority Level"::High, 'Critical should be greater than High');
         Assert.IsTrue("Priority Level"::High > "Priority Level"::Medium, 'High should be greater than Medium');
+        Assert.IsTrue("Priority Level"::High > "Priority Level"::Low, 'High should be greater than Low');
         Assert.IsTrue("Priority Level"::Medium > "Priority Level"::Low, 'Medium should be greater than Low');
     end;
 

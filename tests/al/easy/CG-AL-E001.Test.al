@@ -114,11 +114,26 @@ codeunit 80001 "CG-AL-E001 Test"
     procedure TestActiveDefaultValue()
     var
         ProductCategory: Record "Product Category";
+        TestCode: Code[20];
     begin
-        // [SCENARIO] Active field defaults to true
-        // [GIVEN] A new Product Category record
+        // [SCENARIO] Active field defaults to true when record is inserted
+        // [GIVEN] A new Product Category record with Code and Description but Active not set
+        TestCode := CopyStr(LibraryRandom.RandText(10), 1, 20);
         ProductCategory.Init();
-        // [THEN] Active should default to true
-        Assert.IsTrue(ProductCategory.Active, 'Active should default to true');
+        ProductCategory.Code := TestCode;
+        ProductCategory.Description := 'Test Default Active';
+        ProductCategory."Created Date" := WorkDate();
+        // Note: Active is NOT explicitly set - should default to true via InitValue
+
+        // [WHEN] We insert the record
+        ProductCategory.Insert(true);
+
+        // [THEN] Active should default to true (via InitValue property)
+        Clear(ProductCategory);
+        ProductCategory.Get(TestCode);
+        Assert.IsTrue(ProductCategory.Active, 'Active should default to true via InitValue');
+
+        // Cleanup
+        ProductCategory.Delete();
     end;
 }

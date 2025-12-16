@@ -90,7 +90,7 @@ codeunit 80011 "CG-AL-M001 Test"
         ProductAPI.Close();
 
         // [THEN] Product is updated
-        Product.Get(Product.SystemId);
+        Product.GetBySystemId(Product.SystemId);
         Assert.AreEqual(NewDescription, Product.Description, 'Description should be updated');
 
         // Cleanup
@@ -104,19 +104,20 @@ codeunit 80011 "CG-AL-M001 Test"
         ProductAPI: TestPage "Product API";
         ProductId: Guid;
     begin
-        // [SCENARIO] Product can be deleted via API page
+        // [SCENARIO] Product can be deleted via API page (DELETE operation)
         // [GIVEN] An existing product
         CreateTestProduct(Product);
         ProductId := Product.SystemId;
 
-        // [WHEN] We delete the product via API
+        // [WHEN] We delete the product via the API page
         ProductAPI.OpenEdit();
         ProductAPI.GoToRecord(Product);
+        ProductAPI.Delete().Invoke();
         ProductAPI.Close();
-        Product.Delete();
 
-        // [THEN] Product no longer exists
-        Assert.IsFalse(Product.Get(ProductId), 'Product should be deleted');
+        // [THEN] Product no longer exists in database
+        Clear(Product);
+        Assert.IsFalse(Product.GetBySystemId(ProductId), 'Product should be deleted via API');
     end;
 
     [Test]
@@ -164,14 +165,75 @@ codeunit 80011 "CG-AL-M001 Test"
     procedure TestODataKeyFields()
     var
         Product: Record Product;
+        ProductAPI: TestPage "Product API";
+        EmptyGuid: Guid;
     begin
-        // [SCENARIO] API page uses SystemId as OData key
+        // [SCENARIO] API page uses SystemId as OData key for record identification
         // [GIVEN] A product record
         CreateTestProduct(Product);
 
-        // [WHEN] We check the SystemId
-        // [THEN] SystemId is populated
-        Assert.AreNotEqual(CreateGuid(), Product.SystemId, 'SystemId should be auto-generated');
+        // [WHEN] We access the product via API and check the id field (SystemId)
+        ProductAPI.OpenView();
+        ProductAPI.GoToRecord(Product);
+
+        // [THEN] The id field matches the record's SystemId (proving ODataKeyFields = SystemId)
+        ProductAPI.id.AssertEquals(Product.SystemId);
+        Assert.AreNotEqual(EmptyGuid, Product.SystemId, 'SystemId should be auto-generated and non-empty');
+
+        ProductAPI.Close();
+
+        // Cleanup
+        Product.Delete();
+    end;
+
+    [Test]
+    procedure TestCategoryIdField()
+    var
+        Product: Record Product;
+        ProductAPI: TestPage "Product API";
+        CategoryId: Guid;
+    begin
+        // [SCENARIO] Product can have a categoryId for grouping
+        // [GIVEN] A product with category ID
+        CategoryId := CreateGuid();
+        CreateTestProduct(Product);
+        Product."Category Id" := CategoryId;
+        Product.Modify();
+
+        // [WHEN] We access the product via API
+        ProductAPI.OpenView();
+        ProductAPI.GoToRecord(Product);
+
+        // [THEN] Category ID is exposed correctly
+        ProductAPI.categoryId.AssertEquals(CategoryId);
+
+        ProductAPI.Close();
+
+        // Cleanup
+        Product.Delete();
+    end;
+
+    [Test]
+    procedure TestSetCategoryIdViaAPI()
+    var
+        Product: Record Product;
+        ProductAPI: TestPage "Product API";
+        CategoryId: Guid;
+    begin
+        // [SCENARIO] Category ID can be set via API page
+        // [GIVEN] An existing product and a category ID
+        CreateTestProduct(Product);
+        CategoryId := CreateGuid();
+
+        // [WHEN] We update the category ID via API
+        ProductAPI.OpenEdit();
+        ProductAPI.GoToRecord(Product);
+        ProductAPI.categoryId.SetValue(CategoryId);
+        ProductAPI.Close();
+
+        // [THEN] Category ID is saved
+        Product.GetBySystemId(Product.SystemId);
+        Assert.AreEqual(CategoryId, Product."Category Id", 'Category ID should be updated via API');
 
         // Cleanup
         Product.Delete();

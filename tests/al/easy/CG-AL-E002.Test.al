@@ -43,9 +43,11 @@ codeunit 80002 "CG-AL-E002 Test"
         ProductCategoryCard.OpenView();
         ProductCategoryCard.GoToRecord(ProductCategory);
 
-        // [THEN] All fields are accessible
+        // [THEN] All fields are accessible (Code, Description, Active, Created Date)
         Assert.AreEqual(ProductCategory.Code, ProductCategoryCard.Code.Value, 'Code field should be visible');
         Assert.AreEqual(ProductCategory.Description, ProductCategoryCard.Description.Value, 'Description field should be visible');
+        Assert.AreEqual(Format(ProductCategory.Active), ProductCategoryCard.Active.Value, 'Active field should be visible');
+        Assert.AreEqual(Format(ProductCategory."Created Date"), ProductCategoryCard."Created Date".Value, 'Created Date field should be visible');
 
         ProductCategoryCard.Close();
 
@@ -80,24 +82,82 @@ codeunit 80002 "CG-AL-E002 Test"
     end;
 
     [Test]
+    procedure TestActiveFieldEditable()
+    var
+        ProductCategory: Record "Product Category";
+        ProductCategoryCard: TestPage "Product Category Card";
+    begin
+        // [SCENARIO] Active field can be toggled on the page
+        // [GIVEN] A Product Category record with Active = true
+        CreateProductCategory(ProductCategory);
+        Assert.IsTrue(ProductCategory.Active, 'Initial Active value should be true');
+
+        // [WHEN] We toggle Active to false
+        ProductCategoryCard.OpenEdit();
+        ProductCategoryCard.GoToRecord(ProductCategory);
+        ProductCategoryCard.Active.SetValue(false);
+        ProductCategoryCard.Close();
+
+        // [THEN] The change is saved
+        ProductCategory.Get(ProductCategory.Code);
+        Assert.IsFalse(ProductCategory.Active, 'Active should be updated to false');
+
+        // Cleanup
+        ProductCategory.Delete();
+    end;
+
+    [Test]
+    procedure TestCreatedDateFieldEditable()
+    var
+        ProductCategory: Record "Product Category";
+        ProductCategoryCard: TestPage "Product Category Card";
+        NewDate: Date;
+    begin
+        // [SCENARIO] Created Date field can be edited on the page
+        // [GIVEN] A Product Category record
+        CreateProductCategory(ProductCategory);
+        NewDate := CalcDate('<+1D>', WorkDate());
+
+        // [WHEN] We change the Created Date
+        ProductCategoryCard.OpenEdit();
+        ProductCategoryCard.GoToRecord(ProductCategory);
+        ProductCategoryCard."Created Date".SetValue(NewDate);
+        ProductCategoryCard.Close();
+
+        // [THEN] The change is saved
+        ProductCategory.Get(ProductCategory.Code);
+        Assert.AreEqual(NewDate, ProductCategory."Created Date", 'Created Date should be updated');
+
+        // Cleanup
+        ProductCategory.Delete();
+    end;
+
+    [Test]
     procedure TestNewRecordFromPage()
     var
         ProductCategory: Record "Product Category";
         ProductCategoryCard: TestPage "Product Category Card";
         TestCode: Code[20];
+        TestDate: Date;
     begin
-        // [SCENARIO] New record can be created from page
-        // [GIVEN] A new code
+        // [SCENARIO] New record can be created from page with all fields
+        // [GIVEN] A new code and test data
         TestCode := CopyStr(LibraryRandom.RandText(10), 1, 20);
+        TestDate := WorkDate();
 
-        // [WHEN] We create a new record via the page
+        // [WHEN] We create a new record via the page with all fields
         ProductCategoryCard.OpenNew();
         ProductCategoryCard.Code.SetValue(TestCode);
         ProductCategoryCard.Description.SetValue('New Category');
+        ProductCategoryCard.Active.SetValue(true);
+        ProductCategoryCard."Created Date".SetValue(TestDate);
         ProductCategoryCard.Close();
 
-        // [THEN] The record exists
+        // [THEN] The record exists with all field values
         Assert.IsTrue(ProductCategory.Get(TestCode), 'Record should be created');
+        Assert.AreEqual('New Category', ProductCategory.Description, 'Description should match');
+        Assert.IsTrue(ProductCategory.Active, 'Active should be true');
+        Assert.AreEqual(TestDate, ProductCategory."Created Date", 'Created Date should match');
 
         // Cleanup
         ProductCategory.Delete();

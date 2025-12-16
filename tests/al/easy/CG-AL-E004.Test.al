@@ -34,17 +34,41 @@ codeunit 80004 "CG-AL-E004 Test"
     var
         Item: Record Item;
     begin
-        // [SCENARIO] Supplier Rating field exists on Item
+        // [SCENARIO] Supplier Rating field exists on Item as Option type
         // [GIVEN] An Item record
         LibraryInventory.CreateItem(Item);
 
-        // [WHEN] We access the Supplier Rating field
-        Item."Supplier Rating" := 5;
+        // [WHEN] We set Supplier Rating to Gold (ordinal 3)
+        // Option values: Not Rated=0, Bronze=1, Silver=2, Gold=3, Platinum=4
+        Item."Supplier Rating" := 3;  // Gold
         Item.Modify();
 
         // [THEN] The value is stored correctly
         Item.Get(Item."No.");
-        Assert.AreEqual(5, Item."Supplier Rating", 'Supplier Rating should be stored');
+        Assert.AreEqual(3, Item."Supplier Rating", 'Supplier Rating should be Gold (3)');
+
+        // Cleanup
+        Item.Delete();
+    end;
+
+    [Test]
+    procedure TestSupplierRatingAllOptions()
+    var
+        Item: Record Item;
+        i: Integer;
+    begin
+        // [SCENARIO] All Supplier Rating option values are valid
+        // [GIVEN] An Item record
+        LibraryInventory.CreateItem(Item);
+
+        // [WHEN/THEN] We can set each option value (0-4)
+        // Not Rated=0, Bronze=1, Silver=2, Gold=3, Platinum=4
+        for i := 0 to 4 do begin
+            Item."Supplier Rating" := i;
+            Item.Modify();
+            Item.Get(Item."No.");
+            Assert.AreEqual(i, Item."Supplier Rating", StrSubstNo('Supplier Rating should be %1', i));
+        end;
 
         // Cleanup
         Item.Delete();
@@ -109,7 +133,7 @@ codeunit 80004 "CG-AL-E004 Test"
 
         // [WHEN] We set all extension fields
         Item."Warranty Period" := 24;
-        Item."Supplier Rating" := 4;
+        Item."Supplier Rating" := 4;  // Platinum
         Item."Last Maintenance Date" := TestDate;
         Item."Special Instructions" := 'Test instructions';
         Item.Modify();
@@ -117,7 +141,7 @@ codeunit 80004 "CG-AL-E004 Test"
         // [THEN] All values are stored correctly
         Item.Get(Item."No.");
         Assert.AreEqual(24, Item."Warranty Period", 'Warranty Period should be stored');
-        Assert.AreEqual(4, Item."Supplier Rating", 'Supplier Rating should be stored');
+        Assert.AreEqual(4, Item."Supplier Rating", 'Supplier Rating should be Platinum (4)');
         Assert.AreEqual(TestDate, Item."Last Maintenance Date", 'Last Maintenance Date should be stored');
         Assert.AreEqual('Test instructions', Item."Special Instructions", 'Special Instructions should be stored');
 

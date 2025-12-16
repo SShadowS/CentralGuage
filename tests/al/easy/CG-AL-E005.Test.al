@@ -163,4 +163,17 @@ codeunit 80005 "CG-AL-E005 Test"
         // [THEN] Result is true
         Assert.IsTrue(Result, 'Email with subdomain should return true');
     end;
+
+    [Test]
+    procedure TestIsValidEmailInvalidNoDot()
+    var
+        Result: Boolean;
+    begin
+        // [SCENARIO] IsValidEmail rejects email without dot in domain
+        // [GIVEN] An invalid email without dot (has @ but no .)
+        // [WHEN] We call IsValidEmail
+        Result := TextUtilities.IsValidEmail('test@example');
+        // [THEN] Result is false (task requires both @ and . for valid email)
+        Assert.IsFalse(Result, 'Email without dot should return false');
+    end;
 }

@@ -45,18 +45,51 @@ codeunit 80008 "CG-AL-E008 Test"
         Assert.IsTrue(true, 'Required procedures are declared');
     end;
 
-    // Note: To fully test the interface, we would need an implementation.
-    // The following test demonstrates how an implementation would be tested:
-    //
-    // [Test]
-    // procedure TestMockImplementation()
-    // var
-    //     PaymentProcessor: Interface "Payment Processor";
-    //     MockProcessor: Codeunit "Mock Payment Processor";
-    //     Result: Boolean;
-    // begin
-    //     PaymentProcessor := MockProcessor;
-    //     Result := PaymentProcessor.ProcessPayment('ORD001', 100.00, 'USD');
-    //     Assert.IsTrue(Result, 'Payment should be processed');
-    // end;
+    [Test]
+    procedure TestProcessPayment()
+    var
+        PaymentProcessor: Interface "Payment Processor";
+        MockProcessor: Codeunit "CG-AL-E008 Mock Processor";
+        Result: Boolean;
+    begin
+        // [SCENARIO] ProcessPayment returns expected result
+        // [GIVEN] A payment processor implementation
+        PaymentProcessor := MockProcessor;
+        // [WHEN] We process a payment
+        Result := PaymentProcessor.ProcessPayment(100.00, 'CreditCard');
+        // [THEN] The payment is processed successfully
+        Assert.IsTrue(Result, 'Payment should be processed');
+    end;
+
+    [Test]
+    procedure TestValidatePayment()
+    var
+        PaymentProcessor: Interface "Payment Processor";
+        MockProcessor: Codeunit "CG-AL-E008 Mock Processor";
+        Result: Boolean;
+    begin
+        // [SCENARIO] ValidatePayment returns expected result
+        // [GIVEN] A payment processor implementation
+        PaymentProcessor := MockProcessor;
+        // [WHEN] We validate payment data
+        Result := PaymentProcessor.ValidatePayment('ValidData');
+        // [THEN] The validation succeeds
+        Assert.IsTrue(Result, 'Payment validation should succeed');
+    end;
+
+    [Test]
+    procedure TestGetTransactionFee()
+    var
+        PaymentProcessor: Interface "Payment Processor";
+        MockProcessor: Codeunit "CG-AL-E008 Mock Processor";
+        Fee: Decimal;
+    begin
+        // [SCENARIO] GetTransactionFee returns calculated fee
+        // [GIVEN] A payment processor implementation
+        PaymentProcessor := MockProcessor;
+        // [WHEN] We get the transaction fee for an amount
+        Fee := PaymentProcessor.GetTransactionFee(100.00);
+        // [THEN] A fee is returned (mock returns 2.5% = 2.50)
+        Assert.AreEqual(2.50, Fee, 'Fee should be 2.5% of amount');
+    end;
 }

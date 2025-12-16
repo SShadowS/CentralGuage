@@ -93,9 +93,9 @@ codeunit 80016 "CG-AL-M006 Test"
         Customer: Record Customer;
     begin
         // [SCENARIO] Low credit score results in high risk
-        // [GIVEN] A customer with low credit score
+        // [GIVEN] A customer with low credit score (500-579)
         LibrarySales.CreateCustomer(Customer);
-        Customer."Credit Score" := 350;
+        Customer."Credit Score" := 540;
         Customer.Modify();
 
         // [WHEN] We update risk level
@@ -203,16 +203,200 @@ codeunit 80016 "CG-AL-M006 Test"
     procedure TestTriggerRiskAssessment()
     var
         Customer: Record Customer;
+        AssessmentDate: Date;
     begin
-        // [SCENARIO] Risk assessment can be triggered
-        // [GIVEN] A customer record
+        // [SCENARIO] Risk assessment updates Last Risk Assessment Date
+        // [GIVEN] A customer record with credit score
         LibrarySales.CreateCustomer(Customer);
+        Customer."Credit Score" := 650;
+        Customer.Modify();
 
         // [WHEN] We trigger risk assessment
         Customer.TriggerRiskAssessment();
 
-        // [THEN] Assessment completes without error
-        Assert.IsTrue(true, 'Risk assessment completed');
+        // [THEN] Last Risk Assessment Date is set to today
+        Customer.Get(Customer."No.");
+        Assert.AreEqual(Today, Customer."Last Risk Assessment Date",
+            'Last Risk Assessment Date should be set to today');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestRiskLevelMediumRisk()
+    var
+        Customer: Record Customer;
+    begin
+        // [SCENARIO] Medium credit score results in medium risk
+        // [GIVEN] A customer with medium credit score (580-669)
+        LibrarySales.CreateCustomer(Customer);
+        Customer."Credit Score" := 620;
+        Customer.Modify();
+
+        // [WHEN] We update risk level
+        Customer.UpdateRiskLevel();
+
+        // [THEN] Risk level is Medium
+        Assert.AreEqual(Customer."Risk Level"::Medium, Customer."Risk Level",
+            'Medium credit score should result in Medium risk');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestRiskLevelCriticalRisk()
+    var
+        Customer: Record Customer;
+    begin
+        // [SCENARIO] Very low credit score results in critical risk
+        // [GIVEN] A customer with very low credit score (300-499)
+        LibrarySales.CreateCustomer(Customer);
+        Customer."Credit Score" := 320;
+        Customer.Modify();
+
+        // [WHEN] We update risk level
+        Customer.UpdateRiskLevel();
+
+        // [THEN] Risk level is Critical
+        Assert.AreEqual(Customer."Risk Level"::Critical, Customer."Risk Level",
+            'Very low credit score should result in Critical risk');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestLastRiskAssessmentDateField()
+    var
+        Customer: Record Customer;
+        TestDate: Date;
+    begin
+        // [SCENARIO] Last Risk Assessment Date field can be set and retrieved
+        // [GIVEN] A customer record
+        LibrarySales.CreateCustomer(Customer);
+        TestDate := Today - 30;
+
+        // [WHEN] We set the Last Risk Assessment Date
+        Customer."Last Risk Assessment Date" := TestDate;
+        Customer.Modify();
+
+        // [THEN] Value is stored correctly
+        Customer.Get(Customer."No.");
+        Assert.AreEqual(TestDate, Customer."Last Risk Assessment Date",
+            'Last Risk Assessment Date should be stored');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestPreferredPaymentMethodField()
+    var
+        Customer: Record Customer;
+        PaymentMethod: Record "Payment Method";
+    begin
+        // [SCENARIO] Preferred Payment Method field validates against Payment Method table
+        // [GIVEN] A customer record and a payment method
+        LibrarySales.CreateCustomer(Customer);
+        if not PaymentMethod.FindFirst() then begin
+            PaymentMethod.Init();
+            PaymentMethod.Code := 'TEST';
+            PaymentMethod.Description := 'Test Payment';
+            PaymentMethod.Insert();
+        end;
+
+        // [WHEN] We set a valid Preferred Payment Method
+        Customer.Validate("Preferred Payment Method", PaymentMethod.Code);
+        Customer.Modify();
+
+        // [THEN] Value is stored correctly
+        Customer.Get(Customer."No.");
+        Assert.AreEqual(PaymentMethod.Code, Customer."Preferred Payment Method",
+            'Preferred Payment Method should be stored');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestPreferredPaymentMethodInvalidRelation()
+    var
+        Customer: Record Customer;
+    begin
+        // [SCENARIO] Invalid Preferred Payment Method is rejected
+        // [GIVEN] A customer record
+        LibrarySales.CreateCustomer(Customer);
+
+        // [WHEN] We set an invalid Preferred Payment Method
+        // [THEN] Error is raised due to TableRelation
+        asserterror Customer.Validate("Preferred Payment Method", 'INVALID999');
+        Assert.ExpectedErrorCode('DB:RecordNotFound');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestPaymentHistoryRatingDecimalField()
+    var
+        Customer: Record Customer;
+    begin
+        // [SCENARIO] Payment History Rating is a decimal field
+        // [GIVEN] A customer record
+        LibrarySales.CreateCustomer(Customer);
+
+        // [WHEN] We set the Payment History Rating
+        Customer."Payment History Rating" := 85.5;
+        Customer.Modify();
+
+        // [THEN] Decimal value is stored correctly
+        Customer.Get(Customer."No.");
+        Assert.AreEqual(85.5, Customer."Payment History Rating",
+            'Payment History Rating should store decimal values');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestCreditScoreBoundary300()
+    var
+        Customer: Record Customer;
+    begin
+        // [SCENARIO] Credit Score at minimum boundary (300) is accepted
+        // [GIVEN] A customer record
+        LibrarySales.CreateCustomer(Customer);
+
+        // [WHEN] We set credit score to minimum value
+        Customer.Validate("Credit Score", 300);
+        Customer.Modify();
+
+        // [THEN] Value is stored
+        Customer.Get(Customer."No.");
+        Assert.AreEqual(300, Customer."Credit Score", 'Credit Score 300 should be accepted');
+
+        // Cleanup
+        Customer.Delete();
+    end;
+
+    [Test]
+    procedure TestCreditScoreBoundary850()
+    var
+        Customer: Record Customer;
+    begin
+        // [SCENARIO] Credit Score at maximum boundary (850) is accepted
+        // [GIVEN] A customer record
+        LibrarySales.CreateCustomer(Customer);
+
+        // [WHEN] We set credit score to maximum value
+        Customer.Validate("Credit Score", 850);
+        Customer.Modify();
+
+        // [THEN] Value is stored
+        Customer.Get(Customer."No.");
+        Assert.AreEqual(850, Customer."Credit Score", 'Credit Score 850 should be accepted');
 
         // Cleanup
         Customer.Delete();
