@@ -29,10 +29,10 @@ export async function copyToClipboard(text: string): Promise<boolean> {
       case "linux":
       case "freebsd":
       case "netbsd":
-      case "openbsd":
       case "solaris":
       case "illumos":
       case "aix":
+      case "android":
         // Linux/Unix: try xclip first, then xsel
         if (await commandExists("xclip")) {
           cmd = ["xclip", "-selection", "clipboard"];
@@ -51,7 +51,13 @@ export async function copyToClipboard(text: string): Promise<boolean> {
         return false;
     }
 
-    const command = new Deno.Command(cmd[0], {
+    const cmdPath = cmd[0];
+    if (!cmdPath) {
+      console.warn("⚠️  No clipboard command configured");
+      return false;
+    }
+
+    const command = new Deno.Command(cmdPath, {
       args: cmd.slice(1),
       stdin,
       stdout: "null",

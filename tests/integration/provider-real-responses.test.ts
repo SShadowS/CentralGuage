@@ -85,7 +85,7 @@ describe("Provider Real Response Format Tests", () => {
       adapter.configure({
         provider: "openai",
         model: "gpt-4o",
-        apiKey: EnvLoader.get("OPENAI_API_KEY") ?? "test-key",
+        apiKey: String(EnvLoader.get("OPENAI_API_KEY") ?? "test-key"),
       });
     });
 
@@ -131,7 +131,7 @@ describe("Provider Real Response Format Tests", () => {
       adapter.configure({
         provider: "anthropic",
         model: "claude-sonnet-4-5-20250929",
-        apiKey: EnvLoader.get("ANTHROPIC_API_KEY") ?? "test-key",
+        apiKey: String(EnvLoader.get("ANTHROPIC_API_KEY") ?? "test-key"),
       });
     });
 
@@ -177,8 +177,10 @@ describe("Provider Real Response Format Tests", () => {
       adapter.configure({
         provider: "gemini",
         model: "gemini-2.0-flash-exp",
-        apiKey: EnvLoader.get("GOOGLE_API_KEY") ??
-          EnvLoader.get("GEMINI_API_KEY") ?? "test-key",
+        apiKey: String(
+          EnvLoader.get("GOOGLE_API_KEY") ??
+            EnvLoader.get("GEMINI_API_KEY") ?? "test-key",
+        ),
       });
     });
 
@@ -399,7 +401,7 @@ describe("Provider Real Response Format Tests", () => {
         adapter.configure({
           provider: "openai",
           model: "gpt-4o",
-          apiKey: EnvLoader.get("OPENAI_API_KEY")!,
+          apiKey: String(EnvLoader.get("OPENAI_API_KEY")),
         });
 
         const result = await adapter.generateCode(testRequest, testContext);
@@ -416,7 +418,7 @@ describe("Provider Real Response Format Tests", () => {
       adapter.configure({
         provider: "anthropic",
         model: "claude-sonnet-4-5-20250929",
-        apiKey: EnvLoader.get("ANTHROPIC_API_KEY")!,
+        apiKey: String(EnvLoader.get("ANTHROPIC_API_KEY")),
       });
 
       const result = await adapter.generateCode(testRequest, testContext);
@@ -433,8 +435,10 @@ describe("Provider Real Response Format Tests", () => {
         adapter.configure({
           provider: "gemini",
           model: "gemini-2.0-flash-exp",
-          apiKey: EnvLoader.get("GOOGLE_API_KEY") ??
-            EnvLoader.get("GEMINI_API_KEY")!,
+          apiKey: String(
+            EnvLoader.get("GOOGLE_API_KEY") ??
+              EnvLoader.get("GEMINI_API_KEY"),
+          ),
         });
 
         const result = await adapter.generateCode(testRequest, testContext);

@@ -278,7 +278,7 @@ Provide the corrected code:`;
    */
   private extractErrors(
     attempt: {
-      compilationResult?: { errors: Array<{ message: string }> };
+      compilationResult?: { errors: Array<{ message: string }> } | undefined;
       failureReasons: string[];
     },
   ): string[] {

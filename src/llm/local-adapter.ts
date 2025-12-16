@@ -250,7 +250,7 @@ export class LocalLLMAdapter implements LLMAdapter {
       };
       // Add system prompt if provided (Ollama supports 'system' field)
       if (request.systemPrompt) {
-        payload.system = request.systemPrompt;
+        payload["system"] = request.systemPrompt;
       }
       headers = {
         "Content-Type": "application/json",

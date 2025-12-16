@@ -82,26 +82,26 @@ export class ResultAggregator {
       const variantId = result.context.variantId || `${provider}/${model}`;
       const variantConfig = result.context.variantConfig;
 
-      let modelStat = stats.get(variantId);
-      if (!modelStat) {
-        modelStat = {
-          model,
-          provider,
-          variantId,
-          variantConfig,
-          tasksPassed: 0,
-          tasksFailed: 0,
-          avgScore: 0,
-          tokens: 0,
-          cost: 0,
-          avgAttempts: 0,
-          // New detailed stats
-          passedOnAttempt1: 0,
-          passedOnAttempt2: 0,
-          compileFailures: 0,
-          testFailures: 0,
-          malformedResponses: 0,
-        };
+      const existingStat = stats.get(variantId);
+      const modelStat: ModelStats = existingStat ?? {
+        model,
+        provider,
+        variantId,
+        variantConfig,
+        tasksPassed: 0,
+        tasksFailed: 0,
+        avgScore: 0,
+        tokens: 0,
+        cost: 0,
+        avgAttempts: 0,
+        // New detailed stats
+        passedOnAttempt1: 0,
+        passedOnAttempt2: 0,
+        compileFailures: 0,
+        testFailures: 0,
+        malformedResponses: 0,
+      };
+      if (!existingStat) {
         stats.set(variantId, modelStat);
       }
 

@@ -45,11 +45,11 @@ export interface TaskManifest {
     /** Whether the code should compile successfully */
     compile: boolean;
     /** Test app name to run (optional - omit if no tests) */
-    testApp?: string;
+    testApp?: string | undefined;
     /** Patterns that must appear in generated code */
-    mustContain?: string[];
+    mustContain?: string[] | undefined;
     /** Patterns that must NOT appear in generated code */
-    mustNotContain?: string[];
+    mustNotContain?: string[] | undefined;
   };
 
   /** Metrics to collect for this task */
@@ -58,17 +58,17 @@ export interface TaskManifest {
   /** Optional task metadata */
   metadata?: {
     /** Difficulty level */
-    difficulty?: "easy" | "medium" | "hard";
+    difficulty?: "easy" | "medium" | "hard" | undefined;
     /** Task category (e.g., "codeunit", "table", "page") */
-    category?: string;
+    category?: string | undefined;
     /** Tags for filtering/grouping */
-    tags?: string[];
+    tags?: string[] | undefined;
     /** Estimated token usage */
-    estimatedTokens?: number;
-  };
+    estimatedTokens?: number | undefined;
+  } | undefined;
 
   /** Task-specific prompt injections */
-  prompts?: PromptInjectionConfig;
+  prompts?: PromptInjectionConfig | undefined;
 }
 
 /**
@@ -91,7 +91,7 @@ export interface TaskExecutionContext {
   /** Unique variant identifier (e.g., "anthropic/claude-3-5-sonnet-20241022@temp=0.5") */
   variantId: string;
   /** Variant configuration overrides applied to this execution */
-  variantConfig?: VariantConfig;
+  variantConfig?: VariantConfig | undefined;
   containerProvider: string;
   containerName: string;
 
@@ -114,9 +114,9 @@ export interface TaskExecutionContext {
     type: "al_code" | "diff" | "test_code";
     validation: {
       mustCompile: boolean;
-      mustPass?: boolean;
-      mustContain?: string[];
-      mustNotContain?: string[];
+      mustPass?: boolean | undefined;
+      mustContain?: string[] | undefined;
+      mustNotContain?: string[] | undefined;
     };
   };
 
@@ -136,7 +136,7 @@ export interface TaskExecutionContext {
   };
 
   // Prompt injection overrides (from CLI)
-  promptOverrides?: CLIPromptOverrides;
+  promptOverrides?: CLIPromptOverrides | undefined;
 }
 
 /**
@@ -154,8 +154,8 @@ export interface ExecutionAttempt {
   codeLanguage: "al" | "diff";
 
   // Compilation/test results
-  compilationResult?: CompilationResult;
-  testResult?: TestResult;
+  compilationResult?: CompilationResult | undefined;
+  testResult?: TestResult | undefined;
 
   // Evaluation
   success: boolean;
@@ -182,7 +182,7 @@ export interface TaskExecutionResult {
   // Execution details
   attempts: ExecutionAttempt[];
   success: boolean;
-  finalCode?: string;
+  finalCode?: string | undefined;
   finalScore: number;
 
   // Aggregate metrics
@@ -209,27 +209,27 @@ export interface TaskExecutionRequest {
   taskManifest: TaskManifest;
 
   // Optional overrides
-  llmProvider?: string;
-  llmModel?: string;
+  llmProvider?: string | undefined;
+  llmModel?: string | undefined;
   /** Unique variant identifier (e.g., "anthropic/claude-3-5-sonnet-20241022@temp=0.5") */
-  variantId?: string;
+  variantId?: string | undefined;
   /** Variant configuration overrides */
-  variantConfig?: VariantConfig;
-  containerProvider?: string;
-  containerName?: string;
+  variantConfig?: VariantConfig | undefined;
+  containerProvider?: string | undefined;
+  containerName?: string | undefined;
 
   // Execution options
-  attemptLimit?: number;
-  timeout?: number;
-  outputDir?: string;
-  debugMode?: boolean;
+  attemptLimit?: number | undefined;
+  timeout?: number | undefined;
+  outputDir?: string | undefined;
+  debugMode?: boolean | undefined;
 
   // LLM parameters
-  temperature?: number;
-  maxTokens?: number;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
 
   // Prompt injection overrides (from CLI)
-  promptOverrides?: CLIPromptOverrides;
+  promptOverrides?: CLIPromptOverrides | undefined;
 }
 
 /**
@@ -270,7 +270,7 @@ export interface AttemptResult {
   llmResponse: LLMResponse;
   generatedCode: string;
   compilationResult: CompilationResult;
-  testResult?: TestResult;
+  testResult?: TestResult | undefined;
   passed: boolean;
   score: number;
 }
@@ -288,7 +288,7 @@ export interface LegacyTaskExecutionResult {
   aggregateScore: number;
   metadata: {
     templateUsed: string;
-    fixTemplateUsed?: string;
+    fixTemplateUsed?: string | undefined;
     totalTokens: number;
     totalCost: number;
     executionTime: Date;
@@ -301,10 +301,10 @@ export interface LegacyTaskExecutionResult {
 export interface BenchmarkProgress {
   totalTasks: number;
   completedTasks: number;
-  currentTask?: string;
-  currentModel?: string;
+  currentTask?: string | undefined;
+  currentModel?: string | undefined;
   errors: string[];
-  estimatedTimeRemaining?: number;
+  estimatedTimeRemaining?: number | undefined;
 }
 
 /**

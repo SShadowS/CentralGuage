@@ -30,7 +30,7 @@ export interface DebugLogEntry {
       promptTokens: number;
       completionTokens: number;
       totalTokens: number;
-      estimatedCost?: number;
+      estimatedCost?: number | undefined;
     };
     duration: number;
     finishReason: string;
@@ -69,7 +69,7 @@ export interface CompilationLogEntry {
   }>;
   duration: number;
   output: string;
-  artifactPath?: string;
+  artifactPath?: string | undefined;
   metadata: {
     requestId: string;
     sessionId: string;

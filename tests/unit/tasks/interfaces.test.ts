@@ -47,6 +47,7 @@ describe("Task Interfaces", () => {
         instructions: "Create a procedure",
         llmProvider: "openai",
         llmModel: "gpt-4",
+        variantId: "openai/gpt-4",
         containerProvider: "docker",
         containerName: "test-container",
         promptTemplatePath: "/templates/prompt.md",

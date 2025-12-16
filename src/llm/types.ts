@@ -1,28 +1,28 @@
 export interface LLMConfig {
   provider: string;
   model: string;
-  apiKey?: string;
-  baseUrl?: string;
-  temperature?: number;
-  maxTokens?: number;
-  timeout?: number;
+  apiKey?: string | undefined;
+  baseUrl?: string | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  timeout?: number | undefined;
   // Azure OpenAI specific
-  deploymentName?: string;
-  apiVersion?: string;
+  deploymentName?: string | undefined;
+  apiVersion?: string | undefined;
   // OpenRouter specific
-  siteUrl?: string;
-  siteName?: string;
+  siteUrl?: string | undefined;
+  siteName?: string | undefined;
   // Extended thinking (Claude 4.5+)
-  thinkingBudget?: number;
+  thinkingBudget?: number | undefined;
 }
 
 export interface LLMRequest {
   prompt: string;
   /** System prompt - sent as separate system role message (if provider supports it) */
-  systemPrompt?: string;
-  temperature?: number;
-  maxTokens?: number;
-  stop?: string[];
+  systemPrompt?: string | undefined;
+  temperature?: number | undefined;
+  maxTokens?: number | undefined;
+  stop?: string[] | undefined;
 }
 
 export interface LLMResponse {
@@ -37,16 +37,16 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  estimatedCost?: number; // USD
+  estimatedCost?: number | undefined; // USD
 }
 
 export interface GenerationContext {
   taskId: string;
   attempt: number;
   description: string;
-  previousCode?: string;
-  errors?: string[];
-  metadata?: Record<string, unknown>;
+  previousCode?: string | undefined;
+  errors?: string[] | undefined;
+  metadata?: Record<string, unknown> | undefined;
 }
 
 export interface CodeGenerationResult {

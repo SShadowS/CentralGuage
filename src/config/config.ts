@@ -159,7 +159,7 @@ export class ConfigManager {
       }
     }
 
-    return value;
+    return value as T;
   }
 
   /**

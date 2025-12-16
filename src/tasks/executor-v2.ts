@@ -252,7 +252,7 @@ export class TaskExecutorV2 {
     if (debugLogger) {
       await debugLogger.logCompilation(
         context.manifest.id,
-        context.modelId,
+        context.llmModel,
         attemptNumber,
         context.containerName,
         compilationResult,
@@ -271,7 +271,7 @@ export class TaskExecutorV2 {
       if (debugLogger && testResult) {
         await debugLogger.logTestResult(
           context.manifest.id,
-          context.modelId,
+          context.llmModel,
           attemptNumber,
           context.containerName,
           testResult,
@@ -411,7 +411,7 @@ export class TaskExecutorV2 {
 
     // Add test toolkit dependencies if testApp is specified
     if (hasTestApp) {
-      appJson.dependencies = [
+      appJson["dependencies"] = [
         {
           id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
           name: "Library Assert",
@@ -729,7 +729,7 @@ export class TaskExecutorV2 {
     if (debugLogger) {
       await debugLogger.logCompilation(
         context.manifest.id,
-        context.modelId,
+        context.llmModel,
         attemptNumber,
         context.containerName,
         compilationResult,
@@ -748,7 +748,7 @@ export class TaskExecutorV2 {
       if (debugLogger && testResult) {
         await debugLogger.logTestResult(
           context.manifest.id,
-          context.modelId,
+          context.llmModel,
           attemptNumber,
           context.containerName,
           testResult,

@@ -88,7 +88,7 @@ function resolveProviderAndModel(
 ): { provider: string; model: string } {
   // If already provider/model format
   if (spec.includes("/")) {
-    const [provider, model] = spec.split("/", 2);
+    const [provider = spec, model = spec] = spec.split("/", 2);
     return { provider, model };
   }
 

@@ -394,16 +394,16 @@ export class ParallelBenchmarkOrchestrator {
   /**
    * Build execution context for a task with variant config applied
    */
-  private buildContext(
+  private async buildContext(
     manifest: TaskManifest,
     variant: ModelVariant,
     options: ParallelBenchmarkOptions,
-  ): TaskExecutionContext {
+  ): Promise<TaskExecutionContext> {
     // Apply variant config overrides to temperature and maxTokens
     const temperature = variant.config.temperature ?? options.temperature;
     const maxTokens = variant.config.maxTokens ?? options.maxTokens;
 
-    return TaskTransformer.createExecutionContext({
+    return await TaskTransformer.createExecutionContext({
       taskManifest: manifest,
       llmProvider: variant.provider,
       llmModel: variant.model,

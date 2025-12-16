@@ -39,7 +39,7 @@ export interface ParallelExecutionConfig {
   compileQueueTimeout: number;
 
   /** Directory containing prompt templates (default: "templates") */
-  templateDir?: string;
+  templateDir?: string | undefined;
 }
 
 /**
@@ -311,7 +311,7 @@ export interface ModelStats {
   variantId: string;
 
   /** Variant configuration if applicable */
-  variantConfig?: VariantConfig;
+  variantConfig?: VariantConfig | undefined;
 
   /** Tasks passed */
   tasksPassed: number;
@@ -369,7 +369,7 @@ export interface TaskStats {
   bestScore: number;
 
   /** Best performing model */
-  bestModel?: string;
+  bestModel?: string | undefined;
 }
 
 // =============================================================================
@@ -390,7 +390,7 @@ export interface RateLease {
   acquiredAt: Date;
 
   /** Estimated tokens for this request (for TPM tracking) */
-  estimatedTokens?: number;
+  estimatedTokens?: number | undefined;
 }
 
 /**
@@ -476,7 +476,12 @@ export type ParallelExecutionEvent =
   | { type: "result"; result: TaskExecutionResult }
   | { type: "task_completed"; taskId: string; result: ParallelTaskResult }
   | { type: "progress"; progress: BenchmarkProgress }
-  | { type: "error"; taskId?: string; model?: string; error: Error };
+  | {
+    type: "error";
+    taskId?: string | undefined;
+    model?: string | undefined;
+    error: Error;
+  };
 
 /**
  * Progress tracking for benchmark
@@ -489,7 +494,7 @@ export interface BenchmarkProgress {
   completedTasks: number;
 
   /** Current task being processed */
-  currentTask?: string;
+  currentTask?: string | undefined;
 
   /** Active LLM calls */
   activeLLMCalls: number;
@@ -501,7 +506,7 @@ export interface BenchmarkProgress {
   errors: string[];
 
   /** Estimated time remaining in ms */
-  estimatedTimeRemaining?: number;
+  estimatedTimeRemaining?: number | undefined;
 
   /** Start time */
   startTime: Date;

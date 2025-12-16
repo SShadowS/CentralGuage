@@ -10,6 +10,7 @@
 
 import type { AggregateStats, TaskComparison } from "../parallel/types.ts";
 import type { TaskExecutionResult } from "../tasks/interfaces.ts";
+import type { VariantConfig } from "../llm/variant-types.ts";
 import { Table } from "@cliffy/table";
 
 export type OutputFormat =
@@ -51,7 +52,7 @@ export function formatLeaderboard(input: FormatterInput): string {
       ? "(1st attempt)"
       : `(${model.avgAttempts.toFixed(1)} attempts)`;
     lines.push(
-      `${shortModelName(model.model)}: ${
+      `${shortModelName(model.model, model.variantConfig)}: ${
         passRate.toFixed(0)
       }% ${emoji} ${attemptInfo}`,
     );
@@ -65,10 +66,14 @@ export function formatLeaderboard(input: FormatterInput): string {
   const topWinner = Object.entries(winnerCounts).sort((a, b) => b[1] - a[1])[0];
 
   if (topWinner) {
+    const winnerStat = stats.perModel.get(topWinner[0]);
     lines.push(
-      `Winner: ${shortModelName(topWinner[0])} | Cost: $${
-        stats.totalCost.toFixed(2)
-      }`,
+      `Winner: ${
+        shortModelName(
+          winnerStat?.model || topWinner[0],
+          winnerStat?.variantConfig,
+        )
+      } | Cost: $${stats.totalCost.toFixed(2)}`,
     );
   }
 
@@ -101,7 +106,7 @@ export function formatScorecard(input: FormatterInput): string {
     const medal = medals[idx] || "  ";
     const passRate = model.tasksPassed /
       (model.tasksPassed + model.tasksFailed) * 100;
-    const name = shortModelName(model.model).padEnd(18);
+    const name = shortModelName(model.model, model.variantConfig).padEnd(18);
     const rate = `${passRate.toFixed(0)}%`.padStart(4);
     const cost = `$${model.cost.toFixed(2)}`.padStart(6);
     lines.push(`│  ${medal} ${name} ${rate}  ${cost}  │`);
@@ -134,7 +139,7 @@ export function formatBarChart(input: FormatterInput): string {
     .sort((a, b) => b.avgScore - a.avgScore);
 
   const maxNameLength = Math.max(
-    ...modelStats.map((m) => shortModelName(m.model).length),
+    ...modelStats.map((m) => shortModelName(m.model, m.variantConfig).length),
   );
   const barLength = 12;
 
@@ -145,7 +150,9 @@ export function formatBarChart(input: FormatterInput): string {
     const emptyBars = barLength - filledBars;
 
     const bar = "█".repeat(filledBars) + "░".repeat(emptyBars);
-    const name = shortModelName(model.model).padEnd(maxNameLength);
+    const name = shortModelName(model.model, model.variantConfig).padEnd(
+      maxNameLength,
+    );
     const percent = `${(passRate * 100).toFixed(0)}%`.padStart(4);
 
     lines.push(`${name}  ${bar} ${percent}`);
@@ -159,10 +166,14 @@ export function formatBarChart(input: FormatterInput): string {
   const topWinner = Object.entries(winnerCounts).sort((a, b) => b[1] - a[1])[0];
 
   if (topWinner) {
+    const winnerStat = stats.perModel.get(topWinner[0]);
     lines.push(
-      `✅ Winner: ${shortModelName(topWinner[0])} | 💰 $${
-        stats.totalCost.toFixed(2)
-      } total`,
+      `✅ Winner: ${
+        shortModelName(
+          winnerStat?.model || topWinner[0],
+          winnerStat?.variantConfig,
+        )
+      } | 💰 $${stats.totalCost.toFixed(2)} total`,
     );
   }
 
@@ -181,7 +192,9 @@ export function formatCompact(input: FormatterInput): string {
 
   const modelResults = modelStats.map((m) => {
     const passRate = m.tasksPassed / (m.tasksPassed + m.tasksFailed) * 100;
-    return `${shortModelName(m.model)} ${passRate.toFixed(0)}%`;
+    return `${shortModelName(m.model, m.variantConfig)} ${
+      passRate.toFixed(0)
+    }%`;
   });
 
   // Winner
@@ -190,7 +203,15 @@ export function formatCompact(input: FormatterInput): string {
   const topWinner = Object.entries(winnerCounts).sort((a, b) => b[1] - a[1])[0];
 
   const winnerStr = topWinner
-    ? ` | Winner: ${shortModelName(topWinner[0])} 🏆`
+    ? (() => {
+      const winnerStat = stats.perModel.get(topWinner[0]);
+      return ` | Winner: ${
+        shortModelName(
+          winnerStat?.model || topWinner[0],
+          winnerStat?.variantConfig,
+        )
+      } 🏆`;
+    })()
     : "";
 
   return `CentralGauge: ${
@@ -293,7 +314,7 @@ export function formatBenchmarkStats(input: FormatterInput): string {
   // Build header row: Stat | Model1 | Model2 | ... | TOTAL
   const header = ["Stat"];
   for (const model of modelStats) {
-    header.push(shortModelName(model.model));
+    header.push(shortModelName(model.model, model.variantConfig));
   }
   if (modelStats.length > 1) {
     header.push("TOTAL");
@@ -429,7 +450,7 @@ export function formatModelSummaryTable(input: FormatterInput): string {
       : "0%";
 
     table.push([
-      shortModelName(model.model),
+      shortModelName(model.model, model.variantConfig),
       pr1,
       pr2,
       model.avgScore.toFixed(1),
@@ -469,8 +490,18 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
     return "";
   }
 
-  // Build header
-  const header = ["Task", ...models.map((m) => shortModelName(m)), "Winner"];
+  // Build header - look up ModelStats to get variantConfig for display
+  const header = [
+    "Task",
+    ...models.map((variantId) => {
+      const modelStat = stats.perModel.get(variantId);
+      return shortModelName(
+        modelStat?.model || variantId,
+        modelStat?.variantConfig,
+      );
+    }),
+    "Winner",
+  ];
 
   const table = new Table()
     .header(header)
@@ -480,7 +511,11 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
   const comparisonMap = new Map<string, TaskComparison>();
   // Get task IDs from comparisons by matching order with tasks array
   for (let i = 0; i < comparisons.length && i < tasks.length; i++) {
-    comparisonMap.set(tasks[i], comparisons[i]);
+    const taskId = tasks[i];
+    const comparison = comparisons[i];
+    if (taskId !== undefined && comparison !== undefined) {
+      comparisonMap.set(taskId, comparison);
+    }
   }
 
   // Group results by task and variantId (must match stats.perModel keys)
@@ -512,11 +547,13 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
 
     for (const model of models) {
       const result = taskResults.get(model);
-      totals[model].total++;
+      const modelTotals = totals[model];
+      if (!modelTotals) continue;
+      modelTotals.total++;
 
       if (result) {
         if (result.success) {
-          totals[model].passed++;
+          modelTotals.passed++;
           const attemptInfo = result.passedAttemptNumber === 1
             ? "1st"
             : `${result.passedAttemptNumber}nd`;
@@ -540,7 +577,11 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
     // Winner column
     let winnerCell: string;
     if (comparison?.winner) {
-      winnerCell = shortModelName(comparison.winner);
+      const winnerStat = stats.perModel.get(comparison.winner);
+      winnerCell = shortModelName(
+        winnerStat?.model || comparison.winner,
+        winnerStat?.variantConfig,
+      );
     } else if (comparison && comparison.passingModels.length > 1) {
       // Multiple models passed with same score - it's a tie
       winnerCell = "TIE";
@@ -558,7 +599,9 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
   // Totals row
   const totalsRow: string[] = ["TOTALS"];
   for (const model of models) {
-    const { passed, total } = totals[model];
+    const modelTotals = totals[model];
+    if (!modelTotals) continue;
+    const { passed, total } = modelTotals;
     const pct = total > 0 ? (passed / total * 100).toFixed(0) : "0";
     totalsRow.push(`${passed}/${total} (${pct}%)`);
   }
@@ -573,9 +616,9 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
 // =============================================================================
 
 /**
- * Shorten model name for display
+ * Shorten model name for display, including variant config suffix when present
  */
-function shortModelName(model: string): string {
+function shortModelName(model: string, variantConfig?: VariantConfig): string {
   // Common shortenings
   const shortenings: Record<string, string> = {
     "claude-opus-4-5-20251101": "Claude Opus 4.5",
@@ -590,7 +633,26 @@ function shortModelName(model: string): string {
     "gemini-2.5-flash": "Gemini 2.5 Flash",
   };
 
-  return shortenings[model] || model.split("-").slice(0, 3).join("-");
+  const baseName = shortenings[model] || model.split("-").slice(0, 3).join("-");
+
+  if (!variantConfig) return baseName;
+
+  // Build variant suffix from config
+  const parts: string[] = [];
+  if (variantConfig.thinkingBudget !== undefined) {
+    parts.push(`thinking=${variantConfig.thinkingBudget}`);
+  }
+  if (variantConfig.temperature !== undefined) {
+    parts.push(`temp=${variantConfig.temperature}`);
+  }
+  if (variantConfig.maxTokens !== undefined) {
+    parts.push(`tokens=${variantConfig.maxTokens}`);
+  }
+  if (variantConfig.systemPromptName) {
+    parts.push(`prompt=${variantConfig.systemPromptName}`);
+  }
+
+  return parts.length > 0 ? `${baseName}@${parts.join(",")}` : baseName;
 }
 
 /**

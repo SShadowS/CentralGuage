@@ -60,6 +60,10 @@
     "singleQuote": false,
     "proseWrap": "preserve"
   },
+  "exclude": [
+    "reports/",
+    "node_modules/"
+  ],
   "compilerOptions": {
     "allowUnreachableCode": false,
     "allowUnusedLabels": false,

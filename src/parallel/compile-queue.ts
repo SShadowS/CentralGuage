@@ -205,7 +205,7 @@ export class CompileQueue {
     if (debugLogger) {
       await debugLogger.logCompilation(
         item.context.manifest.id,
-        item.context.modelId,
+        item.context.llmModel,
         item.attemptNumber,
         this.containerName,
         compilationResult,
@@ -224,7 +224,7 @@ export class CompileQueue {
       if (debugLogger && testResult) {
         await debugLogger.logTestResult(
           item.context.manifest.id,
-          item.context.modelId,
+          item.context.llmModel,
           item.attemptNumber,
           this.containerName,
           testResult,
@@ -271,7 +271,7 @@ export class CompileQueue {
 
     // Add test toolkit dependencies if testApp is specified
     if (hasTestApp) {
-      appJson.dependencies = [
+      appJson["dependencies"] = [
         {
           id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
           name: "Library Assert",
@@ -286,7 +286,7 @@ export class CompileQueue {
         },
       ];
     } else {
-      appJson.dependencies = [];
+      appJson["dependencies"] = [];
     }
 
     await Deno.writeTextFile(

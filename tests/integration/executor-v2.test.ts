@@ -69,19 +69,23 @@ Please fix the compilation errors and provide the corrected AL code.`;
       fixTemplate,
     );
 
-    // Set config to use our temp directory
+    // Set config to use our temp directory and mock container
     await ConfigManager.loadConfig();
     ConfigManager.setConfig({
       benchmark: {
         templateDir,
         outputDir: join(tempDir, "output"),
       },
+      container: {
+        provider: "mock", // Override to use mock provider for tests
+      },
     });
 
     // Initialize executor
     executor = new TaskExecutorV2();
 
-    // Register mock providers
+    // Clear cached instances and register mock providers
+    ContainerProviderRegistry.clearInstances();
     LLMAdapterRegistry.register("mock", () => new MockLLMAdapter());
     ContainerProviderRegistry.register(
       "mock",
