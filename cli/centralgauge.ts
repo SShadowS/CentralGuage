@@ -1335,6 +1335,10 @@ const cli = new Command()
     "centralgauge bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022",
   )
   .example(
+    "Reasoning models comparison",
+    "centralgauge bench --llms opus@reasoning=50000,gpt-5@reasoning=50000",
+  )
+  .example(
     "Generate HTML report",
     "centralgauge report results/ --html --output reports/",
   );

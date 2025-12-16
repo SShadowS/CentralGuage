@@ -483,13 +483,16 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
     comparisonMap.set(tasks[i], comparisons[i]);
   }
 
-  // Group results by task and model
+  // Group results by task and variantId (must match stats.perModel keys)
   const resultMap = new Map<string, Map<string, TaskExecutionResult>>();
   for (const result of results) {
     if (!resultMap.has(result.taskId)) {
       resultMap.set(result.taskId, new Map());
     }
-    resultMap.get(result.taskId)!.set(result.context.llmModel, result);
+    // Use variantId to match stats.perModel keys (which are keyed by variantId)
+    const variantId = result.context.variantId ||
+      `${result.context.llmProvider}/${result.context.llmModel}`;
+    resultMap.get(result.taskId)!.set(variantId, result);
   }
 
   // Track totals per model

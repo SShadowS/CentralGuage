@@ -56,6 +56,9 @@ deno task bench --llms openai/gpt-5.2,anthropic/claude-4.5-opus
 deno task bench --llms openrouter/anthropic/claude-4.5-opus
 deno task bench --llms openrouter/google/gemini-3-pro-preview
 
+# Reasoning models comparison (recommended for complex tasks)
+deno task bench --llms "opus@reasoning=50000,gpt-5@reasoning=50000"
+
 # Parallel execution (faster benchmarks)
 deno task bench --llms opus,gpt-5.2 --tasks tasks/*.yml --parallel
 
