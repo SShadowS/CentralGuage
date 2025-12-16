@@ -9,6 +9,7 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 
 export class AnthropicAdapter implements LLMAdapter {
   readonly name = "anthropic";
@@ -65,8 +66,44 @@ export class AnthropicAdapter implements LLMAdapter {
       `[Anthropic] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
     );
 
-    const response = await this.callAnthropic(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callAnthropic(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "anthropic",
+          "generateCode",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "al");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "anthropic",
+        "generateCode",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -86,8 +123,44 @@ export class AnthropicAdapter implements LLMAdapter {
       `[Anthropic] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
     );
 
-    const response = await this.callAnthropic(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callAnthropic(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "anthropic",
+          "generateFix",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "diff");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "anthropic",
+        "generateFix",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -194,7 +267,10 @@ export class AnthropicAdapter implements LLMAdapter {
     }
   }
 
-  private async callAnthropic(request: LLMRequest): Promise<LLMResponse> {
+  private async callAnthropic(
+    request: LLMRequest,
+    includeRaw = false,
+  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
 
     if (!this.client) {
@@ -241,12 +317,17 @@ export class AnthropicAdapter implements LLMAdapter {
       ),
     };
 
-    return {
+    const llmResponse: LLMResponse = {
       content: contentText,
       model: this.config.model,
       usage,
       duration,
       finishReason: this.mapFinishReason(message.stop_reason),
+    };
+
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? message : undefined,
     };
   }
 

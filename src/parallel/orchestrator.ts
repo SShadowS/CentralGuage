@@ -23,6 +23,7 @@ import { ProviderRateLimiter } from "./rate-limiter.ts";
 import { ContainerProviderRegistry } from "../container/registry.ts";
 import { TaskTransformer } from "../tasks/transformer.ts";
 import type { ContainerProvider } from "../container/interface.ts";
+import type { ModelVariant } from "../llm/variant-types.ts";
 
 /**
  * Event listener type
@@ -111,10 +112,13 @@ export class ParallelBenchmarkOrchestrator {
 
   /**
    * Run benchmark in parallel
+   * @param taskManifests Tasks to execute
+   * @param variants Model variants to test (can include same model with different configs)
+   * @param options Execution options
    */
   async runParallel(
     taskManifests: TaskManifest[],
-    models: Array<{ provider: string; model: string }>,
+    variants: ModelVariant[],
     options: ParallelBenchmarkOptions,
   ): Promise<{
     results: TaskExecutionResult[];
@@ -146,7 +150,7 @@ export class ParallelBenchmarkOrchestrator {
       for (const manifest of taskManifests) {
         const taskResult = await this.processTask(
           manifest,
-          models,
+          variants,
           options,
         );
         taskResults.push(taskResult);
@@ -169,11 +173,11 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
-   * Process a single task across all models in parallel
+   * Process a single task across all model variants in parallel
    */
   private async processTask(
     manifest: TaskManifest,
-    models: Array<{ provider: string; model: string }>,
+    variants: ModelVariant[],
     options: ParallelBenchmarkOptions,
   ): Promise<ParallelTaskResult> {
     const startTime = Date.now();
@@ -183,29 +187,30 @@ export class ParallelBenchmarkOrchestrator {
     this.emit({
       type: "task_started",
       taskId: manifest.id,
-      models: models.map((m) => m.model),
+      models: variants.map((v) => v.variantId),
     });
 
-    // Process each model (in parallel)
-    const promises = models.map(async (model) => {
+    // Process each variant (in parallel)
+    const promises = variants.map(async (variant) => {
       try {
-        const result = await this.processTaskForModel(
+        const result = await this.processTaskForVariant(
           manifest,
-          model,
+          variant,
           options,
         );
-        modelResults.set(model.model, result);
+        // Key by variantId to distinguish same model with different configs
+        modelResults.set(variant.variantId, result);
 
         this.emit({ type: "result", result });
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
-        failures.set(model.model, err);
-        this.errors.push(`${manifest.id}/${model.model}: ${err.message}`);
+        failures.set(variant.variantId, err);
+        this.errors.push(`${manifest.id}/${variant.variantId}: ${err.message}`);
 
         this.emit({
           type: "error",
           taskId: manifest.id,
-          model: model.model,
+          model: variant.variantId,
           error: err,
         });
       }
@@ -234,19 +239,19 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
-   * Process a single task for a single model (with retry attempts)
+   * Process a single task for a single model variant (with retry attempts)
    */
-  private async processTaskForModel(
+  private async processTaskForVariant(
     manifest: TaskManifest,
-    model: { provider: string; model: string },
+    variant: ModelVariant,
     options: ParallelBenchmarkOptions,
   ): Promise<TaskExecutionResult> {
-    const executionId = `${manifest.id}_${model.model}_${Date.now()}`;
+    const executionId = `${manifest.id}_${variant.variantId}_${Date.now()}`;
     const startTime = Date.now();
     const attempts: ExecutionAttempt[] = [];
 
-    // Build execution context
-    const context = await this.buildContext(manifest, model, options);
+    // Build execution context with variant config applied
+    const context = await this.buildContext(manifest, variant, options);
 
     let success = false;
     let finalScore = 0;
@@ -262,27 +267,28 @@ export class ParallelBenchmarkOrchestrator {
       this.emit({
         type: "llm_started",
         taskId: manifest.id,
-        model: model.model,
+        model: variant.variantId,
         attempt: attemptNumber,
       });
 
-      // Create work items
+      // Create work items - pass variant as model for compatibility
+      const modelCompat = { provider: variant.provider, model: variant.model };
       const workItems = createWorkItems(
         manifest,
         context,
-        [model],
+        [modelCompat],
         attemptNumber,
         attempts,
       );
 
       // Execute LLM call
       const llmResults = await this.llmPool.submitBatch(workItems);
-      const llmResult = llmResults.get(model.model);
+      const llmResult = llmResults.get(variant.model);
 
       this.emit({
         type: "llm_completed",
         taskId: manifest.id,
-        model: model.model,
+        model: variant.variantId,
         attempt: attemptNumber,
         success: llmResult?.success ?? false,
       });
@@ -311,14 +317,14 @@ export class ParallelBenchmarkOrchestrator {
       this.emit({
         type: "compile_queued",
         taskId: manifest.id,
-        model: model.model,
+        model: variant.variantId,
         queuePosition: this.compileQueue?.length ?? 0,
       });
 
       this.emit({
         type: "compile_started",
         taskId: manifest.id,
-        model: model.model,
+        model: variant.variantId,
       });
 
       const compileResult = await this.compileQueue!.enqueue(compileItem);
@@ -326,7 +332,7 @@ export class ParallelBenchmarkOrchestrator {
       this.emit({
         type: "compile_completed",
         taskId: manifest.id,
-        model: model.model,
+        model: variant.variantId,
         success: compileResult.compilationResult.success,
       });
 
@@ -386,22 +392,28 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
-   * Build execution context for a task
+   * Build execution context for a task with variant config applied
    */
   private buildContext(
     manifest: TaskManifest,
-    model: { provider: string; model: string },
+    variant: ModelVariant,
     options: ParallelBenchmarkOptions,
   ): TaskExecutionContext {
+    // Apply variant config overrides to temperature and maxTokens
+    const temperature = variant.config.temperature ?? options.temperature;
+    const maxTokens = variant.config.maxTokens ?? options.maxTokens;
+
     return TaskTransformer.createExecutionContext({
       taskManifest: manifest,
-      llmProvider: model.provider,
-      llmModel: model.model,
+      llmProvider: variant.provider,
+      llmModel: variant.model,
+      variantId: variant.variantId,
+      variantConfig: variant.hasVariant ? variant.config : undefined,
       containerProvider: options.containerProvider,
       containerName: options.containerName,
       attemptLimit: options.attemptLimit,
-      temperature: options.temperature,
-      maxTokens: options.maxTokens,
+      temperature,
+      maxTokens,
       outputDir: options.outputDir,
       debugMode: options.debugMode,
       ...(options.promptOverrides &&

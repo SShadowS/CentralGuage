@@ -15,6 +15,7 @@ import { ContainerProviderRegistry } from "../container/registry.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 import type { LLMAdapter, LLMConfig } from "../llm/types.ts";
 import type { ContainerProvider } from "../container/interface.ts";
 import type {
@@ -228,6 +229,18 @@ export class DefaultTaskExecutor implements TaskExecutor {
       tempProject,
     );
 
+    // Log compilation result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logCompilation(
+        config.taskManifest.id,
+        config.llmModel,
+        attemptNumber,
+        config.containerName,
+        compilationResult,
+      );
+    }
+
     // Step 5: Run tests if compilation succeeded
     let testResult;
     if (compilationResult.success && tempProject.testFiles.length > 0) {
@@ -236,6 +249,17 @@ export class DefaultTaskExecutor implements TaskExecutor {
         config.containerName,
         tempProject,
       );
+
+      // Log test result if debug is enabled
+      if (debugLogger && testResult) {
+        await debugLogger.logTestResult(
+          config.taskManifest.id,
+          config.llmModel,
+          attemptNumber,
+          config.containerName,
+          testResult,
+        );
+      }
     }
 
     // Step 6: Calculate if this attempt passed
@@ -313,18 +337,56 @@ export class DefaultTaskExecutor implements TaskExecutor {
     // Create temporary project
     await ALProjectManager.createProject(tempDir, {
       id: "12345678-1234-1234-1234-123456789999",
-      name: `${config.taskManifest.id} Attempt ${attemptNumber}`,
+      name: `CentralGauge_${config.taskManifest.id}_${attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
       platform: "24.0.0.0",
       application: "24.0.0.0",
-      idRanges: [{ from: 70000, to: 70099 }],
+      idRanges: [{ from: 70000, to: 80099 }],
     });
+
+    // Check if we need test toolkit dependencies
+    const hasTestApp = config.taskManifest.expected.testApp &&
+      config.taskManifest.expected.testApp.length > 0;
+
+    // Update app.json with test toolkit dependencies if needed
+    if (hasTestApp) {
+      const appJsonPath = join(tempDir, "app.json");
+      const appJson = JSON.parse(await Deno.readTextFile(appJsonPath));
+      appJson.dependencies = [
+        {
+          id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+          name: "Library Assert",
+          publisher: "Microsoft",
+          version: "24.0.0.0",
+        },
+        {
+          id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+          name: "Tests-TestLibraries",
+          publisher: "Microsoft",
+          version: "24.0.0.0",
+        },
+      ];
+      await Deno.writeTextFile(appJsonPath, JSON.stringify(appJson, null, 2));
+    }
 
     // Write generated code to AL file
     const codeFile = join(tempDir, "GeneratedCode.al");
     const cleanedCode = CodeExtractor.cleanCode(generatedCode, "al");
     await Deno.writeTextFile(codeFile, cleanedCode);
+
+    // Copy test file if testApp is specified
+    if (hasTestApp) {
+      const testAppPath = config.taskManifest.expected.testApp!;
+      // Resolve testApp path relative to project root
+      const fullTestPath = join(Deno.cwd(), testAppPath);
+      if (await exists(fullTestPath)) {
+        const testFileName = fullTestPath.split(/[/\\]/).pop()!;
+        await Deno.copyFile(fullTestPath, join(tempDir, testFileName));
+      } else {
+        console.warn(`[Executor] Test file not found: ${fullTestPath}`);
+      }
+    }
 
     // Reload project to include the generated file
     return await ALProjectManager.loadProject(tempDir);

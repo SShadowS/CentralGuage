@@ -6,6 +6,10 @@
 import { exists } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
 import type { PromptInjectionConfig } from "../prompts/mod.ts";
+import type {
+  SystemPromptDefinition,
+  VariantProfile,
+} from "../llm/variant-types.ts";
 
 export interface CentralGaugeConfig {
   // Default models for different scenarios
@@ -56,6 +60,12 @@ export interface CentralGaugeConfig {
 
   // Prompt injection configuration
   prompts?: PromptInjectionConfig;
+
+  // Named system prompts for model variants
+  systemPrompts?: Record<string, SystemPromptDefinition>;
+
+  // Named variant profiles for comparing same model with different configs
+  variantProfiles?: Record<string, VariantProfile>;
 }
 
 export class ConfigManager {
@@ -367,6 +377,18 @@ export class ConfigManager {
         override.prompts,
       );
     }
+    if (override.systemPrompts) {
+      result.systemPrompts = {
+        ...result.systemPrompts,
+        ...override.systemPrompts,
+      };
+    }
+    if (override.variantProfiles) {
+      result.variantProfiles = {
+        ...result.variantProfiles,
+        ...override.variantProfiles,
+      };
+    }
 
     return result;
   }
@@ -469,6 +491,37 @@ container:
 # environment:
 #   ANTHROPIC_API_KEY: sk-ant-...
 #   OPENAI_API_KEY: sk-...
+
+# Named system prompts for model variants
+# Reference these in variant specs: sonnet@prompt=strict-al
+# systemPrompts:
+#   strict-al:
+#     content: |
+#       You are a strict AL code generator for Business Central.
+#       Only output valid AL code without explanations.
+#   creative:
+#     content: |
+#       Think creatively about solutions while ensuring code compiles.
+
+# Named variant profiles for comparing same model with different configs
+# Reference these in model specs: sonnet@profile=conservative
+# variantProfiles:
+#   conservative:
+#     description: "Low temperature for deterministic output"
+#     config:
+#       temperature: 0.1
+#       maxTokens: 4000
+#   creative:
+#     description: "Higher temperature for varied solutions"
+#     config:
+#       temperature: 0.8
+#       maxTokens: 8000
+#       systemPromptName: creative
+#   deep-thinking:
+#     description: "Extended reasoning for complex tasks"
+#     config:
+#       temperature: 0.2
+#       thinkingBudget: 50000
 `;
   }
 }

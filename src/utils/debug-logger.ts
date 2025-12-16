@@ -44,6 +44,62 @@ export interface DebugLogEntry {
   };
 }
 
+export interface CompilationLogEntry {
+  timestamp: string;
+  taskId: string;
+  model: string;
+  attempt: number;
+  containerName: string;
+  success: boolean;
+  errors: Array<{
+    file: string;
+    line: number;
+    column: number;
+    code: string;
+    message: string;
+    severity: string;
+  }>;
+  warnings: Array<{
+    file: string;
+    line: number;
+    column: number;
+    code: string;
+    message: string;
+    severity: string;
+  }>;
+  duration: number;
+  output: string;
+  artifactPath?: string;
+  metadata: {
+    requestId: string;
+    sessionId: string;
+  };
+}
+
+export interface TestLogEntry {
+  timestamp: string;
+  taskId: string;
+  model: string;
+  attempt: number;
+  containerName: string;
+  success: boolean;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  results: Array<{
+    name: string;
+    passed: boolean;
+    duration: number;
+    error?: string;
+  }>;
+  duration: number;
+  output: string;
+  metadata: {
+    requestId: string;
+    sessionId: string;
+  };
+}
+
 export interface DebugConfig {
   enabled: boolean;
   outputDir: string;
@@ -151,6 +207,245 @@ export class DebugLogger {
     } catch (error) {
       console.warn(
         `⚠️  [Debug] Failed to log interaction: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Log a compilation result for debugging
+   */
+  async logCompilation(
+    taskId: string,
+    model: string,
+    attempt: number,
+    containerName: string,
+    result: {
+      success: boolean;
+      errors: Array<{
+        file: string;
+        line: number;
+        column: number;
+        code: string;
+        message: string;
+        severity: string;
+      }>;
+      warnings: Array<{
+        file: string;
+        line: number;
+        column: number;
+        code: string;
+        message: string;
+        severity: string;
+      }>;
+      output: string;
+      duration: number;
+      artifactPath?: string;
+    },
+  ): Promise<void> {
+    if (!this.config.enabled) {
+      return;
+    }
+
+    try {
+      const requestId = `compile-${Date.now()}-${++this.requestCounter}`;
+
+      const logEntry: CompilationLogEntry = {
+        timestamp: new Date().toISOString(),
+        taskId,
+        model,
+        attempt,
+        containerName,
+        success: result.success,
+        errors: result.errors,
+        warnings: result.warnings,
+        duration: result.duration,
+        output: result.output,
+        artifactPath: result.artifactPath,
+        metadata: {
+          requestId,
+          sessionId: this.config.sessionId,
+        },
+      };
+
+      const logFile = await this.getLogFile("compilation");
+      await this.writeCompilationEntry(logFile, logEntry);
+
+      // Write full output to separate file for verbose logging
+      if (this.config.logLevel === "verbose") {
+        await this.writeCompilationOutput(requestId, result.output);
+      }
+
+      console.log(
+        `🔍 [Debug] Logged compilation result: ${requestId} (${
+          result.success ? "success" : "failed"
+        })`,
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to log compilation: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Log a test result for debugging
+   */
+  async logTestResult(
+    taskId: string,
+    model: string,
+    attempt: number,
+    containerName: string,
+    result: {
+      success: boolean;
+      totalTests: number;
+      passedTests: number;
+      failedTests: number;
+      results: Array<{
+        name: string;
+        passed: boolean;
+        duration: number;
+        error?: string;
+      }>;
+      duration: number;
+      output: string;
+    },
+  ): Promise<void> {
+    if (!this.config.enabled) {
+      return;
+    }
+
+    try {
+      const requestId = `test-${Date.now()}-${++this.requestCounter}`;
+
+      const logEntry: TestLogEntry = {
+        timestamp: new Date().toISOString(),
+        taskId,
+        model,
+        attempt,
+        containerName,
+        success: result.success,
+        totalTests: result.totalTests,
+        passedTests: result.passedTests,
+        failedTests: result.failedTests,
+        results: result.results,
+        duration: result.duration,
+        output: result.output,
+        metadata: {
+          requestId,
+          sessionId: this.config.sessionId,
+        },
+      };
+
+      const logFile = await this.getLogFile("tests");
+      await this.writeTestEntry(logFile, logEntry);
+
+      // Write full output to separate file for verbose logging
+      if (this.config.logLevel === "verbose") {
+        await this.writeTestOutput(requestId, result.output);
+      }
+
+      console.log(
+        `🔍 [Debug] Logged test result: ${requestId} (${result.passedTests}/${result.totalTests} passed)`,
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to log test result: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Write a compilation log entry
+   */
+  private async writeCompilationEntry(
+    filePath: string,
+    entry: CompilationLogEntry,
+  ): Promise<void> {
+    try {
+      const logLine = JSON.stringify({
+        type: "compilation_result",
+        ...entry,
+      }) + "\n";
+
+      await Deno.writeTextFile(filePath, logLine, { append: true });
+      await this.checkFileSize(filePath);
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to write compilation entry: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Write a test log entry
+   */
+  private async writeTestEntry(
+    filePath: string,
+    entry: TestLogEntry,
+  ): Promise<void> {
+    try {
+      const logLine = JSON.stringify({
+        type: "test_result",
+        ...entry,
+      }) + "\n";
+
+      await Deno.writeTextFile(filePath, logLine, { append: true });
+      await this.checkFileSize(filePath);
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to write test entry: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Write full compilation output to a separate file
+   */
+  private async writeCompilationOutput(
+    requestId: string,
+    output: string,
+  ): Promise<void> {
+    try {
+      const outputDir = `${this.config.outputDir}/compilation-output`;
+      await Deno.mkdir(outputDir, { recursive: true });
+
+      const outputFile = `${outputDir}/${requestId}.txt`;
+      await Deno.writeTextFile(outputFile, output);
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to write compilation output: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Write full test output to a separate file
+   */
+  private async writeTestOutput(
+    requestId: string,
+    output: string,
+  ): Promise<void> {
+    try {
+      const outputDir = `${this.config.outputDir}/test-output`;
+      await Deno.mkdir(outputDir, { recursive: true });
+
+      const outputFile = `${outputDir}/${requestId}.txt`;
+      await Deno.writeTextFile(outputFile, output);
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to write test output: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

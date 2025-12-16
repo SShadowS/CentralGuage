@@ -3,6 +3,10 @@
  * Instead of typing "anthropic/claude-3-5-sonnet-20241022", users can use "sonnet"
  */
 
+import type { CentralGaugeConfig } from "../config/config.ts";
+import type { ModelVariant } from "./variant-types.ts";
+import { resolveWithVariants as resolveVariants } from "./variant-parser.ts";
+
 export interface ModelPreset {
   readonly alias: string;
   readonly provider: string;
@@ -19,9 +23,9 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
   "gpt-5": {
     alias: "gpt-5",
     provider: "openai",
-    model: "gpt-5.1",
-    displayName: "GPT-5.1",
-    description: "Latest GPT-5 model with advanced reasoning",
+    model: "gpt-5.2-2025-12-11",
+    displayName: "GPT-5.2",
+    description: "Best model for coding and agentic tasks",
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "coding", "reasoning", "2025"],
@@ -129,45 +133,45 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     performanceTier: "fast",
     category: ["budget", "speed", "2025"],
   },
-  // Anthropic Models - Claude 3.5/3
+  // Anthropic Models - Claude 4.5 (short aliases point to latest)
   "sonnet": {
     alias: "sonnet",
     provider: "anthropic",
-    model: "claude-3-5-sonnet-20241022",
-    displayName: "Claude 3.5 Sonnet",
+    model: "claude-sonnet-4-5-20251022",
+    displayName: "Claude 4.5 Sonnet",
     description: "Balanced model for coding and analysis",
     costTier: "standard",
     performanceTier: "balanced",
-    category: ["flagship", "coding", "balanced"],
+    category: ["flagship", "coding", "balanced", "2025"],
   },
   "haiku": {
     alias: "haiku",
     provider: "anthropic",
-    model: "claude-3-haiku-20240307",
-    displayName: "Claude 3 Haiku",
+    model: "claude-haiku-4-5-20251022",
+    displayName: "Claude 4.5 Haiku",
     description: "Fast and efficient model for simple tasks",
     costTier: "budget",
     performanceTier: "fast",
-    category: ["budget", "speed"],
+    category: ["budget", "speed", "2025"],
   },
   "opus": {
     alias: "opus",
     provider: "anthropic",
-    model: "claude-3-opus-20240229",
-    displayName: "Claude 3 Opus",
-    description: "Most capable Claude 3 model for complex reasoning",
+    model: "claude-opus-4-5-20251101",
+    displayName: "Claude 4.5 Opus",
+    description: "Most capable Claude model for complex reasoning",
     costTier: "premium",
     performanceTier: "quality",
-    category: ["flagship", "reasoning", "quality"],
+    category: ["flagship", "reasoning", "quality", "2025"],
   },
 
   // Google Gemini Models - 2025
   "gemini-3": {
     alias: "gemini-3",
     provider: "gemini",
-    model: "gemini-3",
-    displayName: "Gemini 3",
-    description: "Google's next-generation multimodal model",
+    model: "gemini-3-pro-preview",
+    displayName: "Gemini 3 Pro Preview",
+    description: "Google's latest multimodal model with thinking support",
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "multimodal", "reasoning", "2025"],
@@ -192,26 +196,26 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     performanceTier: "fast",
     category: ["speed", "budget", "2025"],
   },
-  // Google Gemini Models - 1.5
+  // Google Gemini Models - Short aliases point to latest
   "gemini": {
     alias: "gemini",
     provider: "gemini",
-    model: "gemini-1.5-pro",
-    displayName: "Gemini 1.5 Pro",
-    description: "Google's flagship multimodal model",
-    costTier: "standard",
-    performanceTier: "balanced",
-    category: ["flagship", "multimodal"],
+    model: "gemini-3-pro-preview",
+    displayName: "Gemini 3 Pro Preview",
+    description: "Google's latest multimodal model with thinking support",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["flagship", "multimodal", "2025"],
   },
   "gemini-flash": {
     alias: "gemini-flash",
     provider: "gemini",
-    model: "gemini-1.5-flash",
-    displayName: "Gemini 1.5 Flash",
+    model: "gemini-2.5-flash",
+    displayName: "Gemini 2.5 Flash",
     description: "Optimized for speed and efficiency",
     costTier: "budget",
     performanceTier: "fast",
-    category: ["budget", "speed"],
+    category: ["budget", "speed", "2025"],
   },
 
   // Local Models (common ones)
@@ -496,5 +500,19 @@ export class ModelPresetRegistry {
    */
   static getAliases(): string[] {
     return Object.keys(MODEL_PRESETS);
+  }
+
+  /**
+   * Resolve model specifications with variant support
+   * Handles inline syntax (model@temp=0.5) and profile references (model@profile=name)
+   * @param specs Array of model specs (e.g., ["sonnet@temp=0.5", "gpt-4o"])
+   * @param config Config containing systemPrompts and variantProfiles
+   * @returns Array of resolved ModelVariant objects
+   */
+  static resolveWithVariants(
+    specs: string[],
+    config?: CentralGaugeConfig,
+  ): ModelVariant[] {
+    return resolveVariants(specs, config);
   }
 }

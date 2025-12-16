@@ -9,6 +9,7 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 
 /**
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
@@ -76,8 +77,44 @@ export class OpenRouterAdapter implements LLMAdapter {
       `[OpenRouter] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
     );
 
-    const response = await this.callOpenRouter(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callOpenRouter(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "openrouter",
+          "generateCode",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "al");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "openrouter",
+        "generateCode",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -97,8 +134,44 @@ export class OpenRouterAdapter implements LLMAdapter {
       `[OpenRouter] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
     );
 
-    const response = await this.callOpenRouter(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callOpenRouter(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "openrouter",
+          "generateFix",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "diff");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "openrouter",
+        "generateFix",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -200,7 +273,10 @@ export class OpenRouterAdapter implements LLMAdapter {
     }
   }
 
-  private async callOpenRouter(request: LLMRequest): Promise<LLMResponse> {
+  private async callOpenRouter(
+    request: LLMRequest,
+    includeRaw = false,
+  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
 
     if (!this.client) {
@@ -255,12 +331,17 @@ export class OpenRouterAdapter implements LLMAdapter {
       ),
     };
 
-    return {
+    const llmResponse: LLMResponse = {
       content: choice?.message?.content ?? "",
       model: this.config.model,
       usage,
       duration,
       finishReason: this.mapFinishReason(choice?.finish_reason),
+    };
+
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? completion : undefined,
     };
   }
 

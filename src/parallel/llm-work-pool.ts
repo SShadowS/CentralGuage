@@ -17,6 +17,7 @@ import type {
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
+import { TemplateRenderer } from "../templates/renderer.ts";
 
 /**
  * Work pool for managing parallel LLM requests
@@ -26,6 +27,7 @@ export class LLMWorkPool {
   private config: ParallelExecutionConfig;
   private activeRequests = 0;
   private shuttingDown = false;
+  private templateRenderer: TemplateRenderer;
 
   constructor(
     config: ParallelExecutionConfig,
@@ -33,6 +35,9 @@ export class LLMWorkPool {
   ) {
     this.config = config;
     this.rateLimiter = rateLimiter ?? getGlobalRateLimiter();
+    this.templateRenderer = new TemplateRenderer(
+      config.templateDir || "templates",
+    );
   }
 
   /**
@@ -182,20 +187,41 @@ export class LLMWorkPool {
       }
     }
 
-    const request: LLMRequest = {
-      prompt: item.context.instructions,
-      temperature: item.context.temperature,
-      maxTokens: item.context.maxTokens,
-    };
-
     // First attempt uses generateCode, retries use generateFix
     const previousAttempt =
       item.previousAttempts[item.previousAttempts.length - 1];
     if (item.attemptNumber === 1 || !previousAttempt) {
+      // First attempt - render template with task description
+      const promptTemplate = item.taskManifest.prompt_template || "code-gen.md";
+      const renderedPrompt = await this.templateRenderer.render(
+        promptTemplate,
+        {
+          description: item.context.instructions,
+          task_id: item.taskManifest.id,
+          max_attempts: item.taskManifest.max_attempts,
+        },
+      );
+      const request: LLMRequest = {
+        prompt: renderedPrompt,
+        temperature: item.context.temperature,
+        maxTokens: item.context.maxTokens,
+      };
       const result = await adapter.generateCode(request, context);
       return result.response;
     } else {
+      // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
+      const fixPrompt = this.buildFixPrompt(
+        item.context.instructions,
+        previousAttempt.extractedCode,
+        errors,
+        item.attemptNumber,
+      );
+      const request: LLMRequest = {
+        prompt: fixPrompt,
+        temperature: item.context.temperature,
+        maxTokens: item.context.maxTokens,
+      };
       const result = await adapter.generateFix(
         previousAttempt.extractedCode,
         errors,
@@ -207,7 +233,48 @@ export class LLMWorkPool {
   }
 
   /**
+   * Build a fix prompt that includes the errors and previous code
+   */
+  private buildFixPrompt(
+    originalInstructions: string,
+    previousCode: string,
+    errors: string[],
+    attemptNumber: number,
+  ): string {
+    const errorSnippet = errors.slice(0, 20).join("\n"); // Limit errors
+    const truncatedCode = previousCode.length > 4000
+      ? previousCode.substring(0, 4000) + "\n... (truncated)"
+      : previousCode;
+
+    return `Your previous submission (attempt ${
+      attemptNumber - 1
+    }) failed to compile or pass tests.
+
+## Original Task
+${originalInstructions}
+
+## Your Previous Code
+\`\`\`al
+${truncatedCode}
+\`\`\`
+
+## Compilation/Test Errors
+${errorSnippet}
+
+## Instructions
+1. Analyze the compilation errors or test failures above
+2. Fix the issues in your code
+3. Provide the COMPLETE corrected AL code (not a diff)
+4. Ensure the fix addresses the root cause
+5. Do NOT add references to objects that don't exist (pages, codeunits, etc.) unless they are part of the task
+
+Provide the corrected code:`;
+  }
+
+  /**
    * Extract error messages from a previous attempt
+   * Note: compilationResult.errors are already included in failureReasons,
+   * so we only use failureReasons to avoid duplicates
    */
   private extractErrors(
     attempt: {
@@ -215,15 +282,9 @@ export class LLMWorkPool {
       failureReasons: string[];
     },
   ): string[] {
-    const errors: string[] = [...attempt.failureReasons];
-
-    if (attempt.compilationResult?.errors) {
-      for (const error of attempt.compilationResult.errors) {
-        errors.push(error.message);
-      }
-    }
-
-    return errors;
+    // failureReasons already contains formatted compilation errors
+    // (e.g., "file:line: message"), so don't add compilationResult.errors again
+    return [...attempt.failureReasons];
   }
 
   /**

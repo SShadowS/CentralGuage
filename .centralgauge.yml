@@ -34,3 +34,31 @@ container:
 # environment:
 #   ANTHROPIC_API_KEY: sk-ant-...
 #   OPENAI_API_KEY: sk-...
+
+# Named system prompts for model variants
+# Reference these in variant specs: sonnet@prompt=strict-al
+# systemPrompts:
+#   strict-al:
+#     content: |
+#       You are a strict AL code generator for Business Central.
+#       Only output valid AL code without explanations.
+
+# Named variant profiles for comparing same model with different configs
+# Reference these in model specs: sonnet@profile=conservative
+variantProfiles:
+  conservative:
+    description: "Low temperature for deterministic output"
+    config:
+      temperature: 0.1
+      maxTokens: 4000
+  creative:
+    description: "Higher temperature for varied solutions"
+    config:
+      temperature: 0.8
+      maxTokens: 8000
+      systemPromptName: strict-al
+  deep-thinking:
+    description: "Extended reasoning for complex tasks"
+    config:
+      temperature: 0.2
+      thinkingBudget: 50000

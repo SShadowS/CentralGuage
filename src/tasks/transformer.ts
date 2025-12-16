@@ -13,6 +13,7 @@ import type {
   TaskValidationResult,
 } from "./interfaces.ts";
 import { ConfigManager } from "../config/config.ts";
+import { generateVariantId } from "../llm/variant-types.ts";
 
 export class TaskTransformer {
   /**
@@ -55,6 +56,12 @@ export class TaskTransformer {
       llmProvider: request.llmProvider || await this.getDefaultProvider(),
       llmModel: request.llmModel ||
         await this.getDefaultModel(request.llmProvider),
+      variantId: request.variantId || generateVariantId(
+        request.llmProvider || await this.getDefaultProvider(),
+        request.llmModel || await this.getDefaultModel(request.llmProvider),
+        request.variantConfig || {},
+      ),
+      variantConfig: request.variantConfig,
       containerProvider: request.containerProvider ||
         config.container?.provider || "mock",
       containerName: request.containerName || `centralgauge-${manifest.id}`,

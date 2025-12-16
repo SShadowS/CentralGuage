@@ -28,31 +28,39 @@ describe("ConfigManager", () => {
 
   describe("Default Configuration", () => {
     it("should provide sensible defaults", async () => {
-      const config = await ConfigManager.loadConfig();
+      // Change to temp directory to avoid loading project's .centralgauge.yml
+      const originalCwd = Deno.cwd();
+      Deno.chdir(tempDir);
 
-      assertExists(config.defaultModels);
-      assertExists(config.defaultModels.benchmark);
-      assertExists(config.defaultModels.development);
-      assertExists(config.defaultModels.comparison);
+      try {
+        const config = await ConfigManager.loadConfig();
 
-      assertEquals(config.defaultModels.benchmark, ["sonnet", "gpt-4o"]);
-      assertEquals(config.defaultModels.development, ["mock"]);
-      assertEquals(config.defaultModels.comparison, ["flagship"]);
+        assertExists(config.defaultModels);
+        assertExists(config.defaultModels.benchmark);
+        assertExists(config.defaultModels.development);
+        assertExists(config.defaultModels.comparison);
 
-      assertExists(config.llm);
-      assertEquals(config.llm.temperature, 0.1);
-      assertEquals(config.llm.maxTokens, 4000);
-      assertEquals(config.llm.timeout, 30000);
+        assertEquals(config.defaultModels.benchmark, ["sonnet"]);
+        assertEquals(config.defaultModels.development, ["mock"]);
+        assertEquals(config.defaultModels.comparison, ["flagship"]);
 
-      assertExists(config.benchmark);
-      assertEquals(config.benchmark.attempts, 2);
-      assertEquals(config.benchmark.outputDir, "results");
-      assertEquals(config.benchmark.templateDir, "templates");
+        assertExists(config.llm);
+        assertEquals(config.llm.temperature, 0.1);
+        assertEquals(config.llm.maxTokens, 4000);
+        assertEquals(config.llm.timeout, 30000);
 
-      assertExists(config.container);
-      assertEquals(config.container.provider, "mock");
-      assertEquals(config.container.bcVersion, "24.0");
-      assertEquals(config.container.memoryLimit, "8G");
+        assertExists(config.benchmark);
+        assertEquals(config.benchmark.attempts, 2);
+        assertEquals(config.benchmark.outputDir, "results");
+        assertEquals(config.benchmark.templateDir, "templates");
+
+        assertExists(config.container);
+        assertEquals(config.container.provider, "mock");
+        assertEquals(config.container.bcVersion, "24.0");
+        assertEquals(config.container.memoryLimit, "8G");
+      } finally {
+        Deno.chdir(originalCwd);
+      }
     });
   });
 
@@ -180,40 +188,56 @@ benchmark:
     });
 
     it("should preserve unspecified values during merging", async () => {
-      const cliOverrides = {
-        llm: {
-          temperature: 0.9,
-        },
-      };
+      // Change to temp directory to avoid loading project's .centralgauge.yml
+      const originalCwd = Deno.cwd();
+      Deno.chdir(tempDir);
 
-      const config = await ConfigManager.loadConfig(cliOverrides);
+      try {
+        const cliOverrides = {
+          llm: {
+            temperature: 0.9,
+          },
+        };
 
-      // Override specified value
-      assertEquals(config.llm?.temperature, 0.9);
-      // Keep default for unspecified value
-      assertEquals(config.llm?.maxTokens, 4000);
-      assertEquals(config.llm?.timeout, 30000);
+        const config = await ConfigManager.loadConfig(cliOverrides);
+
+        // Override specified value
+        assertEquals(config.llm?.temperature, 0.9);
+        // Keep default for unspecified value
+        assertEquals(config.llm?.maxTokens, 4000);
+        assertEquals(config.llm?.timeout, 30000);
+      } finally {
+        Deno.chdir(originalCwd);
+      }
     });
   });
 
   describe("Model Resolution", () => {
     it("should resolve models for different scenarios", async () => {
-      const benchmarkModels = await ConfigManager.resolveModels(
-        undefined,
-        "benchmark",
-      );
-      const devModels = await ConfigManager.resolveModels(
-        undefined,
-        "development",
-      );
-      const comparisonModels = await ConfigManager.resolveModels(
-        undefined,
-        "comparison",
-      );
+      // Change to temp directory to avoid loading project's .centralgauge.yml
+      const originalCwd = Deno.cwd();
+      Deno.chdir(tempDir);
 
-      assertEquals(benchmarkModels, ["sonnet", "gpt-4o"]);
-      assertEquals(devModels, ["mock"]);
-      assertEquals(comparisonModels, ["flagship"]);
+      try {
+        const benchmarkModels = await ConfigManager.resolveModels(
+          undefined,
+          "benchmark",
+        );
+        const devModels = await ConfigManager.resolveModels(
+          undefined,
+          "development",
+        );
+        const comparisonModels = await ConfigManager.resolveModels(
+          undefined,
+          "comparison",
+        );
+
+        assertEquals(benchmarkModels, ["sonnet"]);
+        assertEquals(devModels, ["mock"]);
+        assertEquals(comparisonModels, ["flagship"]);
+      } finally {
+        Deno.chdir(originalCwd);
+      }
     });
 
     it("should use provided specs over defaults", async () => {
@@ -247,13 +271,21 @@ benchmark:
 
   describe("Configuration Value Access", () => {
     it("should get nested configuration values", async () => {
-      const temperature = await ConfigManager.get("llm.temperature");
-      const attempts = await ConfigManager.get("benchmark.attempts");
-      const provider = await ConfigManager.get("container.provider");
+      // Change to temp directory to avoid loading project's .centralgauge.yml
+      const originalCwd = Deno.cwd();
+      Deno.chdir(tempDir);
 
-      assertEquals(temperature, 0.1);
-      assertEquals(attempts, 2);
-      assertEquals(provider, "mock");
+      try {
+        const temperature = await ConfigManager.get("llm.temperature");
+        const attempts = await ConfigManager.get("benchmark.attempts");
+        const provider = await ConfigManager.get("container.provider");
+
+        assertEquals(temperature, 0.1);
+        assertEquals(attempts, 2);
+        assertEquals(provider, "mock");
+      } finally {
+        Deno.chdir(originalCwd);
+      }
     });
 
     it("should return fallback for missing values", async () => {

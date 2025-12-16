@@ -9,6 +9,7 @@ import type { TaskExecutionRequest } from "../../../src/tasks/interfaces.ts";
 
 describe("TaskTransformer", () => {
   let tempDir: string;
+  let originalCwd: string;
 
   beforeEach(async () => {
     // Reset config manager state
@@ -23,6 +24,10 @@ describe("TaskTransformer", () => {
     await Deno.writeTextFile(join(templateDir, "prompt.md"), "test prompt");
     await Deno.writeTextFile(join(templateDir, "fix.md"), "test fix");
 
+    // Change to temp directory to avoid loading project's .centralgauge.yml
+    originalCwd = Deno.cwd();
+    Deno.chdir(tempDir);
+
     // Configure to use temp directory
     await ConfigManager.loadConfig();
     ConfigManager.setConfig({
@@ -33,6 +38,8 @@ describe("TaskTransformer", () => {
   });
 
   afterEach(async () => {
+    // Restore original working directory before cleanup
+    Deno.chdir(originalCwd);
     ConfigManager.reset();
     try {
       await Deno.remove(tempDir, { recursive: true });

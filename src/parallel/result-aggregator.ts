@@ -50,10 +50,15 @@ export class ResultAggregator {
   }
 
   /**
-   * Get results for a specific model
+   * Get results for a specific model or variant
+   * @param modelOrVariantId Model ID or variant ID to filter by
    */
-  getByModel(model: string): TaskExecutionResult[] {
-    return this.results.filter((r) => r.context.llmModel === model);
+  getByModel(modelOrVariantId: string): TaskExecutionResult[] {
+    return this.results.filter(
+      (r) =>
+        r.context.variantId === modelOrVariantId ||
+        r.context.llmModel === modelOrVariantId,
+    );
   }
 
   /**
@@ -64,7 +69,8 @@ export class ResultAggregator {
   }
 
   /**
-   * Calculate model statistics
+   * Calculate model/variant statistics
+   * Keys by variantId to distinguish same model with different configs
    */
   private calculateModelStats(): Map<string, ModelStats> {
     const stats = new Map<string, ModelStats>();
@@ -72,12 +78,17 @@ export class ResultAggregator {
     for (const result of this.results) {
       const model = result.context.llmModel;
       const provider = result.context.llmProvider;
+      // Use variantId to key results - this distinguishes same model with different configs
+      const variantId = result.context.variantId || `${provider}/${model}`;
+      const variantConfig = result.context.variantConfig;
 
-      let modelStat = stats.get(model);
+      let modelStat = stats.get(variantId);
       if (!modelStat) {
         modelStat = {
           model,
           provider,
+          variantId,
+          variantConfig,
           tasksPassed: 0,
           tasksFailed: 0,
           avgScore: 0,
@@ -91,7 +102,7 @@ export class ResultAggregator {
           testFailures: 0,
           malformedResponses: 0,
         };
-        stats.set(model, modelStat);
+        stats.set(variantId, modelStat);
       }
 
       if (result.success) {
@@ -126,12 +137,12 @@ export class ResultAggregator {
     }
 
     // Calculate averages
-    for (const [model, stat] of stats) {
+    for (const [variantId, stat] of stats) {
       const totalTasks = stat.tasksPassed + stat.tasksFailed;
-      const modelResults = this.getByModel(model);
+      const variantResults = this.getByModel(variantId);
 
       stat.avgScore = totalTasks > 0
-        ? modelResults.reduce((sum, r) => sum + r.finalScore, 0) / totalTasks
+        ? variantResults.reduce((sum, r) => sum + r.finalScore, 0) / totalTasks
         : 0;
 
       stat.avgAttempts = totalTasks > 0 ? stat.avgAttempts / totalTasks : 0;
@@ -192,7 +203,9 @@ export class ResultAggregator {
         bestScore,
       };
       if (bestResult) {
-        taskStats.bestModel = bestResult.context.llmModel;
+        // Use variantId for best model (distinguishes variants)
+        taskStats.bestModel = bestResult.context.variantId ||
+          bestResult.context.llmModel;
       }
       stats.set(taskId, taskStats);
     }

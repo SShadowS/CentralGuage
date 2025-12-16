@@ -17,6 +17,8 @@ import {
   MODEL_PRESETS,
   ModelPresetRegistry,
 } from "../src/llm/model-presets.ts";
+import type { ModelVariant } from "../src/llm/variant-types.ts";
+import { getVariantDisplayName } from "../src/llm/variant-parser.ts";
 import { ConfigManager } from "../src/config/config.ts";
 import { EnvLoader } from "../src/utils/env-loader.ts";
 import { SplashScreen } from "../src/utils/splash-screen.ts";
@@ -243,6 +245,26 @@ async function runParallelBenchmark(
     });
   }
 
+  // Initialize debug logging if enabled (--debug or --debug-level implies debug mode)
+  let debugLogger: DebugLogger | null = null;
+  if (options.debug || options.debugLogLevel) {
+    const sessionId = `session-${Date.now()}`;
+    const debugConfig = {
+      enabled: true,
+      outputDir: options.debugOutputDir || "debug",
+      sessionId,
+      logLevel: options.debugLogLevel || "basic",
+      includeRawResponse: options.debugLogLevel === "verbose",
+      includeRequestHeaders: options.debugLogLevel !== "basic",
+      maxFileSize: 100, // 100MB
+    };
+
+    debugLogger = DebugLogger.initialize(debugConfig);
+    console.log(
+      `🔍 Debug logging enabled: ${debugConfig.outputDir} (level: ${debugConfig.logLevel})`,
+    );
+  }
+
   log.summary("Starting CentralGauge benchmark (parallel mode)...");
   log.info(`Models: ${options.llms.join(", ")}`);
   log.info(`Tasks: ${options.tasks.join(", ")}`);
@@ -276,25 +298,22 @@ async function runParallelBenchmark(
 
     log.task(`Loaded ${taskManifests.length} task(s)`);
 
-    // Resolve all models
-    const models: Array<{ provider: string; model: string }> = [];
-    for (const llmModelSpec of options.llms) {
-      const resolvedSpecs = ModelPresetRegistry.resolve(llmModelSpec);
-      for (const resolvedSpec of resolvedSpecs) {
-        const { provider, model } = parseProviderAndModel(resolvedSpec);
-        models.push({ provider, model });
-      }
-    }
-
-    log.info(
-      `Running with ${models.length} model(s): ${
-        models.map((m) => m.model).join(", ")
-      }`,
-    );
-
-    // Load config for container settings
+    // Load config for container settings and variant profiles
     const appConfig = await ConfigManager.loadConfig();
     const containerConfig = appConfig.container || {};
+
+    // Resolve all models with variant support
+    // This allows specs like "sonnet@temp=0.5" or "gpt-4o@profile=creative"
+    const variants: ModelVariant[] = ModelPresetRegistry.resolveWithVariants(
+      options.llms,
+      appConfig,
+    );
+
+    log.info(
+      `Running with ${variants.length} model variant(s): ${
+        variants.map((v) => getVariantDisplayName(v)).join(", ")
+      }`,
+    );
 
     // Setup container
     const containerName = containerConfig.name || "centralgauge-benchmark";
@@ -387,19 +406,25 @@ async function runParallelBenchmark(
           log.compile(event.model, statusText(event.success));
           break;
         case "result": {
-          const model = event.result.context.llmModel;
+          // Use variantId for tracking (distinguishes same model with different configs)
+          const variantId = event.result.context.variantId ||
+            event.result.context.llmModel;
           const status = event.result.success
             ? colors.green("pass")
             : colors.red("fail");
           log.llm(
-            model,
+            variantId,
             `${status} (score: ${event.result.finalScore.toFixed(1)})`,
           );
-          // Track pass rates
-          if (!modelPassRates.has(model)) {
-            modelPassRates.set(model, { total: 0, attempt1: 0, attempt2: 0 });
+          // Track pass rates by variant
+          if (!modelPassRates.has(variantId)) {
+            modelPassRates.set(variantId, {
+              total: 0,
+              attempt1: 0,
+              attempt2: 0,
+            });
           }
-          const stats = modelPassRates.get(model)!;
+          const stats = modelPassRates.get(variantId)!;
           stats.total++;
           if (event.result.passedAttemptNumber === 1) {
             stats.attempt1++;
@@ -480,10 +505,10 @@ async function runParallelBenchmark(
       parallelOptions.promptOverrides = options.promptOverrides;
     }
 
-    // Run parallel benchmark
+    // Run parallel benchmark with variant support
     const { results, summary } = await orchestrator.runParallel(
       taskManifests,
-      models,
+      variants,
       parallelOptions,
     );
 
@@ -519,7 +544,7 @@ async function runParallelBenchmark(
       `# ${new Date().toISOString()}`,
       ``,
       `tasks: ${taskManifests.length}`,
-      `models: ${models.map((m) => m.model).join(", ")}`,
+      `models: ${variants.map((v) => v.model).join(", ")}`,
       `attempts: ${options.attempts}`,
       ``,
       `# Aggregate Stats`,
@@ -618,12 +643,23 @@ async function runParallelBenchmark(
       await containerProvider.stop(containerName);
       await containerProvider.remove(containerName);
     }
+
+    // Finalize debug logging
+    if (debugLogger) {
+      await debugLogger.finalize();
+    }
   } catch (error) {
     log.fail(
       `Benchmark failed: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+
+    // Finalize debug logging even on error
+    if (debugLogger) {
+      await debugLogger.finalize();
+    }
+
     throw error;
   }
 }
@@ -647,9 +683,9 @@ async function runBenchmark(
     });
   }
 
-  // Initialize debug logging if enabled
+  // Initialize debug logging if enabled (--debug or --debug-level implies debug mode)
   let debugLogger: DebugLogger | null = null;
-  if (options.debug) {
+  if (options.debug || options.debugLogLevel) {
     const sessionId = `session-${Date.now()}`;
     const debugConfig = {
       enabled: true,
@@ -1177,6 +1213,18 @@ async function handleCompile(
 
     const result = await provider.compileProject(containerName, project);
 
+    // Log compilation result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logCompilation(
+        "manual",
+        "n/a",
+        0,
+        containerName,
+        result,
+      );
+    }
+
     if (result.success) {
       console.log("✅ Compilation succeeded!");
       if (result.warnings.length > 0) {
@@ -1223,6 +1271,18 @@ async function handleTest(
     );
 
     const result = await provider.runTests(containerName, project);
+
+    // Log test result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logTestResult(
+        "manual",
+        "n/a",
+        0,
+        containerName,
+        result,
+      );
+    }
 
     if (result.success) {
       console.log("✅ All tests passed!");
@@ -1439,6 +1499,8 @@ cli.command("bench", "Run benchmark evaluation")
         outputFormat,
       );
     }
+    // Explicitly exit to close any lingering connections (SDK keep-alive, etc.)
+    Deno.exit(0);
   });
 
 // Report command

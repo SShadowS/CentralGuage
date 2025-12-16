@@ -9,6 +9,7 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 
 export class GeminiAdapter implements LLMAdapter {
   readonly name = "gemini";
@@ -54,8 +55,44 @@ export class GeminiAdapter implements LLMAdapter {
       `[Gemini] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
     );
 
-    const response = await this.callGemini(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callGemini(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "gemini",
+          "generateCode",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "al");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "gemini",
+        "generateCode",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -75,8 +112,44 @@ export class GeminiAdapter implements LLMAdapter {
       `[Gemini] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
     );
 
-    const response = await this.callGemini(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callGemini(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "gemini",
+          "generateFix",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "diff");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "gemini",
+        "generateFix",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -172,7 +245,10 @@ export class GeminiAdapter implements LLMAdapter {
     }
   }
 
-  private async callGemini(request: LLMRequest): Promise<LLMResponse> {
+  private async callGemini(
+    request: LLMRequest,
+    includeRaw = false,
+  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
 
     if (!this.ai) {
@@ -184,7 +260,7 @@ export class GeminiAdapter implements LLMAdapter {
       this.ai = new GoogleGenAI({ apiKey: this.config.apiKey });
     }
 
-    const response = await this.ai.models.generateContent({
+    const apiResponse = await this.ai.models.generateContent({
       model: this.config.model,
       contents: request.prompt,
       config: {
@@ -198,34 +274,39 @@ export class GeminiAdapter implements LLMAdapter {
     });
 
     const duration = Date.now() - startTime;
-    const contentText = response.text ?? "";
+    const contentText = apiResponse.text ?? "";
 
     // Estimate tokens if not provided by the API
     const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
     const estimatedCompletionTokens = Math.ceil(contentText.length / 4);
 
     const usage: TokenUsage = {
-      promptTokens: response.usageMetadata?.promptTokenCount ??
+      promptTokens: apiResponse.usageMetadata?.promptTokenCount ??
         estimatedPromptTokens,
-      completionTokens: response.usageMetadata?.candidatesTokenCount ??
+      completionTokens: apiResponse.usageMetadata?.candidatesTokenCount ??
         estimatedCompletionTokens,
-      totalTokens: response.usageMetadata?.totalTokenCount ??
+      totalTokens: apiResponse.usageMetadata?.totalTokenCount ??
         (estimatedPromptTokens + estimatedCompletionTokens),
       estimatedCost: this.estimateCost(
-        response.usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
-        response.usageMetadata?.candidatesTokenCount ??
+        apiResponse.usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
+        apiResponse.usageMetadata?.candidatesTokenCount ??
           estimatedCompletionTokens,
       ),
     };
 
-    return {
+    const llmResponse: LLMResponse = {
       content: contentText,
       model: this.config.model,
       usage,
       duration,
       finishReason: this.mapFinishReason(
-        response.candidates?.[0]?.finishReason,
+        apiResponse.candidates?.[0]?.finishReason,
       ),
+    };
+
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? apiResponse : undefined,
     };
   }
 

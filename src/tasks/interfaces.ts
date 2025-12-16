@@ -4,6 +4,7 @@
  */
 
 import type { LLMResponse } from "../llm/types.ts";
+import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import type {
   CLIPromptOverrides,
@@ -87,6 +88,10 @@ export interface TaskExecutionContext {
   // Execution configuration
   llmProvider: string;
   llmModel: string;
+  /** Unique variant identifier (e.g., "anthropic/claude-3-5-sonnet-20241022@temp=0.5") */
+  variantId: string;
+  /** Variant configuration overrides applied to this execution */
+  variantConfig?: VariantConfig;
   containerProvider: string;
   containerName: string;
 
@@ -206,6 +211,10 @@ export interface TaskExecutionRequest {
   // Optional overrides
   llmProvider?: string;
   llmModel?: string;
+  /** Unique variant identifier (e.g., "anthropic/claude-3-5-sonnet-20241022@temp=0.5") */
+  variantId?: string;
+  /** Variant configuration overrides */
+  variantConfig?: VariantConfig;
   containerProvider?: string;
   containerName?: string;
 

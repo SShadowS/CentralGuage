@@ -3,6 +3,7 @@
  */
 
 import type { LLMResponse } from "../llm/types.ts";
+import type { VariantConfig } from "../llm/variant-types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import type {
   ExecutionAttempt,
@@ -36,6 +37,9 @@ export interface ParallelExecutionConfig {
 
   /** Timeout for compile queue wait in ms (default: 300000 - 5 min) */
   compileQueueTimeout: number;
+
+  /** Directory containing prompt templates (default: "templates") */
+  templateDir?: string;
 }
 
 /**
@@ -76,6 +80,7 @@ export function createDefaultConfig(): ParallelExecutionConfig {
     resultBufferSize: 50,
     streamResults: true,
     compileQueueTimeout: 300000,
+    templateDir: "templates",
   };
 }
 
@@ -293,14 +298,20 @@ export interface AggregateStats {
 }
 
 /**
- * Statistics for a single model
+ * Statistics for a single model (or model variant)
  */
 export interface ModelStats {
-  /** Model identifier */
+  /** Model identifier (base model ID) */
   model: string;
 
   /** Provider name */
   provider: string;
+
+  /** Unique variant identifier (includes config, e.g., "anthropic/sonnet@temp=0.5") */
+  variantId: string;
+
+  /** Variant configuration if applicable */
+  variantConfig?: VariantConfig;
 
   /** Tasks passed */
   tasksPassed: number;

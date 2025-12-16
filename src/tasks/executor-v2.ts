@@ -3,7 +3,7 @@
  */
 
 import { basename, join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
 import type {
   ExecutionAttempt,
   TaskExecutionContext,
@@ -17,6 +17,7 @@ import { TemplateRenderer } from "../templates/renderer.ts";
 import { ConfigManager } from "../config/config.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 import type { GenerationContext, LLMAdapter } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
 import {
@@ -246,6 +247,18 @@ export class TaskExecutorV2 {
       project,
     );
 
+    // Log compilation result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logCompilation(
+        context.manifest.id,
+        context.modelId,
+        attemptNumber,
+        context.containerName,
+        compilationResult,
+      );
+    }
+
     // Run tests if required and compilation succeeded
     let testResult;
     if (compilationResult.success && context.manifest.expected.testApp) {
@@ -253,6 +266,17 @@ export class TaskExecutorV2 {
         context.containerName,
         project,
       );
+
+      // Log test result if debug is enabled
+      if (debugLogger && testResult) {
+        await debugLogger.logTestResult(
+          context.manifest.id,
+          context.modelId,
+          attemptNumber,
+          context.containerName,
+          testResult,
+        );
+      }
     }
 
     // Evaluate success
@@ -370,16 +394,38 @@ export class TaskExecutorV2 {
 
     await ensureDir(tempDir);
 
-    // Create app.json
-    const appJson = {
+    // Check if we need test toolkit dependencies
+    const hasTestApp = context.manifest.expected.testApp &&
+      context.manifest.expected.testApp.length > 0;
+
+    // Create app.json with test toolkit dependencies if needed
+    const appJson: Record<string, unknown> = {
       id: `${context.manifest.id}-${attemptNumber}`,
-      name: `${context.manifest.id} Attempt ${attemptNumber}`,
+      name: `CentralGauge_${context.manifest.id}_${attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
       platform: "24.0.0.0",
       runtime: "11.0",
-      idRanges: [{ from: 70000, to: 70099 }],
+      idRanges: [{ from: 70000, to: 80099 }],
     };
+
+    // Add test toolkit dependencies if testApp is specified
+    if (hasTestApp) {
+      appJson.dependencies = [
+        {
+          id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+          name: "Library Assert",
+          publisher: "Microsoft",
+          version: "24.0.0.0",
+        },
+        {
+          id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+          name: "Tests-TestLibraries",
+          publisher: "Microsoft",
+          version: "24.0.0.0",
+        },
+      ];
+    }
 
     await Deno.writeTextFile(
       join(tempDir, "app.json"),
@@ -392,6 +438,21 @@ export class TaskExecutorV2 {
       basename(context.targetFile) || "Generated.al",
     );
     await Deno.writeTextFile(codeFile, code);
+
+    // Copy test file if testApp is specified
+    if (hasTestApp) {
+      const testAppPath = context.manifest.expected.testApp!;
+      // Resolve testApp path relative to project root
+      const fullTestPath = join(Deno.cwd(), testAppPath);
+      if (await exists(fullTestPath)) {
+        const testFileName = basename(testAppPath);
+        await Deno.copyFile(fullTestPath, join(tempDir, testFileName));
+      } else {
+        console.warn(
+          `[Executor] Test file not found: ${fullTestPath}`,
+        );
+      }
+    }
 
     return tempDir;
   }
@@ -663,6 +724,18 @@ export class TaskExecutorV2 {
       project,
     );
 
+    // Log compilation result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logCompilation(
+        context.manifest.id,
+        context.modelId,
+        attemptNumber,
+        context.containerName,
+        compilationResult,
+      );
+    }
+
     // Run tests if required and compilation succeeded
     let testResult: TestResult | undefined;
     if (compilationResult.success && context.manifest.expected.testApp) {
@@ -670,6 +743,17 @@ export class TaskExecutorV2 {
         context.containerName,
         project,
       );
+
+      // Log test result if debug is enabled
+      if (debugLogger && testResult) {
+        await debugLogger.logTestResult(
+          context.manifest.id,
+          context.modelId,
+          attemptNumber,
+          context.containerName,
+          testResult,
+        );
+      }
     }
 
     const result: {

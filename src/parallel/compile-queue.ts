@@ -3,6 +3,8 @@
  * Ensures only one compilation runs at a time
  */
 
+import { basename, join } from "@std/path";
+import { exists } from "@std/fs";
 import type {
   CompileWorkItem,
   CompileWorkResult,
@@ -11,6 +13,7 @@ import type {
 import type { ContainerProvider } from "../container/interface.ts";
 import type { TestResult } from "../container/types.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 
 /**
  * Internal queue entry with resolve/reject callbacks
@@ -197,6 +200,18 @@ export class CompileQueue {
       project,
     );
 
+    // Log compilation result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logCompilation(
+        item.context.manifest.id,
+        item.context.modelId,
+        item.attemptNumber,
+        this.containerName,
+        compilationResult,
+      );
+    }
+
     // Run tests if compilation succeeded and tests are configured
     let testResult: TestResult | undefined;
     if (compilationResult.success && item.context.manifest.expected.testApp) {
@@ -204,6 +219,17 @@ export class CompileQueue {
         this.containerName,
         project,
       );
+
+      // Log test result if debug is enabled
+      if (debugLogger && testResult) {
+        await debugLogger.logTestResult(
+          item.context.manifest.id,
+          item.context.modelId,
+          item.attemptNumber,
+          this.containerName,
+          testResult,
+        );
+      }
     }
 
     // Clean up temp project
@@ -226,8 +252,12 @@ export class CompileQueue {
   private async createTempProject(item: CompileWorkItem): Promise<string> {
     const tempDir = await Deno.makeTempDir({ prefix: "cg_compile_" });
 
-    // Create app.json
-    const appJson = {
+    // Check if we need test toolkit dependencies
+    const hasTestApp = item.context.manifest.expected.testApp &&
+      item.context.manifest.expected.testApp.length > 0;
+
+    // Create app.json with test toolkit dependencies if needed
+    const appJson: Record<string, unknown> = {
       id: crypto.randomUUID(),
       name: `CentralGauge_${item.context.manifest.id}_${item.attemptNumber}`,
       publisher: "CentralGauge",
@@ -235,9 +265,29 @@ export class CompileQueue {
       platform: "24.0.0.0",
       runtime: "13.0",
       application: "24.0.0.0",
-      dependencies: [],
+      idRanges: [{ from: 70000, to: 80099 }],
       features: ["NoImplicitWith"],
     };
+
+    // Add test toolkit dependencies if testApp is specified
+    if (hasTestApp) {
+      appJson.dependencies = [
+        {
+          id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+          name: "Library Assert",
+          publisher: "Microsoft",
+          version: "24.0.0.0",
+        },
+        {
+          id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+          name: "Tests-TestLibraries",
+          publisher: "Microsoft",
+          version: "24.0.0.0",
+        },
+      ];
+    } else {
+      appJson.dependencies = [];
+    }
 
     await Deno.writeTextFile(
       `${tempDir}/app.json`,
@@ -247,6 +297,21 @@ export class CompileQueue {
     // Write the generated code
     const codeFileName = `${item.context.manifest.id}.al`;
     await Deno.writeTextFile(`${tempDir}/${codeFileName}`, item.code);
+
+    // Copy test file if testApp is specified
+    if (hasTestApp) {
+      const testAppPath = item.context.manifest.expected.testApp!;
+      // Resolve testApp path relative to project root
+      const fullTestPath = join(Deno.cwd(), testAppPath);
+      if (await exists(fullTestPath)) {
+        const testFileName = basename(testAppPath);
+        await Deno.copyFile(fullTestPath, join(tempDir, testFileName));
+      } else {
+        console.warn(
+          `[CompileQueue] Test file not found: ${fullTestPath}`,
+        );
+      }
+    }
 
     return tempDir;
   }

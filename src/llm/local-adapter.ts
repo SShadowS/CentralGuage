@@ -8,6 +8,7 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 import * as colors from "@std/fmt/colors";
 
 export class LocalLLMAdapter implements LLMAdapter {
@@ -55,8 +56,44 @@ export class LocalLLMAdapter implements LLMAdapter {
       ),
     );
 
-    const response = await this.callLocalLLM(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callLocalLLM(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "local",
+          "generateCode",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "al");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "local",
+        "generateCode",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -78,8 +115,44 @@ export class LocalLLMAdapter implements LLMAdapter {
       ),
     );
 
-    const response = await this.callLocalLLM(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callLocalLLM(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "local",
+          "generateFix",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "diff");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "local",
+        "generateFix",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -143,7 +216,10 @@ export class LocalLLMAdapter implements LLMAdapter {
     }
   }
 
-  private async callLocalLLM(request: LLMRequest): Promise<LLMResponse> {
+  private async callLocalLLM(
+    request: LLMRequest,
+    includeRaw = false,
+  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
 
     // Determine endpoint - try Ollama first, then generic local endpoint
@@ -212,19 +288,21 @@ export class LocalLLMAdapter implements LLMAdapter {
       }
     }
 
-    const response = await fetch(url, {
+    const apiResponse = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(this.config.timeout || 60000),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Local LLM API error (${response.status}): ${errorText}`);
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text();
+      throw new Error(
+        `Local LLM API error (${apiResponse.status}): ${errorText}`,
+      );
     }
 
-    const data = await response.json();
+    const data = await apiResponse.json();
     const duration = Date.now() - startTime;
 
     let content: string;
@@ -258,12 +336,17 @@ export class LocalLLMAdapter implements LLMAdapter {
       };
     }
 
-    return {
+    const llmResponse: LLMResponse = {
       content,
       model: this.config.model,
       usage,
       duration,
       finishReason: "stop", // Local models typically don't provide detailed finish reasons
+    };
+
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? data : undefined,
     };
   }
 }

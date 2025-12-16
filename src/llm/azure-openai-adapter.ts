@@ -8,6 +8,7 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { DebugLogger } from "../utils/debug-logger.ts";
 import * as colors from "@std/fmt/colors";
 
 export class AzureOpenAIAdapter implements LLMAdapter {
@@ -43,8 +44,44 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       ),
     );
 
-    const response = await this.callAzureOpenAI(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callAzureOpenAI(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "azure-openai",
+          "generateCode",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "al");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "azure-openai",
+        "generateCode",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -66,8 +103,44 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       ),
     );
 
-    const response = await this.callAzureOpenAI(request);
+    let rawResponse: unknown;
+    let response: LLMResponse;
+
+    try {
+      const result = await this.callAzureOpenAI(request, true);
+      response = result.response;
+      rawResponse = result.rawResponse;
+    } catch (error) {
+      const debugLogger = DebugLogger.getInstance();
+      if (debugLogger) {
+        await debugLogger.logError(
+          "azure-openai",
+          "generateFix",
+          request,
+          context,
+          error as Error,
+          rawResponse,
+        );
+      }
+      throw error;
+    }
+
     const extraction = CodeExtractor.extract(response.content, "diff");
+
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "azure-openai",
+        "generateFix",
+        request,
+        context,
+        response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        rawResponse,
+      );
+    }
 
     return {
       code: extraction.code,
@@ -146,7 +219,10 @@ export class AzureOpenAIAdapter implements LLMAdapter {
     }
   }
 
-  private async callAzureOpenAI(request: LLMRequest): Promise<LLMResponse> {
+  private async callAzureOpenAI(
+    request: LLMRequest,
+    includeRaw = false,
+  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
 
     if (!this.config.apiKey) {
@@ -188,7 +264,7 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       stop: request.stop,
     };
 
-    const response = await fetch(url, {
+    const apiResponse = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -198,14 +274,14 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       signal: AbortSignal.timeout(this.config.timeout || 30000),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+    if (!apiResponse.ok) {
+      const errorText = await apiResponse.text();
       throw new Error(
-        `Azure OpenAI API error (${response.status}): ${errorText}`,
+        `Azure OpenAI API error (${apiResponse.status}): ${errorText}`,
       );
     }
 
-    const data = await response.json();
+    const data = await apiResponse.json();
     const duration = Date.now() - startTime;
 
     if (!data.choices || data.choices.length === 0) {
@@ -223,12 +299,17 @@ export class AzureOpenAIAdapter implements LLMAdapter {
       ),
     };
 
-    return {
+    const llmResponse: LLMResponse = {
       content: choice.message?.content || "",
       model: deploymentName,
       usage,
       duration,
       finishReason: this.mapFinishReason(choice.finish_reason),
+    };
+
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? data : undefined,
     };
   }
 

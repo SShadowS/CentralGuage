@@ -580,6 +580,37 @@ export class BcContainerProvider implements ContainerProvider {
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)
 
+
+      # PRE-PUBLISH CLEANUP: Remove any existing CentralGauge apps to prevent duplicate conflicts
+      # This is critical because multiple apps with same name/publisher/version but different AppIds
+      # will cause "Multiple published extensions match" errors during sync/install
+      Write-Output "PRECLEAN_START"
+      try {
+        Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.Publisher -eq "CentralGauge" }
+          if ($apps) {
+            Write-Host "Found $($apps.Count) existing CentralGauge app(s) to clean up"
+            foreach ($app in $apps) {
+              $appId = $app.AppId.ToString()
+              $version = $app.Version.ToString()
+              Write-Host "  Removing: $($app.Name) (AppId=$appId)"
+              try {
+                # Uninstall first (may already be uninstalled)
+                Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue
+              } catch {}
+              try {
+                # Unpublish using AppId for precise removal when duplicates exist
+                Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue
+              } catch {}
+            }
+          }
+        }
+        Write-Output "PRECLEAN_SUCCESS"
+      } catch {
+        Write-Output "PRECLEAN_WARNING:$($_.Exception.Message)"
+        # Continue anyway - cleanup failure shouldn't block the test
+      }
+
       # Publish the app (will sync and install)
       try {
         Write-Output "PUBLISH_START"
@@ -610,16 +641,24 @@ export class BcContainerProvider implements ContainerProvider {
       }
       Write-Output "TEST_END"
 
-      # Cleanup: Uninstall and unpublish the test app
+
+      # POST-TEST CLEANUP: Uninstall and unpublish the test app using AppId for precision
       try {
-        # Get the app info to find the name
-        $appInfo = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Path -like "*${
-      escapedAppFile.split("\\\\").pop()
-    }*" -or $_.Name -like "*CentralGauge*" }
-        if ($appInfo) {
-          Write-Output "CLEANUP:Removing app $($appInfo.Name)"
-          UnInstall-BcContainerApp -containerName "${containerName}" -name $appInfo.Name -ErrorAction SilentlyContinue
-          UnPublish-BcContainerApp -containerName "${containerName}" -name $appInfo.Name -ErrorAction SilentlyContinue
+        Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
+          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.Publisher -eq "CentralGauge" }
+          if ($apps) {
+            foreach ($app in $apps) {
+              $appId = $app.AppId.ToString()
+              $version = $app.Version.ToString()
+              Write-Host "CLEANUP:Removing app $($app.Name) (AppId=$appId)"
+              try {
+                Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue
+              } catch {}
+              try {
+                Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue
+              } catch {}
+            }
+          }
         }
       } catch {
         Write-Output "CLEANUP_WARNING:$($_.Exception.Message)"
@@ -699,7 +738,9 @@ export class BcContainerProvider implements ContainerProvider {
     const passedTests = results.filter((r) => r.passed).length ||
       (allPassed ? 1 : 0);
     const failedTests = totalTests - passedTests;
-    const success = !publishFailed && (allPassed || failedTests === 0);
+    // Require at least one test to have run for success (zero tests = failure)
+    const success = !publishFailed && totalTests > 0 &&
+      (allPassed || failedTests === 0);
 
     console.log(
       (success ? colors.green : colors.red)(
