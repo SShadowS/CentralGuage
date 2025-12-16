@@ -1,4 +1,4 @@
-# 🎯 CentralGauge
+# CentralGauge
 
 > **Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code**
 
@@ -8,47 +8,56 @@
 
 CentralGauge evaluates large language models on their ability to generate, debug, and refactor **AL code** for Business Central. Get repeatable, two-attempt benchmarks with automated compilation and testing in isolated BC containers.
 
-## ✨ Features
+## Features
 
-- 🚀 **Two-pass evaluation** - Models get a second chance to fix compilation errors
-- 🐳 **Containerized testing** - Isolated Business Central environments via Docker
-- 📊 **Rich reporting** - JSON data + beautiful HTML reports
-- 🎛️ **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, and local LLMs
-- 🔬 **Model variants** - Compare same model with different temperatures/prompts
-- ⚡ **Fast & deterministic** - Consistent results across identical runs
+- **Two-pass evaluation** - Models get a second chance to fix compilation errors
+- **Containerized testing** - Isolated Business Central environments via Docker
+- **Parallel execution** - Run multiple models and tasks concurrently
+- **Rich reporting** - JSON data + beautiful HTML reports
+- **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, OpenRouter, and local LLMs
+- **Model variants** - Compare same model with different temperatures/prompts
+- **Debug logging** - Capture raw LLM requests/responses for analysis
+- **Fast & deterministic** - Consistent results across identical runs
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Install Deno (if not already installed)
 curl -fsSL https://deno.land/x/install/install.sh | sh
 
 # Clone and run benchmark
-git clone https://github.com/your-org/centralgauge.git
-cd centralgauge
+git clone https://github.com/SShadowS/CentralGuage.git
+cd CentralGuage
 
 # Run your first benchmark (using mock LLM for demo)
 deno run --allow-all cli/centralgauge.ts bench --llms mock-gpt-4 --tasks tasks/sample-task.yml --attempts 2
 
-# Generate HTML report (coming soon)
+# Generate HTML report
 deno task report results/ --html
 ```
 
-## 📋 Commands
+## Commands
 
 ```bash
 # Development
 deno task lint        # Lint code
-deno task fmt         # Format code  
+deno task fmt         # Format code
 deno task test        # Run tests
 
-# Benchmarking (NEW: Simple aliases!)
-deno task bench --llms sonnet,gpt-4o --tasks tasks/easy/*.yml  # Use aliases
+# Benchmarking with model aliases
+deno task bench --llms opus,gpt-5.2 --tasks tasks/easy/*.yml   # Use aliases
 deno task bench --llms flagship --tasks tasks/*.yml            # Use groups
 deno task bench --llms coding,budget --attempts 2              # Mix & match
 
-# Traditional syntax still works
-deno task bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022
+# Traditional provider/model syntax
+deno task bench --llms openai/gpt-5.2,anthropic/claude-4.5-opus
+
+# OpenRouter models (access 200+ models)
+deno task bench --llms openrouter/anthropic/claude-4.5-opus
+deno task bench --llms openrouter/google/gemini-3-pro-preview
+
+# Parallel execution (faster benchmarks)
+deno task bench --llms opus,gpt-5.2 --tasks tasks/*.yml --parallel
 
 # Configuration
 deno run --allow-all cli/centralgauge.ts config init           # Create config file
@@ -59,23 +68,23 @@ deno run --allow-all cli/centralgauge.ts models flagship      # Test model resol
 deno task report results/ --html --output reports/
 ```
 
-## 🔬 Model Variants
+## Model Variants
 
 Compare the same model with different configurations using the `@` syntax:
 
 ```bash
 # Compare different temperatures
-deno task bench --llms "sonnet@temp=0.1,sonnet@temp=0.5,sonnet@temp=0.9"
+deno task bench --llms "opus@temp=0.1,opus@temp=0.5,opus@temp=0.9"
 
 # Override multiple parameters
-deno task bench --llms "gpt-4o@temp=0.2,maxTokens=8000"
+deno task bench --llms "gpt-5.2@temp=0.2,maxTokens=8000"
 
 # Compare different thinking budgets (for reasoning models)
-deno task bench --llms "claude-4.5@thinking=10000,claude-4.5@thinking=50000"
+deno task bench --llms "opus@thinking=10000,opus@thinking=50000"
 deno task bench --llms "o3@reasoning=5000,o3@reasoning=20000"
 
 # Use named profiles from config
-deno task bench --llms "sonnet@profile=conservative,sonnet@profile=creative"
+deno task bench --llms "opus@profile=conservative,opus@profile=creative"
 ```
 
 ### Supported Parameters
@@ -126,10 +135,44 @@ variantProfiles:
       thinkingBudget: 50000
 ```
 
-## 🤝 Contributing
+## Debug Logging
+
+Enable debug logging to capture raw LLM requests and responses for analysis:
+
+```bash
+# Basic debug logging
+deno task bench --llms opus --tasks tasks/*.yml --debug
+
+# Verbose logging with raw responses
+deno task bench --llms opus --tasks tasks/*.yml --debug-level verbose
+
+# Custom output directory
+deno task bench --llms opus --tasks tasks/*.yml --debug --debug-output-dir ./my-debug
+```
+
+Debug output includes:
+
+- Request prompts and parameters
+- Raw API responses
+- Extracted code blocks
+- Compilation results
+- Timing information
+
+## Supported Providers
+
+| Provider       | Environment Variable   | Example                                |
+| -------------- | ---------------------- | -------------------------------------- |
+| OpenAI         | `OPENAI_API_KEY`       | `openai/gpt-5.2`                       |
+| Anthropic      | `ANTHROPIC_API_KEY`    | `anthropic/claude-4.5-opus`            |
+| Google Gemini  | `GOOGLE_API_KEY`       | `gemini/gemini-3-pro-preview`          |
+| Azure OpenAI   | `AZURE_OPENAI_API_KEY` | `azure/gpt-5.2`                        |
+| OpenRouter     | `OPENROUTER_API_KEY`   | `openrouter/anthropic/claude-4.5-opus` |
+| Local (Ollama) | -                      | `local/codellama`                      |
+
+## Contributing
 
 We welcome contributions! Feel free to open issues or submit a PR.
 
-## 📄 License
+## License
 
 MIT © [SShadowS](https://github.com/SShadowS)
