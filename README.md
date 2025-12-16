@@ -8,6 +8,8 @@
 
 CentralGauge evaluates large language models on their ability to generate, debug, and refactor **AL code** for Business Central. Get repeatable, two-attempt benchmarks with automated compilation and testing in isolated BC containers.
 
+<img width="711" height="1277" alt="image" src="https://github.com/user-attachments/assets/f8a8e564-6397-42be-af83-42fd812f4c9a" />
+
 ## Features
 
 - **Two-pass evaluation** - Models get a second chance to fix compilation errors
