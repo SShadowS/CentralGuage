@@ -358,6 +358,9 @@ describe("Provider Real Response Format Tests", () => {
         };
         if (name.includes("Azure")) {
           config.baseUrl = "https://test-resource.openai.azure.com";
+        } else if (name === "Local") {
+          // Force Ollama mode since our mock uses Ollama response format
+          config.baseUrl = "http://localhost:11434";
         }
         adapter.configure(config);
 
