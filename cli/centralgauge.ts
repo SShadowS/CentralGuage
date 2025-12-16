@@ -249,19 +249,20 @@ async function runParallelBenchmark(
   let debugLogger: DebugLogger | null = null;
   if (options.debug || options.debugLogLevel) {
     const sessionId = `session-${Date.now()}`;
+    const logLevel = options.debugLogLevel || "basic";
     const debugConfig = {
       enabled: true,
       outputDir: options.debugOutputDir || "debug",
       sessionId,
-      logLevel: options.debugLogLevel || "basic",
-      includeRawResponse: options.debugLogLevel === "verbose",
-      includeRequestHeaders: options.debugLogLevel !== "basic",
+      logLevel,
+      includeRawResponse: logLevel === "verbose",
+      includeRequestHeaders: logLevel !== "basic",
       maxFileSize: 100, // 100MB
     };
 
     debugLogger = DebugLogger.initialize(debugConfig);
     console.log(
-      `🔍 Debug logging enabled: ${debugConfig.outputDir} (level: ${debugConfig.logLevel})`,
+      `🔍 Debug logging enabled: ${debugConfig.outputDir} (level: ${logLevel})`,
     );
   }
 
@@ -687,19 +688,20 @@ async function runBenchmark(
   let debugLogger: DebugLogger | null = null;
   if (options.debug || options.debugLogLevel) {
     const sessionId = `session-${Date.now()}`;
+    const logLevel = options.debugLogLevel || "basic";
     const debugConfig = {
       enabled: true,
       outputDir: options.debugOutputDir || "debug",
       sessionId,
-      logLevel: options.debugLogLevel || "basic",
-      includeRawResponse: options.debugLogLevel === "verbose",
-      includeRequestHeaders: options.debugLogLevel !== "basic",
+      logLevel,
+      includeRawResponse: logLevel === "verbose",
+      includeRequestHeaders: logLevel !== "basic",
       maxFileSize: 100, // 100MB
     };
 
     debugLogger = DebugLogger.initialize(debugConfig);
     console.log(
-      `🔍 Debug logging enabled: ${debugConfig.outputDir} (level: ${debugConfig.logLevel})`,
+      `🔍 Debug logging enabled: ${debugConfig.outputDir} (level: ${logLevel})`,
     );
   }
 
@@ -1370,9 +1372,7 @@ cli.command("bench", "Run benchmark evaluation")
   .option("--debug-output <dir>", "Debug output directory", {
     default: "debug/",
   })
-  .option("--debug-level <level>", "Debug log level (basic|detailed|verbose)", {
-    default: "basic",
-  })
+  .option("--debug-level <level>", "Debug log level (basic|detailed|verbose)")
   .option(
     "--container-provider <provider>",
     "Container provider to use (docker|bccontainer|mock)",
