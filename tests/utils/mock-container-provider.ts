@@ -219,6 +219,7 @@ export class MockContainerProvider implements ContainerProvider {
   }
 
   async setup(config: ContainerConfig): Promise<void> {
+    await Promise.resolve();
     this.recordCall("setup", config);
     // Initialize container state
     this.containerStates.set(config.name, {
@@ -230,6 +231,7 @@ export class MockContainerProvider implements ContainerProvider {
   }
 
   async start(containerName: string): Promise<void> {
+    await Promise.resolve();
     this.recordCall("start", containerName);
     const state = this.containerStates.get(containerName) ?? {};
     this.containerStates.set(containerName, {
@@ -241,6 +243,7 @@ export class MockContainerProvider implements ContainerProvider {
   }
 
   async stop(containerName: string): Promise<void> {
+    await Promise.resolve();
     this.recordCall("stop", containerName);
     const state = this.containerStates.get(containerName) ?? {};
     this.containerStates.set(containerName, {
@@ -252,15 +255,17 @@ export class MockContainerProvider implements ContainerProvider {
   }
 
   async remove(containerName: string): Promise<void> {
+    await Promise.resolve();
     this.recordCall("remove", containerName);
     this.containerStates.delete(containerName);
   }
 
   async status(containerName: string): Promise<ContainerStatus> {
+    await Promise.resolve();
     this.recordCall("status", containerName);
 
-    const config =
-      this.containerStates.get(containerName) ?? this.defaultStatusConfig;
+    const config = this.containerStates.get(containerName) ??
+      this.defaultStatusConfig;
 
     if (config.throwError) {
       throw config.throwError;
@@ -286,8 +291,8 @@ export class MockContainerProvider implements ContainerProvider {
   ): Promise<CompilationResult> {
     this.recordCall("compileProject", containerName, project);
 
-    const config =
-      this.compilationOverrides.get(containerName) ?? this.compilationConfig;
+    const config = this.compilationOverrides.get(containerName) ??
+      this.compilationConfig;
 
     // Simulate delay
     if (config.delay) {
@@ -305,11 +310,13 @@ export class MockContainerProvider implements ContainerProvider {
       success,
       errors: config.errors ?? [],
       warnings: config.warnings ?? [],
-      output: config.output ?? (success ? "Compilation successful" : "Compilation failed"),
+      output: config.output ??
+        (success ? "Compilation successful" : "Compilation failed"),
       duration: config.duration ?? 1000,
     };
     if (success) {
-      result.artifactPath = config.artifactPath ?? `${project.path}/output/app.app`;
+      result.artifactPath = config.artifactPath ??
+        `${project.path}/output/app.app`;
     }
     return result;
   }
@@ -340,8 +347,7 @@ export class MockContainerProvider implements ContainerProvider {
     const failedTests = config.failedTests ?? (totalTests - passedTests);
 
     // Generate test results if not provided
-    const results =
-      config.results ??
+    const results = config.results ??
       this.generateTestResults(totalTests, passedTests);
 
     return {
@@ -351,7 +357,8 @@ export class MockContainerProvider implements ContainerProvider {
       failedTests,
       duration: config.duration ?? 2000,
       results,
-      output: config.output ?? (success ? "All tests passed" : "Some tests failed"),
+      output: config.output ??
+        (success ? "All tests passed" : "Some tests failed"),
     };
   }
 
@@ -360,6 +367,7 @@ export class MockContainerProvider implements ContainerProvider {
     localPath: string,
     containerPath: string,
   ): Promise<void> {
+    await Promise.resolve();
     this.recordCall("copyToContainer", containerName, localPath, containerPath);
     // No-op for mock
   }
@@ -369,6 +377,7 @@ export class MockContainerProvider implements ContainerProvider {
     containerPath: string,
     localPath: string,
   ): Promise<void> {
+    await Promise.resolve();
     this.recordCall(
       "copyFromContainer",
       containerName,
@@ -382,11 +391,13 @@ export class MockContainerProvider implements ContainerProvider {
     containerName: string,
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
+    await Promise.resolve();
     this.recordCall("executeCommand", containerName, command);
     return { output: "", exitCode: 0 };
   }
 
   async isHealthy(containerName: string): Promise<boolean> {
+    await Promise.resolve();
     this.recordCall("isHealthy", containerName);
     const state = this.containerStates.get(containerName);
     return state?.health === "healthy";
@@ -484,7 +495,8 @@ export function createMockCompilationResult(
     success,
     errors: overrides?.errors ?? [],
     warnings: overrides?.warnings ?? [],
-    output: overrides?.output ?? (success ? "Compilation successful" : "Compilation failed"),
+    output: overrides?.output ??
+      (success ? "Compilation successful" : "Compilation failed"),
     duration: overrides?.duration ?? 1000,
   };
   if (success && overrides?.artifactPath !== undefined) {

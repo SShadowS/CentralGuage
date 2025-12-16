@@ -8,7 +8,11 @@
  * - json: Machine-readable JSON
  */
 
-import type { AggregateStats, TaskComparison } from "../parallel/types.ts";
+import type {
+  AggregateStats,
+  ModelStats,
+  TaskComparison,
+} from "../parallel/types.ts";
 import type { TaskExecutionResult } from "../tasks/interfaces.ts";
 import type { VariantConfig } from "../llm/variant-types.ts";
 import { Table } from "@cliffy/table";
@@ -294,15 +298,43 @@ export function shouldCopyToClipboard(format: OutputFormat): boolean {
  */
 export function formatBenchmarkStats(input: FormatterInput): string {
   const { stats } = input;
+  const modelStats = getSortedModelStats(stats);
+  const header = buildBenchmarkHeader(modelStats);
+  const rows = buildBenchmarkRows(modelStats, stats);
 
-  // Get models sorted by pass rate
-  const modelStats = Array.from(stats.perModel.values())
+  const table = new Table()
+    .header(header)
+    .body(rows)
+    .border(true);
+
+  return "\n=== BENCHMARK STATS ===\n" + table.toString();
+}
+
+function getSortedModelStats(stats: AggregateStats): ModelStats[] {
+  return Array.from(stats.perModel.values())
     .sort((a, b) => {
       const passRateA = a.tasksPassed / (a.tasksPassed + a.tasksFailed);
       const passRateB = b.tasksPassed / (b.tasksPassed + b.tasksFailed);
       return passRateB - passRateA;
     });
+}
 
+function buildBenchmarkHeader(modelStats: ModelStats[]): string[] {
+  const header = ["Stat"];
+  for (const model of modelStats) {
+    header.push(shortModelName(model.model, model.variantConfig));
+  }
+  if (modelStats.length > 1) {
+    header.push("TOTAL");
+  }
+  return header;
+}
+
+function buildBenchmarkRows(
+  modelStats: ModelStats[],
+  stats: AggregateStats,
+): string[][] {
+  const rows: string[][] = [];
   const totalResults = modelStats.reduce(
     (sum, m) => sum + m.tasksPassed + m.tasksFailed,
     0,
@@ -311,22 +343,9 @@ export function formatBenchmarkStats(input: FormatterInput): string {
     ? modelStats.reduce((sum, m) => sum + m.avgAttempts, 0) / modelStats.length
     : 0;
 
-  // Build header row: Stat | Model1 | Model2 | ... | TOTAL
-  const header = ["Stat"];
-  for (const model of modelStats) {
-    header.push(shortModelName(model.model, model.variantConfig));
-  }
-  if (modelStats.length > 1) {
-    header.push("TOTAL");
-  }
-
-  // Build data rows
-  const rows: string[][] = [];
-
-  // Helper to add a row
   const addRow = (
     label: string,
-    perModel: (m: typeof modelStats[0]) => string,
+    perModel: (m: ModelStats) => string,
     total: string,
   ) => {
     const row = [label];
@@ -339,21 +358,20 @@ export function formatBenchmarkStats(input: FormatterInput): string {
     rows.push(row);
   };
 
-  // Pass rates
+  const formatPassRate = (m: ModelStats, attempt: 1 | 2) => {
+    const t = m.tasksPassed + m.tasksFailed;
+    const passed = attempt === 1 ? m.passedOnAttempt1 : m.passedOnAttempt2;
+    return t > 0 ? `${(passed / t * 100).toFixed(1)}%` : "0.0%";
+  };
+
   addRow(
     "pass_rate_1",
-    (m) => {
-      const t = m.tasksPassed + m.tasksFailed;
-      return t > 0 ? `${(m.passedOnAttempt1 / t * 100).toFixed(1)}%` : "0.0%";
-    },
+    (m) => formatPassRate(m, 1),
     `${(stats.passRate1 * 100).toFixed(1)}%`,
   );
   addRow(
     "pass_rate_2",
-    (m) => {
-      const t = m.tasksPassed + m.tasksFailed;
-      return t > 0 ? `${(m.passedOnAttempt2 / t * 100).toFixed(1)}%` : "0.0%";
-    },
+    (m) => formatPassRate(m, 2),
     `${(stats.passRate2 * 100).toFixed(1)}%`,
   );
   addRow(
@@ -397,25 +415,19 @@ export function formatBenchmarkStats(input: FormatterInput): string {
     `$${stats.totalCost.toFixed(4)}`,
   );
 
-  // Add timing row (only in total)
+  // Add timing row
   if (modelStats.length > 1) {
-    const timingRow = ["seconds_per_task"];
-    for (let i = 0; i < modelStats.length; i++) {
-      timingRow.push("-");
-    }
-    timingRow.push(stats.secondsPerTask.toFixed(1));
+    const timingRow = [
+      "seconds_per_task",
+      ...modelStats.map(() => "-"),
+      stats.secondsPerTask.toFixed(1),
+    ];
     rows.push(timingRow);
   } else {
     rows.push(["seconds_per_task", stats.secondsPerTask.toFixed(1)]);
   }
 
-  // Build table using cliffy
-  const table = new Table()
-    .header(header)
-    .body(rows)
-    .border(true);
-
-  return "\n=== BENCHMARK STATS ===\n" + table.toString();
+  return rows;
 }
 
 /**
@@ -482,7 +494,6 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
     return ""; // Skip for single task
   }
 
-  // Get unique models and tasks
   const models = Array.from(stats.perModel.keys());
   const tasks = Array.from(stats.perTask.keys());
 
@@ -490,8 +501,40 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
     return "";
   }
 
-  // Build header - look up ModelStats to get variantConfig for display
-  const header = [
+  const header = buildMatrixHeader(models, stats);
+  const table = new Table().header(header).border(true);
+
+  const comparisonMap = buildComparisonMap(comparisons, tasks);
+  const resultMap = buildResultMap(results);
+  const totals = initializeModelTotals(models);
+
+  for (const taskId of tasks) {
+    const row = buildTaskRow(
+      taskId,
+      models,
+      resultMap,
+      comparisonMap,
+      totals,
+      stats,
+    );
+    table.push(row);
+  }
+
+  table.push(buildTotalsRow(models, totals));
+
+  return "\n=== TASK RESULTS MATRIX ===\n" + table.toString();
+}
+
+// =============================================================================
+// Task Matrix Helper Functions
+// =============================================================================
+
+/** Build the header row for the task matrix */
+function buildMatrixHeader(
+  models: string[],
+  stats: AggregateStats,
+): string[] {
+  return [
     "Task",
     ...models.map((variantId) => {
       const modelStat = stats.perModel.get(variantId);
@@ -502,14 +545,14 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
     }),
     "Winner",
   ];
+}
 
-  const table = new Table()
-    .header(header)
-    .border(true);
-
-  // Build task comparison map
+/** Build a map of task ID to comparison data */
+function buildComparisonMap(
+  comparisons: TaskComparison[],
+  tasks: string[],
+): Map<string, TaskComparison> {
   const comparisonMap = new Map<string, TaskComparison>();
-  // Get task IDs from comparisons by matching order with tasks array
   for (let i = 0; i < comparisons.length && i < tasks.length; i++) {
     const taskId = tasks[i];
     const comparison = comparisons[i];
@@ -517,102 +560,148 @@ export function formatTaskMatrix(input: TaskMatrixInput): string {
       comparisonMap.set(taskId, comparison);
     }
   }
+  return comparisonMap;
+}
 
-  // Group results by task and variantId (must match stats.perModel keys)
+/** Group results by task ID and variant ID */
+function buildResultMap(
+  results: TaskExecutionResult[],
+): Map<string, Map<string, TaskExecutionResult>> {
   const resultMap = new Map<string, Map<string, TaskExecutionResult>>();
   for (const result of results) {
     if (!resultMap.has(result.taskId)) {
       resultMap.set(result.taskId, new Map());
     }
-    // Use variantId to match stats.perModel keys (which are keyed by variantId)
     const variantId = result.context.variantId ||
       `${result.context.llmProvider}/${result.context.llmModel}`;
     resultMap.get(result.taskId)!.set(variantId, result);
   }
+  return resultMap;
+}
 
-  // Track totals per model
+/** Initialize totals tracking for each model */
+function initializeModelTotals(
+  models: string[],
+): Record<string, { passed: number; total: number }> {
   const totals: Record<string, { passed: number; total: number }> = {};
   for (const model of models) {
     totals[model] = { passed: 0, total: 0 };
   }
+  return totals;
+}
 
-  // Build rows
-  for (const taskId of tasks) {
-    const taskResults = resultMap.get(taskId) || new Map();
-    const comparison = comparisonMap.get(taskId);
+/** Build a single task row for the matrix */
+function buildTaskRow(
+  taskId: string,
+  models: string[],
+  resultMap: Map<string, Map<string, TaskExecutionResult>>,
+  comparisonMap: Map<string, TaskComparison>,
+  totals: Record<string, { passed: number; total: number }>,
+  stats: AggregateStats,
+): string[] {
+  const taskResults = resultMap.get(taskId) || new Map();
+  const comparison = comparisonMap.get(taskId);
 
-    const row: string[] = [
-      taskId.length > 20 ? taskId.substring(0, 17) + "..." : taskId,
-    ];
+  const row: string[] = [truncateTaskId(taskId)];
 
-    for (const model of models) {
-      const result = taskResults.get(model);
-      const modelTotals = totals[model];
-      if (!modelTotals) continue;
-      modelTotals.total++;
+  for (const model of models) {
+    const result = taskResults.get(model);
+    const modelTotals = totals[model];
+    if (!modelTotals) continue;
+    modelTotals.total++;
 
-      if (result) {
-        if (result.success) {
-          modelTotals.passed++;
-          const attemptInfo = result.passedAttemptNumber === 1
-            ? "1st"
-            : `${result.passedAttemptNumber}nd`;
-          row.push(`✅ ${result.finalScore.toFixed(0)} (${attemptInfo})`);
-        } else {
-          // Determine failure type
-          const lastAttempt = result.attempts[result.attempts.length - 1];
-          let failType = "fail";
-          if (lastAttempt) {
-            const reasons = lastAttempt.failureReasons.join(" ");
-            if (reasons.includes("Compilation")) failType = "compile";
-            else if (reasons.includes("Tests")) failType = "test";
-          }
-          row.push(`❌ 0 (${failType})`);
-        }
-      } else {
-        row.push("-");
-      }
-    }
-
-    // Winner column
-    let winnerCell: string;
-    if (comparison?.winner) {
-      const winnerStat = stats.perModel.get(comparison.winner);
-      winnerCell = shortModelName(
-        winnerStat?.model || comparison.winner,
-        winnerStat?.variantConfig,
-      );
-    } else if (comparison && comparison.passingModels.length > 1) {
-      // Multiple models passed with same score - it's a tie
-      winnerCell = "TIE";
-    } else if (comparison && comparison.passingModels.length === 0) {
-      // No models passed - no winner
-      winnerCell = "NONE";
-    } else {
-      winnerCell = "-";
-    }
-    row.push(winnerCell);
-
-    table.push(row);
+    row.push(formatResultCell(result, modelTotals));
   }
 
-  // Totals row
+  row.push(formatWinnerCell(comparison, stats));
+  return row;
+}
+
+/** Truncate task ID for display */
+function truncateTaskId(taskId: string): string {
+  return taskId.length > 20 ? taskId.substring(0, 17) + "..." : taskId;
+}
+
+/** Format a single result cell (success/failure) */
+function formatResultCell(
+  result: TaskExecutionResult | undefined,
+  modelTotals: { passed: number; total: number },
+): string {
+  if (!result) {
+    return "-";
+  }
+
+  if (result.success) {
+    modelTotals.passed++;
+    const attemptInfo = formatAttemptInfo(result.passedAttemptNumber);
+    return `✅ ${result.finalScore.toFixed(0)} (${attemptInfo})`;
+  }
+
+  const failType = determineFailureType(result);
+  return `❌ 0 (${failType})`;
+}
+
+/** Format attempt number for display */
+function formatAttemptInfo(attemptNumber: number): string {
+  return attemptNumber === 1 ? "1st" : `${attemptNumber}nd`;
+}
+
+/** Determine the type of failure from the result */
+function determineFailureType(result: TaskExecutionResult): string {
+  const lastAttempt = result.attempts[result.attempts.length - 1];
+  if (!lastAttempt) {
+    return "fail";
+  }
+
+  const reasons = lastAttempt.failureReasons.join(" ");
+  if (reasons.includes("Compilation")) return "compile";
+  if (reasons.includes("Tests")) return "test";
+  return "fail";
+}
+
+/** Format the winner cell */
+function formatWinnerCell(
+  comparison: TaskComparison | undefined,
+  stats: AggregateStats,
+): string {
+  if (comparison?.winner) {
+    const winnerStat = stats.perModel.get(comparison.winner);
+    return shortModelName(
+      winnerStat?.model || comparison.winner,
+      winnerStat?.variantConfig,
+    );
+  }
+
+  if (comparison && comparison.passingModels.length > 1) {
+    return "TIE";
+  }
+
+  if (comparison && comparison.passingModels.length === 0) {
+    return "NONE";
+  }
+
+  return "-";
+}
+
+/** Build the totals row */
+function buildTotalsRow(
+  models: string[],
+  totals: Record<string, { passed: number; total: number }>,
+): string[] {
   const totalsRow: string[] = ["TOTALS"];
   for (const model of models) {
     const modelTotals = totals[model];
     if (!modelTotals) continue;
     const { passed, total } = modelTotals;
-    const pct = total > 0 ? (passed / total * 100).toFixed(0) : "0";
+    const pct = total > 0 ? ((passed / total) * 100).toFixed(0) : "0";
     totalsRow.push(`${passed}/${total} (${pct}%)`);
   }
   totalsRow.push("");
-  table.push(totalsRow);
-
-  return "\n=== TASK RESULTS MATRIX ===\n" + table.toString();
+  return totalsRow;
 }
 
 // =============================================================================
-// Helper Functions
+// General Helper Functions
 // =============================================================================
 
 /**

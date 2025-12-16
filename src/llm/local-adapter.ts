@@ -222,72 +222,116 @@ export class LocalLLMAdapter implements LLMAdapter {
   ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
 
-    // Determine endpoint - try Ollama first, then generic local endpoint
-    const endpoint = this.config.baseUrl ||
+    // Determine endpoint and API type
+    const endpoint = this.getEndpoint();
+    const isOllama = this.isOllamaEndpoint(endpoint);
+
+    // Build request
+    const { url, payload, headers } = isOllama
+      ? this.buildOllamaRequest(endpoint, request)
+      : this.buildOpenAIRequest(endpoint, request);
+
+    // Make API call
+    const data = await this.makeApiCall(url, payload, headers);
+    const duration = Date.now() - startTime;
+
+    // Parse response
+    const { content, usage } = isOllama
+      ? this.parseOllamaResponse(data)
+      : this.parseOpenAIResponse(data);
+
+    const llmResponse: LLMResponse = {
+      content,
+      model: this.config.model,
+      usage,
+      duration,
+      finishReason: "stop",
+    };
+
+    return {
+      response: llmResponse,
+      rawResponse: includeRaw ? data : undefined,
+    };
+  }
+
+  private getEndpoint(): string {
+    return this.config.baseUrl ||
       Deno.env.get("LOCAL_LLM_ENDPOINT") ||
       Deno.env.get("OLLAMA_HOST") ||
       "http://localhost:11434";
+  }
 
-    // Check if this looks like an Ollama endpoint
-    const isOllama = endpoint.includes("11434") || endpoint.includes("ollama");
+  private isOllamaEndpoint(endpoint: string): boolean {
+    return endpoint.includes("11434") || endpoint.includes("ollama");
+  }
 
-    let url: string;
-    let payload: Record<string, unknown>;
-    let headers: Record<string, string>;
+  private buildOllamaRequest(
+    endpoint: string,
+    request: LLMRequest,
+  ): {
+    url: string;
+    payload: Record<string, unknown>;
+    headers: Record<string, string>;
+  } {
+    const payload: Record<string, unknown> = {
+      model: this.config.model,
+      prompt: request.prompt,
+      options: {
+        temperature: request.temperature ?? this.config.temperature ?? 0.1,
+        num_predict: request.maxTokens ?? this.config.maxTokens ?? 4000,
+        stop: request.stop,
+      },
+      stream: false,
+    };
+    if (request.systemPrompt) {
+      payload["system"] = request.systemPrompt;
+    }
+    return {
+      url: `${endpoint}/api/generate`,
+      payload,
+      headers: { "Content-Type": "application/json" },
+    };
+  }
 
-    if (isOllama) {
-      // Use Ollama API format
-      url = `${endpoint}/api/generate`;
-      payload = {
-        model: this.config.model,
-        prompt: request.prompt,
-        options: {
-          temperature: request.temperature ?? this.config.temperature ?? 0.1,
-          num_predict: request.maxTokens ?? this.config.maxTokens ?? 4000,
-          stop: request.stop,
-        },
-        stream: false,
-      };
-      // Add system prompt if provided (Ollama supports 'system' field)
-      if (request.systemPrompt) {
-        payload["system"] = request.systemPrompt;
-      }
-      headers = {
-        "Content-Type": "application/json",
-      };
-    } else {
-      // Use OpenAI-compatible API format
-      // Build messages array with optional system prompt
-      const messages: Array<{ role: string; content: string }> = [];
-      if (request.systemPrompt) {
-        messages.push({
-          role: "system",
-          content: request.systemPrompt,
-        });
-      }
-      messages.push({
-        role: "user",
-        content: request.prompt,
-      });
+  private buildOpenAIRequest(
+    endpoint: string,
+    request: LLMRequest,
+  ): {
+    url: string;
+    payload: Record<string, unknown>;
+    headers: Record<string, string>;
+  } {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (request.systemPrompt) {
+      messages.push({ role: "system", content: request.systemPrompt });
+    }
+    messages.push({ role: "user", content: request.prompt });
 
-      url = `${endpoint}/v1/chat/completions`;
-      payload = {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.config.apiKey) {
+      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
+    }
+
+    return {
+      url: `${endpoint}/v1/chat/completions`,
+      payload: {
         model: this.config.model,
         messages,
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
         max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
         stop: request.stop,
-      };
-      headers = {
-        "Content-Type": "application/json",
-      };
+      },
+      headers,
+    };
+  }
 
-      // Add API key if provided
-      if (this.config.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config.apiKey}`;
-      }
-    }
-
+  private async makeApiCall(
+    url: string,
+    payload: Record<string, unknown>,
+    headers: Record<string, string>,
+  ): Promise<Record<string, unknown>> {
     const apiResponse = await fetch(url, {
       method: "POST",
       headers,
@@ -302,51 +346,48 @@ export class LocalLLMAdapter implements LLMAdapter {
       );
     }
 
-    const data = await apiResponse.json();
-    const duration = Date.now() - startTime;
+    return await apiResponse.json();
+  }
 
-    let content: string;
-    let usage: TokenUsage;
-
-    if (isOllama) {
-      // Parse Ollama response
-      content = data.response || "";
-
-      // Ollama provides some usage info
-      usage = {
-        promptTokens: data.prompt_eval_count || 0,
-        completionTokens: data.eval_count || 0,
-        totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0),
-        estimatedCost: 0,
-      };
-    } else {
-      // Parse OpenAI-compatible response
-      if (!data.choices || data.choices.length === 0) {
-        throw new Error("No response from local LLM API");
-      }
-
-      const choice = data.choices[0];
-      content = choice.message?.content || choice.text || "";
-
-      usage = {
-        promptTokens: data.usage?.prompt_tokens || 0,
-        completionTokens: data.usage?.completion_tokens || 0,
-        totalTokens: data.usage?.total_tokens || 0,
-        estimatedCost: 0,
-      };
-    }
-
-    const llmResponse: LLMResponse = {
-      content,
-      model: this.config.model,
-      usage,
-      duration,
-      finishReason: "stop", // Local models typically don't provide detailed finish reasons
-    };
-
+  private parseOllamaResponse(
+    data: Record<string, unknown>,
+  ): { content: string; usage: TokenUsage } {
+    const promptTokens = (data["prompt_eval_count"] as number) || 0;
+    const completionTokens = (data["eval_count"] as number) || 0;
     return {
-      response: llmResponse,
-      rawResponse: includeRaw ? data : undefined,
+      content: (data["response"] as string) || "",
+      usage: {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        estimatedCost: 0,
+      },
+    };
+  }
+
+  private parseOpenAIResponse(
+    data: Record<string, unknown>,
+  ): { content: string; usage: TokenUsage } {
+    const choices = data["choices"] as
+      | Array<Record<string, unknown>>
+      | undefined;
+    if (!choices || choices.length === 0) {
+      throw new Error("No response from local LLM API");
+    }
+    const choice = choices[0]!;
+    const message = choice["message"] as Record<string, unknown> | undefined;
+    const content = (message?.["content"] as string) ||
+      (choice["text"] as string) || "";
+
+    const usageData = data["usage"] as Record<string, number> | undefined;
+    return {
+      content,
+      usage: {
+        promptTokens: usageData?.["prompt_tokens"] || 0,
+        completionTokens: usageData?.["completion_tokens"] || 0,
+        totalTokens: usageData?.["total_tokens"] || 0,
+        estimatedCost: 0,
+      },
     };
   }
 }

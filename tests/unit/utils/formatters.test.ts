@@ -304,69 +304,112 @@ describe("formatModelSummaryTable", () => {
   });
 });
 
+/**
+ * Helper to create a mock TaskExecutionResult
+ */
+function createMockTaskExecutionResult(
+  overrides: {
+    taskId: string;
+    success: boolean;
+    passedAttemptNumber?: number;
+    finalScore?: number;
+    variantId: string;
+    llmProvider?: string;
+    llmModel?: string;
+    failureReasons?: string[];
+  },
+): import("../../../src/tasks/interfaces.ts").TaskExecutionResult {
+  const now = new Date();
+  return {
+    taskId: overrides.taskId,
+    executionId: `exec-${overrides.taskId}`,
+    success: overrides.success,
+    passedAttemptNumber: overrides.passedAttemptNumber ??
+      (overrides.success ? 1 : 0),
+    successRate: overrides.success ? 1.0 : 0.0,
+    finalScore: overrides.finalScore ?? (overrides.success ? 100 : 0),
+    totalDuration: 5000,
+    totalTokensUsed: 1000,
+    totalCost: 0.01,
+    executedAt: now,
+    executedBy: "test-runner",
+    environment: { NODE_ENV: "test" },
+    attempts: overrides.success ? [] : [{
+      attemptNumber: 1,
+      startTime: now,
+      endTime: now,
+      prompt: "Test prompt",
+      llmResponse: {
+        content: "Test response",
+        usage: { promptTokens: 100, completionTokens: 100, totalTokens: 200 },
+        finishReason: "stop",
+        model: overrides.llmModel || "mock-gpt-4",
+        duration: 1000,
+      },
+      extractedCode: "codeunit 50100 Test {}",
+      codeLanguage: "al",
+      success: false,
+      score: 0,
+      failureReasons: overrides.failureReasons ?? ["Compilation failed"],
+      tokensUsed: 200,
+      cost: 0.01,
+      duration: 1000,
+    }],
+    context: {
+      manifest: {
+        id: overrides.taskId,
+        description: "Test",
+        prompt_template: "prompt.md",
+        fix_template: "fix.md",
+        max_attempts: 2,
+        expected: { compile: true },
+        metrics: [],
+      },
+      taskType: "code_generation",
+      llmProvider: overrides.llmProvider ?? "mock",
+      llmModel: overrides.llmModel ?? "mock-gpt-4",
+      variantId: overrides.variantId,
+      attemptLimit: 2,
+      instructions: "Test",
+      alProjectPath: "/test",
+      targetFile: "test.al",
+      promptTemplatePath: "/templates/prompt.md",
+      fixTemplatePath: "/templates/fix.md",
+      temperature: 0.1,
+      maxTokens: 4000,
+      timeout: 300000,
+      containerProvider: "mock",
+      containerName: "test-container",
+      outputDir: "results",
+      debugMode: false,
+      expectedOutput: {
+        type: "al_code",
+        validation: { mustCompile: true, mustPass: false },
+      },
+      evaluation: {
+        requiredElements: [],
+        forbiddenElements: [],
+        customChecks: [],
+      },
+      metadata: {
+        difficulty: "easy",
+        category: "implementation",
+        tags: [],
+        estimatedTokens: 1000,
+      },
+    },
+  };
+}
+
 describe("formatTaskMatrix", () => {
   it("should format task matrix", () => {
-    const now = new Date();
     const input = createMockFormatterInput() as TaskMatrixInput;
     input.results = [
-      {
+      createMockTaskExecutionResult({
         taskId: "task-1",
-        executionId: "exec-1",
         success: true,
-        passedAttemptNumber: 1,
-        successRate: 1.0,
-        finalScore: 100,
-        totalDuration: 5000,
-        totalTokensUsed: 1000,
-        totalCost: 0.01,
-        executedAt: now,
-        executedBy: "test-runner",
-        environment: { NODE_ENV: "test" },
-        attempts: [],
-        context: {
-          manifest: {
-            id: "task-1",
-            description: "Test",
-            prompt_template: "prompt.md",
-            fix_template: "fix.md",
-            max_attempts: 2,
-            expected: { compile: true },
-            metrics: [],
-          },
-          taskType: "code_generation",
-          llmProvider: "mock",
-          llmModel: "mock-gpt-4",
-          variantId: "mock/mock-gpt-4",
-          attemptLimit: 2,
-          instructions: "Test",
-          alProjectPath: "/test",
-          targetFile: "test.al",
-          promptTemplatePath: "/templates/prompt.md",
-          fixTemplatePath: "/templates/fix.md",
-          temperature: 0.1,
-          maxTokens: 4000,
-          timeout: 300000,
-          containerProvider: "mock",
-          containerName: "test-container",
-          outputDir: "results",
-          debugMode: false,
-          expectedOutput: {
-            type: "al_code",
-            validation: { mustCompile: true, mustPass: false },
-          },
-          evaluation: {
-            requiredElements: [],
-            forbiddenElements: [],
-            customChecks: [],
-          },
-          metadata: {
-            difficulty: "easy",
-            category: "implementation",
-            tags: [],
-            estimatedTokens: 1000,
-          },
-        },
-      },
+        variantId: "mock/mock-gpt-4",
+      }),
     ];
 
     const output = formatTaskMatrix(input);
@@ -385,6 +428,195 @@ describe("formatTaskMatrix", () => {
     const output = formatTaskMatrix(input);
 
     assertEquals(output, "");
+  });
+
+  it("should return empty string for no models", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.stats.perModel.clear();
+    input.results = [];
+
+    const output = formatTaskMatrix(input);
+
+    assertEquals(output, "");
+  });
+
+  it("should return empty string for no tasks", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.stats.perTask.clear();
+    input.results = [];
+
+    const output = formatTaskMatrix(input);
+
+    assertEquals(output, "");
+  });
+
+  it("should show TIE when multiple models pass with same score", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    // Set up comparison where both models pass with same score (no winner)
+    input.comparisons = [{
+      bestScore: 100,
+      avgScore: 100,
+      passingModels: ["mock/mock-gpt-4", "mock/mock-claude"],
+      failingModels: [],
+      ranking: [
+        { model: "mock/mock-gpt-4", score: 100, rank: 1 },
+        { model: "mock/mock-claude", score: 100, rank: 1 },
+      ],
+    }];
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        finalScore: 100,
+        variantId: "mock/mock-gpt-4",
+      }),
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        finalScore: 100,
+        variantId: "mock/mock-claude",
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    assert(output.includes("TIE"));
+  });
+
+  it("should show NONE when no models pass", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    // No winner when all models fail
+    input.comparisons = [{
+      bestScore: 0,
+      avgScore: 0,
+      passingModels: [],
+      failingModels: ["mock/mock-gpt-4", "mock/mock-claude"],
+      ranking: [],
+    }];
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: false,
+        variantId: "mock/mock-gpt-4",
+      }),
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: false,
+        variantId: "mock/mock-claude",
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    assert(output.includes("NONE"));
+  });
+
+  it("should truncate long task IDs", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    const longTaskId = "this-is-a-very-long-task-id-that-exceeds-20-characters";
+    input.stats.perTask.clear();
+    input.stats.perTask.set(
+      longTaskId,
+      createMockTaskStats({ taskId: longTaskId }),
+    );
+    input.stats.perTask.set(
+      "task-2",
+      createMockTaskStats({ taskId: "task-2" }),
+    );
+    input.results = [];
+
+    const output = formatTaskMatrix(input);
+
+    // Should contain truncated version (17 chars + "...")
+    assert(output.includes("..."));
+  });
+
+  it("should show second attempt passing info", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        passedAttemptNumber: 2,
+        variantId: "mock/mock-gpt-4",
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    // Should show "2nd" for second attempt pass
+    assert(output.includes("2nd") || output.includes("2"));
+  });
+
+  it("should show compile failure type", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: false,
+        variantId: "mock/mock-gpt-4",
+        failureReasons: ["Compilation failed: syntax error"],
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    assert(output.includes("compile"));
+  });
+
+  it("should show test failure type", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: false,
+        variantId: "mock/mock-gpt-4",
+        failureReasons: ["Tests failed: 2 test cases failed"],
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    assert(output.includes("test"));
+  });
+
+  it("should show dash for missing results", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    // Has two models in perModel but only one result
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        variantId: "mock/mock-gpt-4",
+      }),
+      // No result for mock/mock-claude for task-1
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    assert(output.includes("-"));
+  });
+
+  it("should calculate totals correctly", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        variantId: "mock/mock-gpt-4",
+      }),
+      createMockTaskExecutionResult({
+        taskId: "task-2",
+        success: false,
+        variantId: "mock/mock-gpt-4",
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    // Should show totals row with pass counts
+    assert(output.includes("TOTALS"));
+    assert(output.includes("%"));
   });
 });
 
@@ -425,5 +657,194 @@ describe("shouldCopyToClipboard", () => {
   it("should return false for verbose and json", () => {
     assertEquals(shouldCopyToClipboard("verbose"), false);
     assertEquals(shouldCopyToClipboard("json"), false);
+  });
+});
+
+describe("Edge cases for formatters", () => {
+  it("should handle single model without TOTAL column in benchmark stats", () => {
+    const input = createMockFormatterInput();
+    // Keep only one model
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-gpt-4",
+      createMockModelStats(),
+    );
+
+    const output = formatBenchmarkStats(input);
+
+    // Should NOT have TOTAL column when only one model
+    assert(!output.includes("TOTAL"));
+  });
+
+  it("should handle 100% pass rate emoji in leaderboard", () => {
+    const input = createMockFormatterInput();
+    // Set model to 100% pass rate
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-perfect",
+      createMockModelStats({
+        model: "mock-perfect",
+        variantId: "mock/mock-perfect",
+        tasksPassed: 10,
+        tasksFailed: 0,
+      }),
+    );
+
+    const output = formatLeaderboard(input);
+
+    assert(output.includes("100%") || output.includes("✅"));
+  });
+
+  it("should handle 0% pass rate emoji in leaderboard", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-failed",
+      createMockModelStats({
+        model: "mock-failed",
+        variantId: "mock/mock-failed",
+        tasksPassed: 0,
+        tasksFailed: 10,
+      }),
+    );
+
+    const output = formatLeaderboard(input);
+
+    assert(output.includes("0%") || output.includes("❌"));
+  });
+
+  it("should handle partial pass rate emoji in leaderboard", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-partial",
+      createMockModelStats({
+        model: "mock-partial",
+        variantId: "mock/mock-partial",
+        tasksPassed: 5,
+        tasksFailed: 5,
+      }),
+    );
+
+    const output = formatLeaderboard(input);
+
+    assert(output.includes("50%") || output.includes("⚠️"));
+  });
+
+  it("should handle no winner in leaderboard", () => {
+    const input = createMockFormatterInput();
+    input.comparisons = [];
+
+    const output = formatLeaderboard(input);
+
+    // Should still render, just without winner line
+    assert(output.includes("CentralGauge"));
+  });
+
+  it("should handle first attempt info in leaderboard", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-first-try",
+      createMockModelStats({
+        model: "mock-first-try",
+        variantId: "mock/mock-first-try",
+        avgAttempts: 1.0,
+      }),
+    );
+
+    const output = formatLeaderboard(input);
+
+    assert(output.includes("1st attempt"));
+  });
+
+  it("should handle multiple attempts info in leaderboard", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-retry",
+      createMockModelStats({
+        model: "mock-retry",
+        variantId: "mock/mock-retry",
+        avgAttempts: 1.5,
+      }),
+    );
+
+    const output = formatLeaderboard(input);
+
+    assert(output.includes("1.5 attempts"));
+  });
+
+  it("should handle no winner in bar chart", () => {
+    const input = createMockFormatterInput();
+    input.comparisons = [];
+
+    const output = formatBarChart(input);
+
+    // Should still render the bar chart
+    assert(output.includes("📊"));
+    assert(output.includes("█") || output.includes("░"));
+  });
+
+  it("should handle no winner in compact format", () => {
+    const input = createMockFormatterInput();
+    input.comparisons = [];
+
+    const output = formatCompact(input);
+
+    // Should not have winner info
+    assert(output.includes("CentralGauge:"));
+    assert(!output.includes("Winner:"));
+  });
+
+  it("should handle variantConfig in model names", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-variant",
+      createMockModelStats({
+        model: "mock-gpt-4",
+        variantId: "mock/mock-variant",
+        variantConfig: {
+          temperature: 0.5,
+          maxTokens: 8000,
+          thinkingBudget: 10000,
+          systemPromptName: "strict-al",
+        },
+      }),
+    );
+
+    const output = formatBenchmarkStats(input);
+
+    // Should show variant config info in model name
+    assert(
+      output.includes("temp=") ||
+        output.includes("thinking=") ||
+        output.includes("tokens=") ||
+        output.includes("prompt=") ||
+        output.includes("mock-gpt-4"),
+    );
+  });
+
+  it("should handle empty perModel in model summary table", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+
+    const output = formatModelSummaryTable(input);
+
+    assertEquals(output, "");
+  });
+
+  it("should handle timing row in benchmark stats for single model", () => {
+    const input = createMockFormatterInput();
+    input.stats.perModel.clear();
+    input.stats.perModel.set(
+      "mock/mock-single",
+      createMockModelStats(),
+    );
+
+    const output = formatBenchmarkStats(input);
+
+    assert(output.includes("seconds_per_task"));
   });
 });

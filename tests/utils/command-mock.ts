@@ -169,9 +169,7 @@ export class CommandMock {
     return this.calls.some((call) => {
       if (call.command !== command) return false;
       if (!argsContain) return true;
-      return argsContain.every((arg) =>
-        call.args.some((a) => a.includes(arg))
-      );
+      return argsContain.every((arg) => call.args.some((a) => a.includes(arg)));
     });
   }
 
@@ -180,10 +178,18 @@ export class CommandMock {
    */
   assertCalled(command: string, argsContain?: string[]): void {
     if (!this.wasCalledWith(command, argsContain)) {
-      const argsStr = argsContain ? ` with args containing [${argsContain.join(", ")}]` : "";
+      const argsStr = argsContain
+        ? ` with args containing [${argsContain.join(", ")}]`
+        : "";
       throw new Error(
         `Expected command "${command}"${argsStr} to be called, but it was not.\n` +
-          `Actual calls: ${JSON.stringify(this.calls.map((c) => ({ command: c.command, args: c.args })), null, 2)}`,
+          `Actual calls: ${
+            JSON.stringify(
+              this.calls.map((c) => ({ command: c.command, args: c.args })),
+              null,
+              2,
+            )
+          }`,
       );
     }
   }
@@ -193,7 +199,9 @@ export class CommandMock {
    */
   assertNotCalled(command: string, argsContain?: string[]): void {
     if (this.wasCalledWith(command, argsContain)) {
-      const argsStr = argsContain ? ` with args containing [${argsContain.join(", ")}]` : "";
+      const argsStr = argsContain
+        ? ` with args containing [${argsContain.join(", ")}]`
+        : "";
       throw new Error(
         `Expected command "${command}"${argsStr} NOT to be called, but it was.`,
       );
@@ -248,9 +256,9 @@ export class CommandMock {
     this.originalCommand = Deno.Command;
 
     // Create mock Command class
+    // deno-lint-ignore no-this-alias
     const mockInstance = this;
 
-    // deno-lint-ignore no-explicit-any
     const MockCommand = function (
       this: Deno.Command,
       command: string | URL,
@@ -342,7 +350,10 @@ export class CommandMock {
   /**
    * Find matching response for a command call
    */
-  private findMatchingResponse(command: string, args: string[]): CommandResponse {
+  private findMatchingResponse(
+    command: string,
+    args: string[],
+  ): CommandResponse {
     for (let i = 0; i < this.mocks.length; i++) {
       const mock = this.mocks[i]!;
       if (this.matchesPattern(mock.pattern, command, args)) {

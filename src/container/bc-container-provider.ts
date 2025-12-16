@@ -439,20 +439,57 @@ export class BcContainerProvider implements ContainerProvider {
     const startTime = Date.now();
     const credentials = this.getCredentials(containerName);
 
-    // Find the compiled app file
-    const outputDir = `${project.path}\\output`;
-    let appFilePath: string | undefined;
-
-    try {
-      for await (const entry of Deno.readDir(outputDir)) {
-        if (entry.isFile && entry.name.endsWith(".app")) {
-          appFilePath = `${outputDir}\\${entry.name}`;
-          break;
-        }
-      }
-    } catch {
-      // Output directory doesn't exist or is empty
+    // Ensure we have a compiled app file
+    const appFileResult = await this.ensureCompiledApp(
+      containerName,
+      project,
+      startTime,
+    );
+    if (!appFileResult.success) {
+      return appFileResult.failureResult!;
     }
+
+    // Build and execute the test script
+    const script = this.buildTestScript(
+      containerName,
+      credentials,
+      appFileResult.appFilePath!,
+    );
+    const result = await this.executePowerShell(script);
+    const duration = Date.now() - startTime;
+
+    // Parse and return results
+    const { results, allPassed, publishFailed } = parseTestResults(
+      result.output,
+    );
+    const { totalTests, passedTests, failedTests, success } =
+      calculateTestMetrics(results, allPassed, publishFailed);
+
+    this.logTestResult(success, passedTests, totalTests);
+
+    return {
+      success,
+      totalTests,
+      passedTests,
+      failedTests,
+      results,
+      duration,
+      output: result.output,
+    };
+  }
+
+  /** Ensure we have a compiled app file, compiling if necessary */
+  private async ensureCompiledApp(
+    containerName: string,
+    project: ALProject,
+    startTime: number,
+  ): Promise<{
+    success: boolean;
+    appFilePath?: string;
+    failureResult?: TestResult;
+  }> {
+    // Try to find existing compiled app
+    let appFilePath = await this.findCompiledAppFile(project);
 
     if (!appFilePath) {
       console.log(
@@ -464,12 +501,10 @@ export class BcContainerProvider implements ContainerProvider {
       if (!compileResult.success) {
         return {
           success: false,
-          totalTests: 0,
-          passedTests: 0,
-          failedTests: 0,
-          results: [],
-          duration: Date.now() - startTime,
-          output: `Compilation failed: ${compileResult.output}`,
+          failureResult: this.createFailedTestResult(
+            startTime,
+            `Compilation failed: ${compileResult.output}`,
+          ),
         };
       }
       appFilePath = compileResult.artifactPath;
@@ -478,28 +513,89 @@ export class BcContainerProvider implements ContainerProvider {
     if (!appFilePath) {
       return {
         success: false,
-        totalTests: 0,
-        passedTests: 0,
-        failedTests: 0,
-        results: [],
-        duration: Date.now() - startTime,
-        output: "No compiled app file available for testing",
+        failureResult: this.createFailedTestResult(
+          startTime,
+          "No compiled app file available for testing",
+        ),
       };
     }
 
+    return { success: true, appFilePath };
+  }
+
+  /** Find the first .app file in the project output directory */
+  private async findCompiledAppFile(
+    project: ALProject,
+  ): Promise<string | undefined> {
+    const outputDir = `${project.path}\\output`;
+    try {
+      for await (const entry of Deno.readDir(outputDir)) {
+        if (entry.isFile && entry.name.endsWith(".app")) {
+          return `${outputDir}\\${entry.name}`;
+        }
+      }
+    } catch {
+      // Output directory doesn't exist or is empty
+    }
+    return undefined;
+  }
+
+  /** Create a failed test result */
+  private createFailedTestResult(
+    startTime: number,
+    output: string,
+  ): TestResult {
+    return {
+      success: false,
+      totalTests: 0,
+      passedTests: 0,
+      failedTests: 0,
+      results: [],
+      duration: Date.now() - startTime,
+      output,
+    };
+  }
+
+  /** Log the test result */
+  private logTestResult(
+    success: boolean,
+    passedTests: number,
+    totalTests: number,
+  ): void {
+    console.log(
+      (success ? colors.green : colors.red)(
+        `[BC Container] Tests ${
+          success ? "passed" : "failed"
+        }: ${passedTests}/${totalTests} passed`,
+      ),
+    );
+  }
+
+  /** Build the PowerShell script for publishing and running tests */
+  private buildTestScript(
+    containerName: string,
+    credentials: ContainerCredentials,
+    appFilePath: string,
+  ): string {
     const escapedAppFile = appFilePath.replace(/\\/g, "\\\\");
 
-    // Publish app and run tests
-    const script = `
+    return `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)
 
+      ${this.buildPreCleanupScript(containerName)}
+      ${this.buildPublishScript(containerName, escapedAppFile)}
+      ${this.buildRunTestsScript(containerName)}
+      ${this.buildPostCleanupScript(containerName)}
+    `;
+  }
 
-      # PRE-PUBLISH CLEANUP: Remove any existing CentralGauge apps to prevent duplicate conflicts
-      # This is critical because multiple apps with same name/publisher/version but different AppIds
-      # will cause "Multiple published extensions match" errors during sync/install
+  /** Build the pre-publish cleanup script block */
+  private buildPreCleanupScript(containerName: string): string {
+    return `
+      # PRE-PUBLISH CLEANUP: Remove any existing CentralGauge apps
       Write-Output "PRECLEAN_START"
       try {
         Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
@@ -510,23 +606,24 @@ export class BcContainerProvider implements ContainerProvider {
               $appId = $app.AppId.ToString()
               $version = $app.Version.ToString()
               Write-Host "  Removing: $($app.Name) (AppId=$appId)"
-              try {
-                # Uninstall first (may already be uninstalled)
-                Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue
-              } catch {}
-              try {
-                # Unpublish using AppId for precise removal when duplicates exist
-                Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue
-              } catch {}
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
+              try { Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue } catch {}
             }
           }
         }
         Write-Output "PRECLEAN_SUCCESS"
       } catch {
         Write-Output "PRECLEAN_WARNING:$($_.Exception.Message)"
-        # Continue anyway - cleanup failure shouldn't block the test
       }
+    `;
+  }
 
+  /** Build the publish app script block */
+  private buildPublishScript(
+    containerName: string,
+    escapedAppFile: string,
+  ): string {
+    return `
       # Publish the app (will sync and install)
       try {
         Write-Output "PUBLISH_START"
@@ -536,8 +633,13 @@ export class BcContainerProvider implements ContainerProvider {
         Write-Output "PUBLISH_FAILED:$($_.Exception.Message)"
         exit 1
       }
+    `;
+  }
 
-      # Run tests - get test codeunit IDs from the app
+  /** Build the run tests script block */
+  private buildRunTestsScript(containerName: string): string {
+    return `
+      # Run tests
       Write-Output "TEST_START"
       try {
         $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential -detailed -returnTrueIfAllPassed -ErrorAction Stop 2>&1
@@ -547,7 +649,6 @@ export class BcContainerProvider implements ContainerProvider {
         } elseif ($results -eq $false) {
           Write-Output "SOME_TESTS_FAILED"
         } else {
-          # Detailed results
           foreach ($line in $results) {
             Write-Output "TESTRESULT:$line"
           }
@@ -556,9 +657,13 @@ export class BcContainerProvider implements ContainerProvider {
         Write-Output "TEST_ERROR:$($_.Exception.Message)"
       }
       Write-Output "TEST_END"
+    `;
+  }
 
-
-      # POST-TEST CLEANUP: Uninstall and unpublish the test app using AppId for precision
+  /** Build the post-test cleanup script block */
+  private buildPostCleanupScript(containerName: string): string {
+    return `
+      # POST-TEST CLEANUP: Uninstall and unpublish the test app
       try {
         Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
           $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.Publisher -eq "CentralGauge" }
@@ -567,12 +672,8 @@ export class BcContainerProvider implements ContainerProvider {
               $appId = $app.AppId.ToString()
               $version = $app.Version.ToString()
               Write-Host "CLEANUP:Removing app $($app.Name) (AppId=$appId)"
-              try {
-                Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue
-              } catch {}
-              try {
-                Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue
-              } catch {}
+              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
+              try { Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue } catch {}
             }
           }
         }
@@ -580,34 +681,6 @@ export class BcContainerProvider implements ContainerProvider {
         Write-Output "CLEANUP_WARNING:$($_.Exception.Message)"
       }
     `;
-
-    const result = await this.executePowerShell(script);
-    const duration = Date.now() - startTime;
-
-    // Parse test results using extracted functions
-    const { results, allPassed, publishFailed } = parseTestResults(
-      result.output,
-    );
-    const { totalTests, passedTests, failedTests, success } =
-      calculateTestMetrics(results, allPassed, publishFailed);
-
-    console.log(
-      (success ? colors.green : colors.red)(
-        `[BC Container] Tests ${
-          success ? "passed" : "failed"
-        }: ${passedTests}/${totalTests} passed`,
-      ),
-    );
-
-    return {
-      success,
-      totalTests,
-      passedTests,
-      failedTests,
-      results,
-      duration,
-      output: result.output,
-    };
   }
 
   async copyToContainer(

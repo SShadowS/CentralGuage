@@ -481,5 +481,396 @@ describe("DebugLogger", () => {
       }
       assert(files.some((f) => f.includes("debug-summary-")));
     });
+
+    it("should not throw when disabled", async () => {
+      const disabledLogger = DebugLogger.initialize({
+        ...config,
+        enabled: false,
+      });
+
+      // Should not throw
+      await disabledLogger.finalize();
+    });
+  });
+
+  describe("Log content validation", () => {
+    let logger: DebugLogger;
+
+    beforeEach(() => {
+      // @ts-ignore - accessing private static for testing
+      DebugLogger.instance = null;
+      logger = DebugLogger.initialize(config);
+    });
+
+    afterEach(() => {
+      // @ts-ignore - accessing private static for testing
+      DebugLogger.instance = null;
+    });
+
+    it("should write valid JSON lines in log file", async () => {
+      await logger.logInteraction(
+        "mock",
+        "generateCode",
+        { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "test", attempt: 1, description: "Test task" },
+        createMockLLMResponse(),
+        "code",
+        false,
+        "al",
+      );
+
+      // Find and read the log file
+      let logFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("mock-") && entry.name.endsWith(".jsonl")) {
+          logFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      assert(logFile !== "", "Log file should exist");
+      const content = await Deno.readTextFile(logFile);
+      const lines = content.split("\n").filter((l) => l.trim());
+
+      // Each line should be valid JSON
+      for (const line of lines) {
+        const parsed = JSON.parse(line);
+        assertExists(parsed.type);
+      }
+    });
+
+    it("should include session header in log file", async () => {
+      await logger.logInteraction(
+        "anthropic",
+        "generateCode",
+        { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "test", attempt: 1, description: "Test task" },
+        createMockLLMResponse(),
+        "code",
+        true,
+        "al",
+      );
+
+      let logFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (
+          entry.name.includes("anthropic-") && entry.name.endsWith(".jsonl")
+        ) {
+          logFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(logFile);
+      const lines = content.split("\n").filter((l) => l.trim());
+      assert(lines.length >= 1, "Should have at least 1 line");
+      const header = JSON.parse(lines[0]!);
+
+      assertEquals(header.type, "debug_session_start");
+      assertEquals(header.provider, "anthropic");
+      assertEquals(header.sessionId, config.sessionId);
+      assertExists(header.centralgauge);
+      assertExists(header.centralgauge.version);
+      assertExists(header.centralgauge.platform);
+    });
+
+    it("should correctly log interaction data", async () => {
+      const response = createMockLLMResponse();
+      await logger.logInteraction(
+        "openai",
+        "generateFix",
+        { prompt: "Fix this code", temperature: 0.5, maxTokens: 2000 },
+        { taskId: "task-123", attempt: 2, description: "Fix test" },
+        response,
+        "fixed code here",
+        true,
+        "al",
+      );
+
+      let logFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("openai-") && entry.name.endsWith(".jsonl")) {
+          logFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(logFile);
+      const lines = content.split("\n").filter((l) => l.trim());
+      assert(lines.length >= 2, "Should have at least 2 lines");
+      const interaction = JSON.parse(lines[1]!);
+
+      assertEquals(interaction.type, "llm_interaction");
+      assertEquals(interaction.provider, "openai");
+      assertEquals(interaction.operation, "generateFix");
+      assertEquals(interaction.taskId, "task-123");
+      assertEquals(interaction.attempt, 2);
+      assertEquals(interaction.request.prompt, "Fix this code");
+      assertEquals(interaction.request.temperature, 0.5);
+      assertEquals(interaction.request.maxTokens, 2000);
+      assertEquals(interaction.extractedCode, "fixed code here");
+      assertEquals(interaction.metadata.extractedFromDelimiters, true);
+      assertEquals(interaction.metadata.language, "al");
+    });
+
+    it("should correctly log error data", async () => {
+      const testError = new Error("API rate limit exceeded");
+
+      await logger.logError(
+        "gemini",
+        "generateCode",
+        { prompt: "Generate code for testing", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "task-error", attempt: 1, description: "Error test" },
+        testError,
+      );
+
+      let logFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("gemini-") && entry.name.endsWith(".jsonl")) {
+          logFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(logFile);
+      const lines = content.split("\n").filter((l) => l.trim());
+      assert(lines.length >= 2, "Should have at least 2 lines");
+      const errorEntry = JSON.parse(lines[1]!);
+
+      assertEquals(errorEntry.type, "llm_error");
+      assertEquals(errorEntry.provider, "gemini");
+      assertEquals(errorEntry.operation, "generateCode");
+      assertEquals(errorEntry.error.message, "API rate limit exceeded");
+      assertEquals(errorEntry.error.name, "Error");
+      assertExists(errorEntry.error.stack);
+    });
+
+    it("should truncate long prompts in error logs", async () => {
+      const longPrompt = "A".repeat(500);
+      await logger.logError(
+        "mock",
+        "generateCode",
+        { prompt: longPrompt, temperature: 0.1, maxTokens: 1000 },
+        { taskId: "task-long", attempt: 1, description: "Long prompt test" },
+        new Error("Test error"),
+      );
+
+      let logFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("mock-") && entry.name.endsWith(".jsonl")) {
+          logFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(logFile);
+      const lines = content.split("\n").filter((l) => l.trim());
+      assert(lines.length >= 2, "Should have at least 2 lines");
+      const errorEntry = JSON.parse(lines[1]!);
+
+      // Prompt should be truncated
+      assert(errorEntry.request.prompt.length < 250);
+      assert(errorEntry.request.prompt.endsWith("..."));
+    });
+  });
+
+  describe("Summary report content", () => {
+    afterEach(() => {
+      // @ts-ignore - accessing private static for testing
+      DebugLogger.instance = null;
+    });
+
+    it("should include statistics from all providers", async () => {
+      const logger = DebugLogger.initialize(config);
+
+      // Log interactions from multiple providers
+      await logger.logInteraction(
+        "anthropic",
+        "generateCode",
+        { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "test", attempt: 1, description: "Test task" },
+        createMockLLMResponse(),
+        "code",
+        false,
+        "al",
+      );
+
+      await logger.logInteraction(
+        "openai",
+        "generateFix",
+        { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "test", attempt: 2, description: "Test task" },
+        createMockLLMResponse(),
+        "code",
+        false,
+        "al",
+      );
+
+      await logger.generateSummaryReport();
+
+      // Find summary file
+      let summaryFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("debug-summary-")) {
+          summaryFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(summaryFile);
+      const summary = JSON.parse(content);
+
+      assertEquals(summary.type, "debug_summary");
+      assertExists(summary.statistics.anthropic);
+      assertExists(summary.statistics.openai);
+      assertEquals(summary.totalRequests, 2);
+    });
+
+    it("should calculate correct totals in summary", async () => {
+      const logger = DebugLogger.initialize(config);
+
+      // Log multiple interactions
+      for (let i = 0; i < 3; i++) {
+        await logger.logInteraction(
+          "mock",
+          "generateCode",
+          { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+          { taskId: `test-${i}`, attempt: 1, description: "Test task" },
+          createMockLLMResponse(),
+          "code",
+          false,
+          "al",
+        );
+      }
+
+      await logger.generateSummaryReport();
+
+      let summaryFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("debug-summary-")) {
+          summaryFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(summaryFile);
+      const summary = JSON.parse(content);
+
+      assertEquals(summary.totalRequests, 3);
+      assertEquals(summary.statistics.mock.requests, 3);
+    });
+  });
+
+  describe("Test output logging", () => {
+    afterEach(() => {
+      // @ts-ignore - accessing private static for testing
+      DebugLogger.instance = null;
+    });
+
+    it("should create test-output directory at verbose level", async () => {
+      const logger = DebugLogger.initialize({
+        ...config,
+        logLevel: "verbose",
+      });
+
+      await logger.logTestResult(
+        "test-task",
+        "mock-gpt-4",
+        1,
+        "test-container",
+        {
+          success: true,
+          totalTests: 1,
+          passedTests: 1,
+          failedTests: 0,
+          results: [{ name: "Test1", passed: true, duration: 100 }],
+          duration: 100,
+          output: "Verbose test output for analysis",
+        },
+      );
+
+      // Should create test-output directory
+      const hasOutput = await Deno.stat(`${tempDir}/test-output`).then(
+        () => true,
+        () => false,
+      );
+      assertEquals(hasOutput, true);
+    });
+  });
+
+  describe("includeRawResponse option", () => {
+    afterEach(() => {
+      // @ts-ignore - accessing private static for testing
+      DebugLogger.instance = null;
+    });
+
+    it("should include raw response when configured", async () => {
+      const logger = DebugLogger.initialize({
+        ...config,
+        logLevel: "detailed",
+        includeRawResponse: true,
+      });
+
+      const rawResponse = { rawData: "test", apiResponse: { id: "123" } };
+
+      await logger.logInteraction(
+        "mock",
+        "generateCode",
+        { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "test", attempt: 1, description: "Test task" },
+        createMockLLMResponse(),
+        "code",
+        false,
+        "al",
+        rawResponse,
+      );
+
+      // Find details file
+      let detailsFile = "";
+      for await (const entry of Deno.readDir(`${tempDir}/details`)) {
+        if (entry.name.endsWith(".json")) {
+          detailsFile = `${tempDir}/details/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(detailsFile);
+      const details = JSON.parse(content);
+
+      assertEquals(details.rawResponse, rawResponse);
+    });
+
+    it("should include raw error when configured", async () => {
+      const logger = DebugLogger.initialize({
+        ...config,
+        includeRawResponse: true,
+      });
+
+      const rawError = { statusCode: 429, headers: { "retry-after": "60" } };
+
+      await logger.logError(
+        "mock",
+        "generateCode",
+        { prompt: "Test", temperature: 0.1, maxTokens: 1000 },
+        { taskId: "test", attempt: 1, description: "Test task" },
+        new Error("Rate limited"),
+        rawError,
+      );
+
+      let logFile = "";
+      for await (const entry of Deno.readDir(tempDir)) {
+        if (entry.name.includes("mock-") && entry.name.endsWith(".jsonl")) {
+          logFile = `${tempDir}/${entry.name}`;
+          break;
+        }
+      }
+
+      const content = await Deno.readTextFile(logFile);
+      const lines = content.split("\n").filter((l) => l.trim());
+      assert(lines.length >= 2, "Should have at least 2 lines");
+      const errorEntry = JSON.parse(lines[1]!);
+
+      assertEquals(errorEntry.rawError, rawError);
+    });
   });
 });

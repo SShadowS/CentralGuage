@@ -246,6 +246,76 @@ codeunit 80101 "CG-AL-H001 Test"
         Assert.AreEqual(0, Result, 'Zero amount should return 0');
     end;
 
+    [Test]
+    procedure TestEmptyCountryCode_ReturnsZero()
+    var
+        Result: Decimal;
+    begin
+        // [SCENARIO] Empty country code should return zero
+        // [GIVEN] Amount of $100 with empty country code
+        // [WHEN] We calculate tax
+        Result := TaxCalculator.CalculateTax(100, '', "CG Product Type"::Standard);
+        // [THEN] Result is $0.00
+        Assert.AreEqual(0, Result, 'Empty country code should return 0');
+    end;
+
+    // ============================================================
+    // CROSS-COUNTRY PRODUCTTYPE TESTS
+    // Verify country rules don't bleed into each other
+    // ============================================================
+
+    [Test]
+    procedure TestUS_Food_UsesAmountTiers_Not_DE_Rules()
+    var
+        Result: Decimal;
+    begin
+        // [SCENARIO] US ignores ProductType - Food does NOT get DE's 7% rate
+        // [GIVEN] Amount of $500 in US with Food product type
+        // [WHEN] We calculate tax
+        Result := TaxCalculator.CalculateTax(500, 'US', "CG Product Type"::Food);
+        // [THEN] Tax is 7% (amount tier), NOT DE's food rate
+        Assert.AreEqual(35, Result, 'US Food should use amount tiers, not DE rules');
+    end;
+
+    [Test]
+    procedure TestUS_Books_UsesAmountTiers_Not_UK_Rules()
+    var
+        Result: Decimal;
+    begin
+        // [SCENARIO] US ignores ProductType - Books does NOT get UK's 0% rate
+        // [GIVEN] Amount of $500 in US with Books product type
+        // [WHEN] We calculate tax
+        Result := TaxCalculator.CalculateTax(500, 'US', "CG Product Type"::Books);
+        // [THEN] Tax is 7% (amount tier), NOT UK's zero rate
+        Assert.AreEqual(35, Result, 'US Books should use amount tiers, not UK rules');
+    end;
+
+    [Test]
+    procedure TestDE_Books_Gets19Percent_Not_UK_ZeroRate()
+    var
+        Result: Decimal;
+    begin
+        // [SCENARIO] DE Books gets standard 19%, NOT UK's 0% rate
+        // [GIVEN] Amount of $100 in DE with Books product type
+        // [WHEN] We calculate tax
+        Result := TaxCalculator.CalculateTax(100, 'DE', "CG Product Type"::Books);
+        // [THEN] Tax is 19% (DE standard), NOT 0% (UK books)
+        Assert.AreEqual(19, Result, 'DE Books should get 19%, not UK zero rate');
+    end;
+
+    [Test]
+    procedure TestUK_Food_Gets20Percent_Not_DE_ReducedRate()
+    var
+        Result: Decimal;
+    begin
+        // [SCENARIO] UK Food gets standard 20%, NOT DE's 7% rate
+        // [GIVEN] Amount of $100 in UK with Food product type
+        // [WHEN] We calculate tax
+        Result := TaxCalculator.CalculateTax(100, 'UK', "CG Product Type"::Food);
+        // [THEN] Tax is 20% (UK standard), NOT 7% (DE food)
+        Assert.AreEqual(20, Result, 'UK Food should get 20%, not DE reduced rate');
+    end;
+
     // ============================================================
     // ROUNDING TESTS
     // ============================================================

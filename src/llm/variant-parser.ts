@@ -103,6 +103,61 @@ function resolveProviderAndModel(
 }
 
 /**
+ * Apply profile configuration to result
+ */
+function applyProfileToResult(
+  profileName: string,
+  config: CentralGaugeConfig | undefined,
+  result: VariantConfig,
+): void {
+  const profile = config?.variantProfiles?.[profileName];
+  if (!profile) return;
+
+  // Merge profile config into result
+  Object.assign(result, profile.config);
+
+  // Resolve systemPromptName to actual content if needed
+  if (profile.config.systemPromptName && config?.systemPrompts) {
+    const promptDef = config.systemPrompts[profile.config.systemPromptName];
+    if (promptDef) {
+      result.systemPrompt = promptDef.content;
+    }
+  }
+}
+
+/**
+ * Parse and set a variant parameter value
+ */
+function parseAndSetVariantParam(
+  canonicalKey: string,
+  value: string,
+  config: CentralGaugeConfig | undefined,
+  result: VariantConfig,
+): void {
+  switch (canonicalKey) {
+    case "temperature":
+      result.temperature = parseFloat(value);
+      break;
+    case "maxTokens":
+      result.maxTokens = parseInt(value, 10);
+      break;
+    case "timeout":
+      result.timeout = parseInt(value, 10);
+      break;
+    case "systemPromptName":
+      result.systemPromptName = value;
+      // Also resolve to actual content if config is available
+      if (config?.systemPrompts?.[value]) {
+        result.systemPrompt = config.systemPrompts[value].content;
+      }
+      break;
+    case "thinkingBudget":
+      result.thinkingBudget = parseInt(value, 10);
+      break;
+  }
+}
+
+/**
  * Parse variant config from spec string
  */
 function parseVariantConfig(
@@ -123,20 +178,7 @@ function parseVariantConfig(
 
     // Check for profile reference
     if (rawKey === "profile") {
-      const profile = config?.variantProfiles?.[value];
-      if (profile) {
-        // Merge profile config into result
-        Object.assign(result, profile.config);
-
-        // Resolve systemPromptName to actual content if needed
-        if (profile.config.systemPromptName && config?.systemPrompts) {
-          const promptDef =
-            config.systemPrompts[profile.config.systemPromptName];
-          if (promptDef) {
-            result.systemPrompt = promptDef.content;
-          }
-        }
-      }
+      applyProfileToResult(value, config, result);
       continue;
     }
 
@@ -145,27 +187,7 @@ function parseVariantConfig(
     if (!canonicalKey) continue;
 
     // Parse and set value
-    switch (canonicalKey) {
-      case "temperature":
-        result.temperature = parseFloat(value);
-        break;
-      case "maxTokens":
-        result.maxTokens = parseInt(value, 10);
-        break;
-      case "timeout":
-        result.timeout = parseInt(value, 10);
-        break;
-      case "systemPromptName":
-        result.systemPromptName = value;
-        // Also resolve to actual content if config is available
-        if (config?.systemPrompts?.[value]) {
-          result.systemPrompt = config.systemPrompts[value].content;
-        }
-        break;
-      case "thinkingBudget":
-        result.thinkingBudget = parseInt(value, 10);
-        break;
-    }
+    parseAndSetVariantParam(canonicalKey, value, config, result);
   }
 
   return result;

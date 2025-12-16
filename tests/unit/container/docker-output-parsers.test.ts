@@ -23,7 +23,8 @@ import {
 
 describe("parseDockerInspect", () => {
   it("should parse all fields from docker inspect output", () => {
-    const output = "true|healthy|mcr.microsoft.com/businesscentral:24.0|2024-01-15T10:30:00Z";
+    const output =
+      "true|healthy|mcr.microsoft.com/businesscentral:24.0|2024-01-15T10:30:00Z";
     const result = parseDockerInspect(output);
 
     assertEquals(result.running, "true");
@@ -216,7 +217,8 @@ Build succeeded.
   });
 
   it("should handle multiple errors on same line", () => {
-    const output = `File.al(1,1): error AL0001: Error 1\nFile.al(1,2): error AL0002: Error 2`;
+    const output =
+      `File.al(1,1): error AL0001: Error 1\nFile.al(1,2): error AL0002: Error 2`;
     const errors = parseDockerCompilationErrors(output);
 
     assertEquals(errors.length, 2);

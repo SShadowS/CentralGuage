@@ -5,9 +5,12 @@
 
 import type {
   BenchmarkProgress,
+  CompileQueueFactory,
   CompileWorkItem,
+  ContainerProviderFactory,
   ExecutionAttempt,
   LLMWorkResult,
+  OrchestratorDependencies,
   ParallelExecutionConfig,
   ParallelExecutionEvent,
   ParallelTaskResult,
@@ -71,17 +74,36 @@ export class ParallelBenchmarkOrchestrator {
   private listeners: EventListener[] = [];
   private containerProvider: ContainerProvider | null = null;
 
+  // Dependency injection factories
+  private containerProviderFactory: ContainerProviderFactory;
+  private compileQueueFactory: CompileQueueFactory;
+
   // Progress tracking
   private startTime: Date | null = null;
   private completedTasks = 0;
   private totalTasks = 0;
   private errors: string[] = [];
 
-  constructor(config?: Partial<ParallelExecutionConfig>) {
+  constructor(
+    config?: Partial<ParallelExecutionConfig>,
+    deps?: OrchestratorDependencies,
+  ) {
     this.config = { ...createDefaultConfig(), ...config };
-    this.rateLimiter = new ProviderRateLimiter(this.config.providerConcurrency);
-    this.llmPool = new LLMWorkPool(this.config, this.rateLimiter);
-    this.aggregator = new ResultAggregator();
+
+    // Inject or create dependencies with fallback to defaults
+    this.rateLimiter = deps?.rateLimiter ??
+      new ProviderRateLimiter(this.config.providerConcurrency);
+    this.llmPool = deps?.llmPool ??
+      new LLMWorkPool(this.config, this.rateLimiter);
+    this.aggregator = deps?.aggregator ??
+      new ResultAggregator();
+
+    // Store factories for lazy creation in runParallel()
+    this.containerProviderFactory = deps?.containerProviderFactory ??
+      ((name: string) => ContainerProviderRegistry.create(name));
+    this.compileQueueFactory = deps?.compileQueueFactory ??
+      ((provider, containerName, options) =>
+        new CompileQueue(provider, containerName, options));
   }
 
   /**
@@ -130,11 +152,11 @@ export class ParallelBenchmarkOrchestrator {
     this.completedTasks = 0;
     this.errors = [];
 
-    // Initialize container
-    this.containerProvider = ContainerProviderRegistry.create(
+    // Initialize container (using injected factories for testability)
+    this.containerProvider = this.containerProviderFactory(
       options.containerProvider,
     );
-    this.compileQueue = new CompileQueue(
+    this.compileQueue = this.compileQueueFactory(
       this.containerProvider,
       options.containerName,
       {
@@ -354,27 +376,66 @@ export class ParallelBenchmarkOrchestrator {
       }
     }
 
+    // Calculate final metrics and build result
+    const metrics = this.calculateAttemptMetrics(attempts, success, finalScore);
+    return this.buildTaskResult(
+      manifest.id,
+      executionId,
+      context,
+      attempts,
+      success,
+      metrics,
+      passedAttemptNumber,
+      finalCode,
+      startTime,
+    );
+  }
+
+  /**
+   * Calculate final metrics from attempts
+   */
+  private calculateAttemptMetrics(
+    attempts: ExecutionAttempt[],
+    success: boolean,
+    currentScore: number,
+  ): { finalScore: number; totalTokensUsed: number; totalCost: number } {
+    let finalScore = currentScore;
     // If never succeeded, calculate final score from best attempt
     if (!success && attempts.length > 0) {
       const bestScore = Math.max(...attempts.map((a) => a.score));
       finalScore = bestScore * 0.5; // 50% penalty for never passing
     }
+    return {
+      finalScore,
+      totalTokensUsed: attempts.reduce((sum, a) => sum + a.tokensUsed, 0),
+      totalCost: attempts.reduce((sum, a) => sum + a.cost, 0),
+    };
+  }
 
-    // Calculate totals
-    const totalTokensUsed = attempts.reduce((sum, a) => sum + a.tokensUsed, 0);
-    const totalCost = attempts.reduce((sum, a) => sum + a.cost, 0);
-    const totalDuration = Date.now() - startTime;
-
+  /**
+   * Build the final task execution result
+   */
+  private buildTaskResult(
+    taskId: string,
+    executionId: string,
+    context: TaskExecutionContext,
+    attempts: ExecutionAttempt[],
+    success: boolean,
+    metrics: { finalScore: number; totalTokensUsed: number; totalCost: number },
+    passedAttemptNumber: number,
+    finalCode: string | undefined,
+    startTime: number,
+  ): TaskExecutionResult {
     const result: TaskExecutionResult = {
-      taskId: manifest.id,
+      taskId,
       executionId,
       context,
       attempts,
       success,
-      finalScore,
-      totalTokensUsed,
-      totalCost,
-      totalDuration,
+      finalScore: metrics.finalScore,
+      totalTokensUsed: metrics.totalTokensUsed,
+      totalCost: metrics.totalCost,
+      totalDuration: Date.now() - startTime,
       passedAttemptNumber,
       successRate: success ? 1 / passedAttemptNumber : 0,
       executedAt: new Date(),
@@ -639,6 +700,7 @@ export class ParallelBenchmarkOrchestrator {
  */
 export function createOrchestrator(
   config?: Partial<ParallelExecutionConfig>,
+  deps?: OrchestratorDependencies,
 ): ParallelBenchmarkOrchestrator {
-  return new ParallelBenchmarkOrchestrator(config);
+  return new ParallelBenchmarkOrchestrator(config, deps);
 }

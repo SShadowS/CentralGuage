@@ -7,7 +7,10 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 
-import { createWorkItems, LLMWorkPool } from "../../../src/parallel/llm-work-pool.ts";
+import {
+  createWorkItems,
+  LLMWorkPool,
+} from "../../../src/parallel/llm-work-pool.ts";
 import { ProviderRateLimiter } from "../../../src/parallel/rate-limiter.ts";
 import type { ParallelExecutionConfig } from "../../../src/parallel/types.ts";
 import {
@@ -191,7 +194,13 @@ describe("createWorkItems", () => {
       },
       extractedCode: "// previous code",
       codeLanguage: "al" as const,
-      compilationResult: { success: false, errors: [], warnings: [], output: "", duration: 100 },
+      compilationResult: {
+        success: false,
+        errors: [],
+        warnings: [],
+        output: "",
+        duration: 100,
+      },
       success: false,
       failureReasons: ["Test error"],
       score: 0,
@@ -200,11 +209,20 @@ describe("createWorkItems", () => {
       duration: 5000,
     }];
 
-    const items = createWorkItems(manifest, context, models, 2, previousAttempts);
+    const items = createWorkItems(
+      manifest,
+      context,
+      models,
+      2,
+      previousAttempts,
+    );
 
     assertEquals(items[0]!.attemptNumber, 2);
     assertEquals(items[0]!.previousAttempts.length, 1);
-    assertEquals(items[0]!.previousAttempts[0]!.extractedCode, "// previous code");
+    assertEquals(
+      items[0]!.previousAttempts[0]!.extractedCode,
+      "// previous code",
+    );
   });
 
   it("should set priority based on model index", () => {
@@ -319,7 +337,10 @@ describe("Error detection utilities", () => {
     });
 
     it("should detect 429 error", () => {
-      assertEquals(isRateLimitError(new Error("HTTP 429 Too Many Requests")), true);
+      assertEquals(
+        isRateLimitError(new Error("HTTP 429 Too Many Requests")),
+        true,
+      );
     });
 
     it("should detect too many requests error", () => {
@@ -327,7 +348,10 @@ describe("Error detection utilities", () => {
     });
 
     it("should detect quota exceeded error", () => {
-      assertEquals(isRateLimitError(new Error("Quota exceeded for model")), true);
+      assertEquals(
+        isRateLimitError(new Error("Quota exceeded for model")),
+        true,
+      );
     });
 
     it("should not detect normal errors", () => {
@@ -371,7 +395,10 @@ describe("Error detection utilities", () => {
     });
 
     it("should detect 503 error", () => {
-      assertEquals(isTransientError(new Error("HTTP 503 Service Unavailable")), true);
+      assertEquals(
+        isTransientError(new Error("HTTP 503 Service Unavailable")),
+        true,
+      );
     });
 
     it("should not detect permanent errors", () => {
@@ -389,7 +416,10 @@ describe("Error detection utilities", () => {
     };
 
     it("should extract retry-after value", () => {
-      assertEquals(extractRetryAfter(new Error("Rate limit. Retry-after: 30")), 30000);
+      assertEquals(
+        extractRetryAfter(new Error("Rate limit. Retry-after: 30")),
+        30000,
+      );
     });
 
     it("should extract retry after with hyphen", () => {
@@ -397,7 +427,10 @@ describe("Error detection utilities", () => {
     });
 
     it("should return undefined if no retry-after", () => {
-      assertEquals(extractRetryAfter(new Error("Rate limit exceeded")), undefined);
+      assertEquals(
+        extractRetryAfter(new Error("Rate limit exceeded")),
+        undefined,
+      );
     });
 
     it("should handle retry after with space", () => {

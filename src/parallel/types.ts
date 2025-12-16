@@ -516,6 +516,53 @@ export interface BenchmarkProgress {
 }
 
 // =============================================================================
+// Dependency Injection Types
+// =============================================================================
+
+import type { ContainerProvider } from "../container/interface.ts";
+import type { CompileQueue } from "./compile-queue.ts";
+import type { LLMWorkPool } from "./llm-work-pool.ts";
+import type { ResultAggregator } from "./result-aggregator.ts";
+import type { ProviderRateLimiter } from "./rate-limiter.ts";
+
+/**
+ * Factory function type for creating ContainerProvider instances
+ */
+export type ContainerProviderFactory = (
+  providerName: string,
+) => ContainerProvider;
+
+/**
+ * Factory function type for creating CompileQueue instances
+ */
+export type CompileQueueFactory = (
+  containerProvider: ContainerProvider,
+  containerName: string,
+  options?: { maxQueueSize?: number; timeout?: number },
+) => CompileQueue;
+
+/**
+ * Injectable dependencies for ParallelBenchmarkOrchestrator
+ * All properties are optional - defaults will be used if not provided
+ */
+export interface OrchestratorDependencies {
+  /** Custom rate limiter (defaults to new ProviderRateLimiter) */
+  rateLimiter?: ProviderRateLimiter;
+
+  /** Custom LLM work pool (defaults to new LLMWorkPool) */
+  llmPool?: LLMWorkPool;
+
+  /** Custom result aggregator (defaults to new ResultAggregator) */
+  aggregator?: ResultAggregator;
+
+  /** Factory for creating ContainerProvider (defaults to ContainerProviderRegistry.create) */
+  containerProviderFactory?: ContainerProviderFactory;
+
+  /** Factory for creating CompileQueue (defaults to new CompileQueue constructor) */
+  compileQueueFactory?: CompileQueueFactory;
+}
+
+// =============================================================================
 // Re-exports for convenience
 // =============================================================================
 

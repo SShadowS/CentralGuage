@@ -289,7 +289,11 @@ describe({
     it("should run tests when testApp is configured", async () => {
       const queue = new CompileQueue(mockProvider, "test-container");
       mockProvider.setCompilationConfig({ success: true });
-      mockProvider.setTestConfig({ success: true, totalTests: 3, passedTests: 3 });
+      mockProvider.setTestConfig({
+        success: true,
+        totalTests: 3,
+        passedTests: 3,
+      });
 
       const workItem = createMockCompileWorkItem({
         context: createMockTaskExecutionContext({

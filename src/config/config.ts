@@ -231,78 +231,96 @@ export class ConfigManager {
     return parseYaml(content) as CentralGaugeConfig;
   }
 
-  private static loadEnvironmentConfig(): CentralGaugeConfig {
-    const config: CentralGaugeConfig = {};
-
-    // Model defaults from environment
+  /**
+   * Load model defaults from environment variables
+   */
+  private static loadEnvModelDefaults(): CentralGaugeConfig["defaultModels"] {
     const envBenchmarkModels = Deno.env.get("CENTRALGAUGE_BENCHMARK_MODELS");
     const envDevModels = Deno.env.get("CENTRALGAUGE_DEV_MODELS");
     const envComparisonModels = Deno.env.get("CENTRALGAUGE_COMPARISON_MODELS");
 
-    if (envBenchmarkModels || envDevModels || envComparisonModels) {
-      config.defaultModels = {};
-      if (envBenchmarkModels) {
-        config.defaultModels.benchmark = envBenchmarkModels.split(",").map(
-          (s) => s.trim(),
-        );
-      }
-      if (envDevModels) {
-        config.defaultModels.development = envDevModels.split(",").map((s) =>
-          s.trim()
-        );
-      }
-      if (envComparisonModels) {
-        config.defaultModels.comparison = envComparisonModels.split(",").map(
-          (s) => s.trim(),
-        );
-      }
+    if (!envBenchmarkModels && !envDevModels && !envComparisonModels) {
+      return undefined;
     }
 
-    // LLM settings
+    const result: NonNullable<CentralGaugeConfig["defaultModels"]> = {};
+    if (envBenchmarkModels) {
+      result.benchmark = envBenchmarkModels.split(",").map((s) => s.trim());
+    }
+    if (envDevModels) {
+      result.development = envDevModels.split(",").map((s) => s.trim());
+    }
+    if (envComparisonModels) {
+      result.comparison = envComparisonModels.split(",").map((s) => s.trim());
+    }
+    return result;
+  }
+
+  /**
+   * Load LLM settings from environment variables
+   */
+  private static loadEnvLLMSettings(): CentralGaugeConfig["llm"] {
     const temperature = Deno.env.get("CENTRALGAUGE_TEMPERATURE");
     const maxTokens = Deno.env.get("CENTRALGAUGE_MAX_TOKENS");
 
-    if (temperature || maxTokens) {
-      config.llm = {};
-      if (temperature) config.llm.temperature = parseFloat(temperature);
-      if (maxTokens) config.llm.maxTokens = parseInt(maxTokens);
+    if (!temperature && !maxTokens) {
+      return undefined;
     }
 
-    // Benchmark settings
+    const result: NonNullable<CentralGaugeConfig["llm"]> = {};
+    if (temperature) result.temperature = parseFloat(temperature);
+    if (maxTokens) result.maxTokens = parseInt(maxTokens);
+    return result;
+  }
+
+  /**
+   * Load benchmark settings from environment variables
+   */
+  private static loadEnvBenchmarkSettings(): CentralGaugeConfig["benchmark"] {
     const attempts = Deno.env.get("CENTRALGAUGE_ATTEMPTS");
     const outputDir = Deno.env.get("CENTRALGAUGE_OUTPUT_DIR");
 
-    if (attempts || outputDir) {
-      config.benchmark = {};
-      if (attempts) config.benchmark.attempts = parseInt(attempts);
-      if (outputDir) config.benchmark.outputDir = outputDir;
+    if (!attempts && !outputDir) {
+      return undefined;
     }
 
-    // Container settings
+    const result: NonNullable<CentralGaugeConfig["benchmark"]> = {};
+    if (attempts) result.attempts = parseInt(attempts);
+    if (outputDir) result.outputDir = outputDir;
+    return result;
+  }
+
+  /**
+   * Load container settings from environment variables
+   */
+  private static loadEnvContainerSettings(): CentralGaugeConfig["container"] {
     const containerProvider = Deno.env.get("CENTRALGAUGE_CONTAINER_PROVIDER");
     const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME");
     const containerUsername = Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME");
     const containerPassword = Deno.env.get("CENTRALGAUGE_CONTAINER_PASSWORD");
 
     if (
-      containerProvider || containerName || containerUsername ||
-      containerPassword
+      !containerProvider && !containerName && !containerUsername &&
+      !containerPassword
     ) {
-      config.container = {};
-      if (containerProvider) config.container.provider = containerProvider;
-      if (containerName) config.container.name = containerName;
-      if (containerUsername || containerPassword) {
-        config.container.credentials = {};
-        if (containerUsername) {
-          config.container.credentials.username = containerUsername;
-        }
-        if (containerPassword) {
-          config.container.credentials.password = containerPassword;
-        }
-      }
+      return undefined;
     }
 
-    // Debug settings
+    const result: NonNullable<CentralGaugeConfig["container"]> = {};
+    if (containerProvider) result.provider = containerProvider;
+    if (containerName) result.name = containerName;
+    if (containerUsername || containerPassword) {
+      result.credentials = {};
+      if (containerUsername) result.credentials.username = containerUsername;
+      if (containerPassword) result.credentials.password = containerPassword;
+    }
+    return result;
+  }
+
+  /**
+   * Load debug settings from environment variables
+   */
+  private static loadEnvDebugSettings(): CentralGaugeConfig["debug"] {
     const debugEnabled = Deno.env.get("CENTRALGAUGE_DEBUG");
     const debugOutputDir = Deno.env.get("CENTRALGAUGE_DEBUG_OUTPUT_DIR");
     const debugLogLevel = Deno.env.get("CENTRALGAUGE_DEBUG_LOG_LEVEL");
@@ -313,35 +331,56 @@ export class ConfigManager {
     const debugMaxFileSize = Deno.env.get("CENTRALGAUGE_DEBUG_MAX_FILE_SIZE");
 
     if (
-      debugEnabled || debugOutputDir || debugLogLevel || debugIncludeRaw ||
-      debugIncludeHeaders || debugMaxFileSize
+      !debugEnabled && !debugOutputDir && !debugLogLevel && !debugIncludeRaw &&
+      !debugIncludeHeaders && !debugMaxFileSize
     ) {
-      config.debug = {};
-      if (debugEnabled) {
-        config.debug.enabled = debugEnabled.toLowerCase() === "true";
-      }
-      if (debugOutputDir) config.debug.outputDir = debugOutputDir;
-      if (
-        debugLogLevel &&
-        ["basic", "detailed", "verbose"].includes(debugLogLevel)
-      ) {
-        config.debug.logLevel = debugLogLevel as
-          | "basic"
-          | "detailed"
-          | "verbose";
-      }
-      if (debugIncludeRaw) {
-        config.debug.includeRawResponse =
-          debugIncludeRaw.toLowerCase() === "true";
-      }
-      if (debugIncludeHeaders) {
-        config.debug.includeRequestHeaders =
-          debugIncludeHeaders.toLowerCase() === "true";
-      }
-      if (debugMaxFileSize) {
-        config.debug.maxFileSize = parseInt(debugMaxFileSize);
-      }
+      return undefined;
     }
+
+    const result: NonNullable<CentralGaugeConfig["debug"]> = {};
+    if (debugEnabled) {
+      result.enabled = debugEnabled.toLowerCase() === "true";
+    }
+    if (debugOutputDir) result.outputDir = debugOutputDir;
+    if (
+      debugLogLevel &&
+      ["basic", "detailed", "verbose"].includes(debugLogLevel)
+    ) {
+      result.logLevel = debugLogLevel as "basic" | "detailed" | "verbose";
+    }
+    if (debugIncludeRaw) {
+      result.includeRawResponse = debugIncludeRaw.toLowerCase() === "true";
+    }
+    if (debugIncludeHeaders) {
+      result.includeRequestHeaders =
+        debugIncludeHeaders.toLowerCase() === "true";
+    }
+    if (debugMaxFileSize) {
+      result.maxFileSize = parseInt(debugMaxFileSize);
+    }
+    return result;
+  }
+
+  /**
+   * Load configuration from environment variables
+   */
+  private static loadEnvironmentConfig(): CentralGaugeConfig {
+    const config: CentralGaugeConfig = {};
+
+    const defaultModels = this.loadEnvModelDefaults();
+    if (defaultModels) config.defaultModels = defaultModels;
+
+    const llm = this.loadEnvLLMSettings();
+    if (llm) config.llm = llm;
+
+    const benchmark = this.loadEnvBenchmarkSettings();
+    if (benchmark) config.benchmark = benchmark;
+
+    const container = this.loadEnvContainerSettings();
+    if (container) config.container = container;
+
+    const debug = this.loadEnvDebugSettings();
+    if (debug) config.debug = debug;
 
     return config;
   }
@@ -366,7 +405,22 @@ export class ConfigManager {
       result.benchmark = { ...result.benchmark, ...override.benchmark };
     }
     if (override.container) {
+      // Save base credentials before shallow spread overwrites them
+      const baseCredentials = result.container?.credentials;
       result.container = { ...result.container, ...override.container };
+      // Deep merge credentials
+      if (override.container.credentials || baseCredentials) {
+        result.container = {
+          ...result.container,
+          credentials: {
+            ...baseCredentials,
+            ...override.container.credentials,
+          },
+        };
+      }
+    }
+    if (override.debug) {
+      result.debug = { ...result.debug, ...override.debug };
     }
     if (override.environment) {
       result.environment = { ...result.environment, ...override.environment };

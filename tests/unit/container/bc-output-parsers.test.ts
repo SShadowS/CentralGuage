@@ -206,7 +206,10 @@ ERROR: Missing reference
     const errors = parseCompilationErrors(output);
 
     assertEquals(errors.length, 1);
-    assertEquals(errors[0]!.message, "Build process: error occurred during compilation");
+    assertEquals(
+      errors[0]!.message,
+      "Build process: error occurred during compilation",
+    );
   });
 
   it("should return empty array for no errors", () => {
@@ -252,7 +255,8 @@ Done.
   });
 
   it("should parse full path file names", () => {
-    const output = `C:\\AL\\src\\Page.al(15,3): warning AL0600: Consider using explicit type`;
+    const output =
+      `C:\\AL\\src\\Page.al(15,3): warning AL0600: Consider using explicit type`;
     const warnings = parseCompilationWarnings(output);
 
     assertEquals(warnings.length, 1);

@@ -223,7 +223,26 @@ export class ResultAggregator {
   } {
     const perModel = this.calculateModelStats();
     const perTask = this.calculateTaskStats();
+    const basicTotals = this.calculateBasicTotals();
+    const detailedStats = this.calculateDetailedStats();
+    const stats = this.buildAggregateStats(
+      perModel,
+      perTask,
+      basicTotals,
+      detailedStats,
+    );
+    const comparisons = this.buildComparisons();
 
+    return { results: this.results, stats, comparisons };
+  }
+
+  private calculateBasicTotals(): {
+    totalTokens: number;
+    totalCost: number;
+    totalDuration: number;
+    overallPassRate: number;
+    averageScore: number;
+  } {
     const totalTokens = this.results.reduce(
       (sum, r) => sum + r.totalTokensUsed,
       0,
@@ -233,25 +252,36 @@ export class ResultAggregator {
       (sum, r) => sum + r.totalDuration,
       0,
     );
-
     const passed = this.results.filter((r) => r.success).length;
     const overallPassRate = this.results.length > 0
       ? passed / this.results.length
       : 0;
-
     const averageScore = this.results.length > 0
       ? this.results.reduce((sum, r) => sum + r.finalScore, 0) /
         this.results.length
       : 0;
 
-    // Calculate detailed stats (Aider-style)
-    let passNum1 = 0;
-    let passNum2 = 0;
-    let totalCompileErrors = 0;
-    let totalTestFailures = 0;
-    let totalMalformed = 0;
-    let promptTokens = 0;
-    let completionTokens = 0;
+    return {
+      totalTokens,
+      totalCost,
+      totalDuration,
+      overallPassRate,
+      averageScore,
+    };
+  }
+
+  private calculateDetailedStats(): {
+    passNum1: number;
+    passNum2: number;
+    totalCompileErrors: number;
+    totalTestFailures: number;
+    totalMalformed: number;
+    promptTokens: number;
+    completionTokens: number;
+  } {
+    let passNum1 = 0, passNum2 = 0;
+    let totalCompileErrors = 0, totalTestFailures = 0, totalMalformed = 0;
+    let promptTokens = 0, completionTokens = 0;
 
     for (const result of this.results) {
       // Count passes by attempt number
@@ -263,18 +293,11 @@ export class ResultAggregator {
           passNum2++;
         }
       } else {
-        // Analyze failure type
-        const lastAttempt = result.attempts[result.attempts.length - 1];
-        if (lastAttempt) {
-          const failureReasons = lastAttempt.failureReasons.join(" ");
-          if (this.isMalformedResponse(lastAttempt)) {
-            totalMalformed++;
-          } else if (failureReasons.includes("Tests failed")) {
-            totalTestFailures++;
-          } else if (failureReasons.includes("Compilation failed")) {
-            totalCompileErrors++;
-          }
-        }
+        this.categorizeFailure(result, {
+          onMalformed: () => totalMalformed++,
+          onTestFailure: () => totalTestFailures++,
+          onCompileError: () => totalCompileErrors++,
+        });
       }
 
       // Sum up token usage from all attempts
@@ -287,41 +310,72 @@ export class ResultAggregator {
       }
     }
 
-    const totalResults = this.results.length;
-    const taskCount = perTask.size || 1;
-
-    const stats: AggregateStats = {
-      totalTokens,
-      totalCost,
-      totalDuration,
-      perModel,
-      perTask,
-      overallPassRate,
-      averageScore,
-      // New detailed stats
-      passRate1: totalResults > 0 ? passNum1 / totalResults : 0,
-      passRate2: totalResults > 0 ? passNum2 / totalResults : 0,
+    return {
       passNum1,
       passNum2,
       totalCompileErrors,
       totalTestFailures,
       totalMalformed,
-      secondsPerTask: taskCount > 0 ? (totalDuration / 1000) / taskCount : 0,
       promptTokens,
       completionTokens,
     };
+  }
 
-    // Build comparisons from parallel task results
+  private categorizeFailure(
+    result: TaskExecutionResult,
+    callbacks: {
+      onMalformed: () => void;
+      onTestFailure: () => void;
+      onCompileError: () => void;
+    },
+  ): void {
+    const lastAttempt = result.attempts[result.attempts.length - 1];
+    if (!lastAttempt) return;
+
+    const failureReasons = lastAttempt.failureReasons.join(" ");
+    if (this.isMalformedResponse(lastAttempt)) {
+      callbacks.onMalformed();
+    } else if (failureReasons.includes("Tests failed")) {
+      callbacks.onTestFailure();
+    } else if (failureReasons.includes("Compilation failed")) {
+      callbacks.onCompileError();
+    }
+  }
+
+  private buildAggregateStats(
+    perModel: Map<string, ModelStats>,
+    perTask: Map<string, TaskStats>,
+    basicTotals: ReturnType<ResultAggregator["calculateBasicTotals"]>,
+    detailedStats: ReturnType<ResultAggregator["calculateDetailedStats"]>,
+  ): AggregateStats {
+    const totalResults = this.results.length;
+    const taskCount = perTask.size || 1;
+
+    return {
+      ...basicTotals,
+      perModel,
+      perTask,
+      passRate1: totalResults > 0 ? detailedStats.passNum1 / totalResults : 0,
+      passRate2: totalResults > 0 ? detailedStats.passNum2 / totalResults : 0,
+      passNum1: detailedStats.passNum1,
+      passNum2: detailedStats.passNum2,
+      totalCompileErrors: detailedStats.totalCompileErrors,
+      totalTestFailures: detailedStats.totalTestFailures,
+      totalMalformed: detailedStats.totalMalformed,
+      secondsPerTask: taskCount > 0
+        ? (basicTotals.totalDuration / 1000) / taskCount
+        : 0,
+      promptTokens: detailedStats.promptTokens,
+      completionTokens: detailedStats.completionTokens,
+    };
+  }
+
+  private buildComparisons(): TaskComparison[] {
     const comparisons: TaskComparison[] = [];
     for (const [, taskResult] of this.taskResults) {
       comparisons.push(taskResult.comparison);
     }
-
-    return {
-      results: this.results,
-      stats,
-      comparisons,
-    };
+    return comparisons;
   }
 
   /**
