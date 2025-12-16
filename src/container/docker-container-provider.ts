@@ -6,14 +6,23 @@
 import type { ContainerProvider } from "./interface.ts";
 import type {
   ALProject,
-  CompilationError,
   CompilationResult,
-  CompilationWarning,
   ContainerConfig,
   ContainerStatus,
-  TestCaseResult,
   TestResult,
 } from "./types.ts";
+import {
+  calculateDockerTestMetrics,
+  calculateUptime,
+  extractBcVersionFromImage,
+  isContainerReady,
+  isDockerCompilationSuccessful,
+  mapDockerHealthStatus,
+  parseDockerCompilationErrors,
+  parseDockerCompilationWarnings,
+  parseDockerInspect,
+  parseDockerTestResults,
+} from "./docker-output-parsers.ts";
 
 export class DockerContainerProvider implements ContainerProvider {
   readonly name = "docker";
@@ -144,10 +153,7 @@ export class DockerContainerProvider implements ContainerProvider {
           "50",
           containerName,
         ]);
-        if (
-          logsResult.output.includes("Ready for connections!") ||
-          logsResult.output.includes("Container is ready")
-        ) {
+        if (isContainerReady(logsResult.output)) {
           return;
         }
       } catch {
@@ -210,42 +216,31 @@ export class DockerContainerProvider implements ContainerProvider {
       throw new Error(`Container ${containerName} not found`);
     }
 
-    const parts = inspectResult.output.trim().split("|");
-    const running = parts[0];
-    const health = parts[1];
-    const image = parts[2] || "";
-    const startedAt = parts[3];
+    // Parse docker inspect output using extracted function
+    const inspectData = parseDockerInspect(inspectResult.output);
+    const isRunning = inspectData.running === "true";
 
-    let uptime = 0;
-    if (running === "true" && startedAt) {
-      try {
-        const startTime = new Date(startedAt);
-        uptime = Math.floor((Date.now() - startTime.getTime()) / 1000);
-      } catch {
-        uptime = 0;
-      }
+    // Extract BC version and calculate uptime
+    const bcVersion = extractBcVersionFromImage(inspectData.image);
+    const uptime = calculateUptime(inspectData.startedAt, isRunning);
+
+    // Map health status using extracted function
+    const healthStatus = mapDockerHealthStatus(inspectData.health, isRunning);
+
+    // Build result with optional properties
+    const result: ContainerStatus = {
+      name: containerName,
+      isRunning,
+      health: healthStatus,
+    };
+    if (bcVersion !== undefined) {
+      result.bcVersion = bcVersion;
+    }
+    if (uptime > 0) {
+      result.uptime = uptime;
     }
 
-    // Extract BC version from image name
-    const bcVersionMatch = image.match(/businesscentral:(\d+\.\d+)/);
-    const bcVersion = bcVersionMatch ? bcVersionMatch[1] : undefined;
-
-    // Map health status to valid union type
-    const healthMap: Record<string, ContainerStatus["health"]> = {
-      "healthy": "healthy",
-      "unhealthy": "unhealthy",
-      "starting": "starting",
-      "none": running === "true" ? "healthy" : "stopped",
-    };
-    const healthStatus = healthMap[health || "none"] || "stopped";
-
-    return {
-      name: containerName,
-      isRunning: running === "true",
-      health: healthStatus,
-      ...(bcVersion && { bcVersion }),
-      ...(uptime > 0 && { uptime }),
-    };
+    return result;
   }
 
   async compileProject(
@@ -290,45 +285,13 @@ export class DockerContainerProvider implements ContainerProvider {
 
       const duration = Date.now() - startTime;
 
-      // Parse compilation results
-      const errors: CompilationError[] = [];
-      const warnings: CompilationWarning[] = [];
-
-      const lines = compileResult.output.split("\n");
-
-      for (const line of lines) {
-        // Parse AL compiler output
-        // Format: filename(line,col): error AL####: message
-        const errorMatch = line.match(
-          /([^(]+)\((\d+),(\d+)\):\s*error\s+(AL\d+):\s*(.+)/,
-        );
-        const warningMatch = line.match(
-          /([^(]+)\((\d+),(\d+)\):\s*warning\s+(AL\d+):\s*(.+)/,
-        );
-
-        if (errorMatch) {
-          errors.push({
-            file: errorMatch[1] || "unknown",
-            line: parseInt(errorMatch[2] || "0"),
-            column: parseInt(errorMatch[3] || "0"),
-            code: errorMatch[4] || "AL0000",
-            message: errorMatch[5] || "",
-            severity: "error",
-          });
-        } else if (warningMatch) {
-          warnings.push({
-            file: warningMatch[1] || "unknown",
-            line: parseInt(warningMatch[2] || "0"),
-            column: parseInt(warningMatch[3] || "0"),
-            code: warningMatch[4] || "AL0000",
-            message: warningMatch[5] || "",
-            severity: "warning",
-          });
-        }
-      }
-
-      const success = errors.length === 0 &&
-        !compileResult.output.includes("COMPILE_FAILED");
+      // Parse compilation results using extracted functions
+      const errors = parseDockerCompilationErrors(compileResult.output);
+      const warnings = parseDockerCompilationWarnings(compileResult.output);
+      const success = isDockerCompilationSuccessful(
+        compileResult.output,
+        errors.length,
+      );
 
       console.log(
         `${success ? "✅" : "❌"} [Docker] Compilation ${
@@ -391,53 +354,21 @@ export class DockerContainerProvider implements ContainerProvider {
 
       const duration = Date.now() - startTime;
 
-      // Parse test results
-      const results: TestCaseResult[] = [];
-
-      const lines = testResult.output.split("\n");
-
-      for (const line of lines) {
-        // Parse AL test result format
-        const passMatch = line.match(
-          /Test\s+(\w+)\s+passed(?:\s+in\s+(\d+)ms)?/,
-        );
-        const failMatch = line.match(
-          /Test\s+(\w+)\s+failed(?:\s+in\s+(\d+)ms)?:\s*(.+)/,
-        );
-
-        if (passMatch) {
-          results.push({
-            name: passMatch[1] || "unknown",
-            passed: true,
-            duration: parseInt(passMatch[2] || "0"),
-          });
-        } else if (failMatch) {
-          const errorMsg = failMatch[3];
-          results.push({
-            name: failMatch[1] || "unknown",
-            passed: false,
-            duration: parseInt(failMatch[2] || "0"),
-            ...(errorMsg && { error: errorMsg }),
-          });
-        }
-      }
-
-      const totalTests = results.length;
-      const passedTests = results.filter((r) => r.passed).length;
-      const failedTests = totalTests - passedTests;
-      const success = failedTests === 0;
+      // Parse test results using extracted functions
+      const results = parseDockerTestResults(testResult.output);
+      const metrics = calculateDockerTestMetrics(results);
 
       console.log(
-        `${success ? "✅" : "❌"} [Docker] Tests ${
-          success ? "passed" : "failed"
-        }: ${passedTests}/${totalTests} passed`,
+        `${metrics.success ? "✅" : "❌"} [Docker] Tests ${
+          metrics.success ? "passed" : "failed"
+        }: ${metrics.passedTests}/${metrics.totalTests} passed`,
       );
 
       return {
-        success,
-        totalTests,
-        passedTests,
-        failedTests,
+        success: metrics.success,
+        totalTests: metrics.totalTests,
+        passedTests: metrics.passedTests,
+        failedTests: metrics.failedTests,
         results,
         duration,
         output: testResult.output,

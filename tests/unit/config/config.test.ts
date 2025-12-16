@@ -32,6 +32,23 @@ describe("ConfigManager", () => {
       const originalCwd = Deno.cwd();
       Deno.chdir(tempDir);
 
+      // Clear all config env vars to test defaults
+      const envVarsToClear = [
+        "CENTRALGAUGE_BENCHMARK_MODELS",
+        "CENTRALGAUGE_DEV_MODELS",
+        "CENTRALGAUGE_COMPARISON_MODELS",
+        "CENTRALGAUGE_TEMPERATURE",
+        "CENTRALGAUGE_MAX_TOKENS",
+        "CENTRALGAUGE_TIMEOUT",
+        "CENTRALGAUGE_ATTEMPTS",
+        "CENTRALGAUGE_OUTPUT_DIR",
+        "CENTRALGAUGE_LOG_LEVEL",
+      ];
+      for (const envVar of envVarsToClear) {
+        mockEnv.delete(envVar);
+      }
+      ConfigManager.reset();
+
       try {
         const config = await ConfigManager.loadConfig();
 
@@ -135,6 +152,23 @@ describe("ConfigManager", () => {
     });
 
     it("should load configuration from YAML file", async () => {
+      // Clear all config env vars so config file takes precedence
+      const envVarsToClear = [
+        "CENTRALGAUGE_BENCHMARK_MODELS",
+        "CENTRALGAUGE_DEV_MODELS",
+        "CENTRALGAUGE_COMPARISON_MODELS",
+        "CENTRALGAUGE_TEMPERATURE",
+        "CENTRALGAUGE_MAX_TOKENS",
+        "CENTRALGAUGE_TIMEOUT",
+        "CENTRALGAUGE_ATTEMPTS",
+        "CENTRALGAUGE_OUTPUT_DIR",
+        "CENTRALGAUGE_LOG_LEVEL",
+      ];
+      for (const envVar of envVarsToClear) {
+        mockEnv.delete(envVar);
+      }
+      ConfigManager.reset();
+
       const configYaml = `
 defaultModels:
   benchmark: [custom-model]
@@ -217,6 +251,12 @@ benchmark:
       // Change to temp directory to avoid loading project's .centralgauge.yml
       const originalCwd = Deno.cwd();
       Deno.chdir(tempDir);
+
+      // Clear env vars to test defaults
+      mockEnv.delete("CENTRALGAUGE_BENCHMARK_MODELS");
+      mockEnv.delete("CENTRALGAUGE_DEV_MODELS");
+      mockEnv.delete("CENTRALGAUGE_COMPARISON_MODELS");
+      ConfigManager.reset();
 
       try {
         const benchmarkModels = await ConfigManager.resolveModels(

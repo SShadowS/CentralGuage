@@ -6,16 +6,26 @@
 import type { ContainerProvider } from "./interface.ts";
 import type {
   ALProject,
-  CompilationError,
   CompilationResult,
-  CompilationWarning,
   ContainerConfig,
   ContainerCredentials,
   ContainerStatus,
-  TestCaseResult,
   TestResult,
 } from "./types.ts";
 import * as colors from "@std/fmt/colors";
+import {
+  calculateTestMetrics,
+  extractArtifactPath,
+  extractCompilerFolder,
+  isCompilationSuccessful,
+  isContainerNotFound,
+  isModuleMissing,
+  mapHealthStatus,
+  parseCompilationErrors,
+  parseCompilationWarnings,
+  parseStatusOutput,
+  parseTestResults,
+} from "./bc-output-parsers.ts";
 
 export class BcContainerProvider implements ContainerProvider {
   readonly name = "bccontainer";
@@ -97,7 +107,7 @@ export class BcContainerProvider implements ContainerProvider {
       }
     `);
 
-    if (checkModule.output.includes("MISSING_MODULE")) {
+    if (isModuleMissing(checkModule.output)) {
       console.log(
         colors.cyan("[BC Container] Installing bccontainerhelper module..."),
       );
@@ -247,43 +257,13 @@ export class BcContainerProvider implements ContainerProvider {
 
     const result = await this.executePowerShell(script);
 
-    if (result.output.includes("CONTAINER_NOT_FOUND")) {
+    if (isContainerNotFound(result.output)) {
       throw new Error(`Container ${containerName} not found`);
     }
 
-    const lines = result.output.split("\n");
-    const statusData: Record<string, string> = {};
-
-    let inStatus = false;
-    for (const line of lines) {
-      if (line.trim() === "STATUS_START") {
-        inStatus = true;
-        continue;
-      }
-      if (line.trim() === "STATUS_END") {
-        break;
-      }
-      if (inStatus && line.includes(":")) {
-        const colonIndex = line.indexOf(":");
-        const key = line.substring(0, colonIndex).trim();
-        const value = line.substring(colonIndex + 1).trim();
-        if (key) {
-          statusData[key] = value;
-        }
-      }
-    }
-
-    // Map health status to valid union type
+    const statusData = parseStatusOutput(result.output);
     const healthRaw = statusData["HEALTH"] || "stopped";
-    const healthMap: Record<string, ContainerStatus["health"]> = {
-      "running": "healthy",
-      "healthy": "healthy",
-      "starting": "starting",
-      "stopped": "stopped",
-      "unhealthy": "unhealthy",
-    };
-    const health = healthMap[healthRaw.toLowerCase()] || "stopped";
-
+    const health = mapHealthStatus(healthRaw);
     const bcVersion = statusData["BCVERSION"];
     const uptime = parseInt(statusData["UPTIME"] || "0");
 
@@ -331,12 +311,11 @@ export class BcContainerProvider implements ContainerProvider {
 
     const result = await this.executePowerShell(script);
 
-    const compilerFolderMatch = result.output.match(/COMPILER_FOLDER:(.+)/);
-    if (!compilerFolderMatch || !compilerFolderMatch[1]) {
+    const compilerFolder = extractCompilerFolder(result.output);
+    if (!compilerFolder) {
       throw new Error(`Failed to create compiler folder: ${result.output}`);
     }
 
-    const compilerFolder = compilerFolderMatch[1].trim();
     this.compilerFolderCache.set(containerName, compilerFolder);
 
     console.log(
@@ -402,74 +381,11 @@ export class BcContainerProvider implements ContainerProvider {
       const result = await this.executePowerShell(script);
       const duration = Date.now() - startTime;
 
-      // Parse compilation results
-      const errors: CompilationError[] = [];
-      const warnings: CompilationWarning[] = [];
-      let artifactPath: string | undefined;
-
-      const lines = result.output.split("\n");
-
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-
-        // Check for app file path
-        if (trimmedLine.startsWith("APP_FILE:")) {
-          artifactPath = trimmedLine.substring(9).trim();
-          continue;
-        }
-
-        // Parse AL error format: filename(line,col): error AL####: message
-        const errorMatch = trimmedLine.match(
-          /([^(]+)\((\d+),(\d+)\):\s*error\s+(AL\d+):\s*(.+)/,
-        );
-        if (errorMatch) {
-          errors.push({
-            file: errorMatch[1]?.trim() || "unknown",
-            line: parseInt(errorMatch[2] || "0"),
-            column: parseInt(errorMatch[3] || "0"),
-            code: errorMatch[4] || "AL0000",
-            message: errorMatch[5] || trimmedLine,
-            severity: "error",
-          });
-          continue;
-        }
-
-        // Parse AL warning format
-        const warningMatch = trimmedLine.match(
-          /([^(]+)\((\d+),(\d+)\):\s*warning\s+(AL\d+):\s*(.+)/,
-        );
-        if (warningMatch) {
-          warnings.push({
-            file: warningMatch[1]?.trim() || "unknown",
-            line: parseInt(warningMatch[2] || "0"),
-            column: parseInt(warningMatch[3] || "0"),
-            code: warningMatch[4] || "AL0000",
-            message: warningMatch[5] || trimmedLine,
-            severity: "warning",
-          });
-          continue;
-        }
-
-        // Generic error detection
-        if (
-          trimmedLine.startsWith("ERROR:") || trimmedLine.includes(": error ")
-        ) {
-          const message = trimmedLine.startsWith("ERROR:")
-            ? trimmedLine.substring(6)
-            : trimmedLine;
-          errors.push({
-            file: "unknown",
-            line: 0,
-            column: 0,
-            code: "AL0000",
-            message: message.trim(),
-            severity: "error",
-          });
-        }
-      }
-
-      const success = errors.length === 0 &&
-        result.output.includes("COMPILE_SUCCESS");
+      // Parse compilation results using extracted functions
+      const errors = parseCompilationErrors(result.output);
+      const warnings = parseCompilationWarnings(result.output);
+      const artifactPath = extractArtifactPath(result.output);
+      const success = isCompilationSuccessful(result.output, errors.length);
 
       console.log(
         (success ? colors.green : colors.red)(
@@ -668,79 +584,12 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
     const duration = Date.now() - startTime;
 
-    // Parse test results
-    const results: TestCaseResult[] = [];
-    let allPassed = false;
-    let publishFailed = false;
-
-    const lines = result.output.split("\n");
-    let inTest = false;
-
-    for (const line of lines) {
-      const trimmedLine = line.trim();
-
-      if (trimmedLine === "TEST_START") {
-        inTest = true;
-        continue;
-      }
-      if (trimmedLine === "TEST_END") {
-        inTest = false;
-        continue;
-      }
-
-      if (trimmedLine.startsWith("PUBLISH_FAILED:")) {
-        publishFailed = true;
-        continue;
-      }
-
-      if (trimmedLine === "ALL_TESTS_PASSED") {
-        allPassed = true;
-        continue;
-      }
-
-      if (inTest && trimmedLine.startsWith("TESTRESULT:")) {
-        const testInfo = trimmedLine.substring(11);
-        // Parse various AL test result formats
-        const passMatch = testInfo.match(
-          /(?:Test\s+)?(\w+).*?(?:passed|success)/i,
-        );
-        const failMatch = testInfo.match(
-          /(?:Test\s+)?(\w+).*?(?:failed|error)(?:.*?:\s*(.+))?/i,
-        );
-
-        if (passMatch) {
-          results.push({
-            name: passMatch[1] || "unknown",
-            passed: true,
-            duration: 0,
-          });
-        } else if (failMatch) {
-          results.push({
-            name: failMatch[1] || "unknown",
-            passed: false,
-            duration: 0,
-            error: failMatch[2] || "Test failed",
-          });
-        }
-      }
-    }
-
-    // If we got ALL_TESTS_PASSED but no individual results, mark as 1 passed test
-    if (allPassed && results.length === 0) {
-      results.push({
-        name: "AllTests",
-        passed: true,
-        duration: 0,
-      });
-    }
-
-    const totalTests = results.length || (allPassed ? 1 : 0);
-    const passedTests = results.filter((r) => r.passed).length ||
-      (allPassed ? 1 : 0);
-    const failedTests = totalTests - passedTests;
-    // Require at least one test to have run for success (zero tests = failure)
-    const success = !publishFailed && totalTests > 0 &&
-      (allPassed || failedTests === 0);
+    // Parse test results using extracted functions
+    const { results, allPassed, publishFailed } = parseTestResults(
+      result.output,
+    );
+    const { totalTests, passedTests, failedTests, success } =
+      calculateTestMetrics(results, allPassed, publishFailed);
 
     console.log(
       (success ? colors.green : colors.red)(

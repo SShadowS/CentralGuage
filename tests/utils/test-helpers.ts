@@ -227,10 +227,248 @@ export const MockALCode = {
     begin
         Message('Hello World');
     end;
-    
+
     procedure CalculateTotal(Amount: Decimal; VAT: Decimal): Decimal
     begin
         exit(Amount + (Amount * VAT / 100));
     end;
 }`,
 };
+
+// =============================================================================
+// Orchestrator Test Helpers
+// =============================================================================
+
+import type {
+  ExecutionAttempt,
+  TaskExecutionContext,
+  TaskManifest,
+} from "../../src/tasks/interfaces.ts";
+import type {
+  CompileWorkItem,
+  LLMWorkItem,
+  ParallelExecutionEvent,
+} from "../../src/parallel/types.ts";
+
+// Re-export factory functions from mock-container-provider
+export {
+  createMockCompilationError,
+  createMockCompilationResult,
+  createMockCompilationWarning,
+  createMockContainerStatus,
+  createMockTestCaseResult,
+  createMockTestResult,
+} from "./mock-container-provider.ts";
+
+/**
+ * Create a mock task manifest for testing
+ */
+export function createMockTaskManifest(
+  overrides?: Partial<TaskManifest>,
+): TaskManifest {
+  return {
+    id: "test-task-001",
+    description: "Test task for unit testing",
+    prompt_template: "prompt.md",
+    fix_template: "fix.md",
+    max_attempts: 2,
+    expected: {
+      compile: true,
+      testApp: "",
+    },
+    metrics: ["compile_success"],
+    ...overrides,
+  };
+}
+
+/**
+ * Event collector for testing orchestrator event emission
+ */
+export class EventCollector {
+  private events: ParallelExecutionEvent[] = [];
+
+  /**
+   * Get the listener function to subscribe to orchestrator
+   */
+  get listener(): (event: ParallelExecutionEvent) => void {
+    return (event: ParallelExecutionEvent) => {
+      this.events.push(event);
+    };
+  }
+
+  /**
+   * Get all collected events
+   */
+  getAll(): ParallelExecutionEvent[] {
+    return [...this.events];
+  }
+
+  /**
+   * Get events of a specific type
+   */
+  getByType<T extends ParallelExecutionEvent["type"]>(
+    type: T,
+  ): Extract<ParallelExecutionEvent, { type: T }>[] {
+    return this.events.filter((e) => e.type === type) as Extract<
+      ParallelExecutionEvent,
+      { type: T }
+    >[];
+  }
+
+  /**
+   * Get the count of events
+   */
+  get count(): number {
+    return this.events.length;
+  }
+
+  /**
+   * Check if any event of a type was emitted
+   */
+  hasEventType(type: ParallelExecutionEvent["type"]): boolean {
+    return this.events.some((e) => e.type === type);
+  }
+
+  /**
+   * Clear all collected events
+   */
+  clear(): void {
+    this.events = [];
+  }
+
+  /**
+   * Get the last event
+   */
+  getLast(): ParallelExecutionEvent | undefined {
+    return this.events[this.events.length - 1];
+  }
+
+  /**
+   * Get the first event
+   */
+  getFirst(): ParallelExecutionEvent | undefined {
+    return this.events[0];
+  }
+}
+
+// =============================================================================
+// Work Item Factory Functions
+// =============================================================================
+
+/**
+ * Create a mock task execution context for testing
+ */
+export function createMockTaskExecutionContext(
+  overrides?: Partial<TaskExecutionContext>,
+): TaskExecutionContext {
+  const manifest = createMockTaskManifest(overrides?.manifest);
+  return {
+    manifest,
+    taskType: "code_generation",
+    alProjectPath: "/tmp/test-project",
+    targetFile: "TestCodeunit.Codeunit.al",
+    instructions: "Generate a simple codeunit",
+
+    llmProvider: "mock",
+    llmModel: "mock-gpt-4",
+    variantId: "mock/mock-gpt-4",
+    containerProvider: "mock",
+    containerName: "test-container",
+
+    promptTemplatePath: "templates/prompt.md",
+    fixTemplatePath: "templates/fix.md",
+
+    attemptLimit: 2,
+    timeout: 30000,
+    temperature: 0.1,
+    maxTokens: 4000,
+
+    outputDir: "/tmp/output",
+    debugMode: false,
+
+    expectedOutput: {
+      type: "al_code",
+      validation: {
+        mustCompile: true,
+        mustPass: true,
+      },
+    },
+
+    evaluation: {
+      requiredElements: [],
+      forbiddenElements: [],
+      customChecks: [],
+    },
+
+    metadata: {
+      difficulty: "medium",
+      category: "codeunit",
+      tags: ["test"],
+      estimatedTokens: 500,
+    },
+    ...overrides,
+  };
+}
+
+/**
+ * Create a mock LLM work item for testing
+ */
+export function createMockLLMWorkItem(
+  overrides?: Partial<LLMWorkItem>,
+): LLMWorkItem {
+  return {
+    id: `llm-work-${Date.now()}`,
+    taskManifest: createMockTaskManifest(),
+    llmProvider: "mock",
+    llmModel: "mock-gpt-4",
+    attemptNumber: 1,
+    previousAttempts: [],
+    priority: 0,
+    createdAt: new Date(),
+    context: createMockTaskExecutionContext(),
+    ...overrides,
+  };
+}
+
+/**
+ * Create a mock compile work item for testing
+ */
+export function createMockCompileWorkItem(
+  overrides?: Partial<CompileWorkItem>,
+): CompileWorkItem {
+  return {
+    id: `compile-work-${Date.now()}`,
+    llmWorkItemId: `llm-work-${Date.now()}`,
+    code: MockALCode.codeunit,
+    context: createMockTaskExecutionContext(),
+    attemptNumber: 1,
+    llmResponse: createMockLLMResponse(),
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+/**
+ * Create a mock execution attempt for testing
+ */
+export function createMockExecutionAttempt(
+  overrides?: Partial<ExecutionAttempt>,
+): ExecutionAttempt {
+  const now = new Date();
+  return {
+    attemptNumber: 1,
+    startTime: now,
+    endTime: new Date(now.getTime() + 1000),
+    prompt: "Generate a codeunit",
+    llmResponse: createMockLLMResponse(),
+    extractedCode: MockALCode.codeunit,
+    codeLanguage: "al",
+    success: true,
+    score: 100,
+    failureReasons: [],
+    tokensUsed: 150,
+    cost: 0.001,
+    duration: 1000,
+    ...overrides,
+  };
+}
