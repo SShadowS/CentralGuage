@@ -2,6 +2,13 @@
 
 > **Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code**
 
+> [!IMPORTANT]
+> Currently only pre-made containers are supported. Create a BC27 container with TestToolkit installed before running benchmarks:
+> ```powershell
+> $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
+> New-BcContainer -containerName Cronus27 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 27) -includeTestToolkit
+> ```
+
 [![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Deno](https://img.shields.io/badge/Deno-000000?style=flat-square&logo=deno&logoColor=white)](https://deno.land/)
 [![MIT License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
