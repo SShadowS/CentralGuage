@@ -21,7 +21,7 @@ CentralGauge evaluates large language models on their ability to generate, debug
 
 - **Two-pass evaluation** - Models get a second chance to fix compilation errors
 - **Containerized testing** - Isolated Business Central environments via Docker
-- **Parallel execution** - Run multiple models and tasks concurrently
+- **Parallel execution** - Run multiple models and tasks concurrently (enabled by default)
 - **Rich reporting** - JSON data + beautiful HTML reports
 - **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, OpenRouter, and local LLMs
 - **Model variants** - Compare same model with different temperatures/prompts
@@ -35,12 +35,18 @@ CentralGauge evaluates large language models on their ability to generate, debug
 # Install Deno (if not already installed)
 curl -fsSL https://deno.land/x/install/install.sh | sh
 
-# Clone and run benchmark
+# Clone the repo
 git clone https://github.com/SShadowS/CentralGuage.git
 cd CentralGuage
 
-# Run your first benchmark (using mock LLM for demo)
-deno run --allow-all cli/centralgauge.ts bench --llms mock-gpt-4 --tasks tasks/sample-task.yml --attempts 2
+# Set up your API keys
+cp .env.example .env
+# Edit .env and add your keys:
+#   ANTHROPIC_API_KEY=sk-ant-...
+#   OPENAI_API_KEY=sk-...
+
+# Run your first benchmark - compare Claude vs GPT
+deno task bench --llms "opus,gpt-5"
 
 # Generate HTML report
 deno task report results/ --html
@@ -69,8 +75,8 @@ deno task bench --llms openrouter/google/gemini-3-pro-preview
 # Reasoning models comparison (recommended for complex tasks)
 deno task bench --llms "opus@reasoning=50000,gpt-5@reasoning=50000"
 
-# Parallel execution (faster benchmarks)
-deno task bench --llms opus,gpt-5.2 --tasks tasks/*.yml --parallel
+# Sequential execution (parallel is default)
+deno task bench --llms opus,gpt-5.2 --tasks tasks/*.yml --sequential
 
 # Configuration
 deno run --allow-all cli/centralgauge.ts config init           # Create config file
@@ -170,7 +176,7 @@ deno task bench --llms opus --tasks tasks/*.yml --debug
 deno task bench --llms opus --tasks tasks/*.yml --debug-level verbose
 
 # Custom output directory
-deno task bench --llms opus --tasks tasks/*.yml --debug --debug-output-dir ./my-debug
+deno task bench --llms opus --tasks tasks/*.yml --debug --debug-output ./my-debug
 ```
 
 Debug output includes:
@@ -183,7 +189,16 @@ Debug output includes:
 
 ## Failure Analysis & Verification
 
-Analyze failing benchmark tasks to identify root causes and track model limitations:
+Analyze failing benchmark tasks to identify root causes and track model limitations.
+
+First, run a benchmark with verbose debug logging to capture failure details:
+
+```bash
+# Run benchmark with verbose debug logging (recommended before verify)
+deno task bench --llms opus --tasks tasks/*.yml --debug-level verbose
+```
+
+Then analyze the failures:
 
 ```bash
 # Analyze failures from latest debug session
@@ -261,8 +276,8 @@ deno run --allow-all cli/centralgauge.ts stats-compare anthropic/claude-sonnet-4
 deno run --allow-all cli/centralgauge.ts stats-regression --threshold 10
 
 # View cost breakdown by model or task
-deno run --allow-all cli/centralgauge.ts stats-cost --group-by model
-deno run --allow-all cli/centralgauge.ts stats-cost --group-by task
+deno run --allow-all cli/centralgauge.ts stats-cost --group model
+deno run --allow-all cli/centralgauge.ts stats-cost --group task
 ```
 
 ### Task Set Hash
