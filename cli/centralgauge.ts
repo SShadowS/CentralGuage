@@ -28,9 +28,9 @@ import {
   ParallelBenchmarkOrchestrator,
 } from "../src/parallel/mod.ts";
 import {
+  type CostOptions,
   createImporter,
   openStorage,
-  type CostOptions,
   type RegressionOptions,
 } from "../src/stats/mod.ts";
 import { Table } from "@cliffy/table";
@@ -46,8 +46,40 @@ import {
   type TaskMatrixInput,
 } from "../src/utils/formatters.ts";
 import { copyToClipboard } from "../src/utils/clipboard.ts";
+import {
+  createVerifyOrchestrator,
+  findLatestSession,
+  isFixableResult,
+  parseDebugDir,
+  type VerifyOptions,
+} from "../src/verify/mod.ts";
 
 const VERSION = "0.1.0";
+
+// =============================================================================
+// Utility helpers
+// =============================================================================
+
+/**
+ * Format duration in ms to human-readable string (e.g., "1m 23s" or "45.2s")
+ */
+function formatDurationMs(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+  const totalSeconds = ms / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${seconds.toFixed(0)}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
+}
 
 // =============================================================================
 // Color-coded output helpers
@@ -231,6 +263,8 @@ interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   promptOverrides?: CLIPromptOverrides;
   // Output format
   format?: OutputFormat;
+  // Continuation settings
+  noContinuation?: boolean;
 }
 
 /**
@@ -379,6 +413,11 @@ async function runParallelBenchmark(
     config.maxGlobalConcurrency = options.maxConcurrency ?? 10;
 
     const orchestrator = new ParallelBenchmarkOrchestrator(config);
+
+    // Configure continuation based on CLI flag
+    if (options.noContinuation) {
+      orchestrator.setContinuationEnabled(false);
+    }
 
     // Track pass rates per model for live display
     const modelPassRates = new Map<
@@ -573,6 +612,12 @@ async function runParallelBenchmark(
       `completion_tokens: ${summary.stats.completionTokens}`,
       `total_cost: $${summary.stats.totalCost.toFixed(4)}`,
       ``,
+      `# Timing Breakdown`,
+      `llm_time_ms: ${summary.stats.totalLLMDuration}`,
+      `compile_time_ms: ${summary.stats.totalCompileDuration}`,
+      `test_time_ms: ${summary.stats.totalTestDuration}`,
+      `total_time_ms: ${summary.stats.totalDuration}`,
+      ``,
       `# Per-Model Scores`,
     ];
     for (const [model, modelStats] of summary.stats.perModel) {
@@ -603,6 +648,13 @@ async function runParallelBenchmark(
       `   Total tokens: ${summary.stats.totalTokens.toLocaleString("en-US")}`,
     );
     console.log(`   Total cost: $${summary.stats.totalCost.toFixed(4)}`);
+    console.log(
+      `   Runtime: ${formatDurationMs(summary.stats.totalDuration)} (LLM: ${
+        formatDurationMs(summary.stats.totalLLMDuration)
+      }, Compile: ${
+        formatDurationMs(summary.stats.totalCompileDuration)
+      }, Test: ${formatDurationMs(summary.stats.totalTestDuration)})`,
+    );
     console.log(`   Results: ${colors.gray(resultsFile)}`);
     console.log(`   Scores: ${colors.gray(scoreFile)}`);
 
@@ -1422,6 +1474,11 @@ cli.command("bench", "Run benchmark evaluation")
     "--prompt-provider <provider:string>",
     "Only apply prompt overrides to this provider",
   )
+  .option(
+    "--no-continuation",
+    "Disable automatic continuation for truncated responses",
+    { default: false },
+  )
   .action(async (options) => {
     // Build prompt overrides from CLI options if any are provided
     let promptOverrides: CLIPromptOverrides | undefined;
@@ -1693,7 +1750,10 @@ cli.command("health", "Check system health and configuration")
 // Stats Commands - Historical tracking and analytics
 // =============================================================================
 
-cli.command("stats-import [path]", "Import benchmark results into stats database")
+cli.command(
+  "stats-import [path]",
+  "Import benchmark results into stats database",
+)
   .option(
     "--db <path:string>",
     "Path to stats database",
@@ -1714,7 +1774,9 @@ cli.command("stats-import [path]", "Import benchmark results into stats database
 
       console.log(colors.green(`[OK] Imported ${result.imported} runs`));
       if (result.skipped > 0) {
-        console.log(colors.gray(`Skipped ${result.skipped} (already imported)`));
+        console.log(
+          colors.gray(`Skipped ${result.skipped} (already imported)`),
+        );
       }
       if (result.errors.length > 0) {
         console.log(colors.yellow(`[WARN] ${result.errors.length} errors:`));
@@ -1785,7 +1847,9 @@ cli.command("stats-runs", "Show historical benchmark runs")
         runs = runs.slice(0, options.limit);
 
         if (runs.length === 0) {
-          console.log(colors.yellow("No runs found. Run 'stats-import' first."));
+          console.log(
+            colors.yellow("No runs found. Run 'stats-import' first."),
+          );
           return;
         }
 
@@ -1795,7 +1859,16 @@ cli.command("stats-runs", "Show historical benchmark runs")
         console.log(colors.bold(title));
 
         const table = new Table()
-          .header(["Run ID", "TaskSet", "Date", "Tasks", "Models", "Pass%", "Score", "Cost"])
+          .header([
+            "Run ID",
+            "TaskSet",
+            "Date",
+            "Tasks",
+            "Models",
+            "Pass%",
+            "Score",
+            "Cost",
+          ])
           .body(
             runs.map((r) => [
               r.runId.slice(-8),
@@ -1843,9 +1916,9 @@ cli.command("stats-compare <model1> <model2>", "Compare two models")
         }`,
       );
       console.log(
-        `Total Cost: ${colors.cyan(`$${comparison.variant1Cost.toFixed(4)}`)} vs ${
-          colors.magenta(`$${comparison.variant2Cost.toFixed(4)}`)
-        }`,
+        `Total Cost: ${
+          colors.cyan(`$${comparison.variant1Cost.toFixed(4)}`)
+        } vs ${colors.magenta(`$${comparison.variant2Cost.toFixed(4)}`)}`,
       );
 
       if (comparison.perTask.length > 0) {
@@ -1971,6 +2044,200 @@ cli.command("stats-cost", "Show cost breakdown")
       await storage.close();
     }
   });
+
+// =============================================================================
+// Verify Command
+// =============================================================================
+
+/**
+ * Handle the verify command - analyze failing tasks and propose fixes
+ */
+async function handleVerify(
+  options: {
+    session?: string;
+    task?: string;
+    filter: string;
+    dryRun: boolean;
+    parallel: number;
+    model: string;
+    shortcomingsDir: string;
+  },
+  debugDir?: string,
+): Promise<void> {
+  const dir = debugDir || "debug";
+
+  console.log(colors.gray(`[INFO] Analyzing debug output in: ${dir}`));
+
+  // Find session
+  const sessionId = options.session || await findLatestSession(dir);
+  if (!sessionId) {
+    console.error(colors.red("[ERROR] No sessions found in debug directory"));
+    Deno.exit(1);
+  }
+
+  console.log(colors.gray(`[INFO] Using session: ${sessionId}`));
+
+  // Parse debug directory for failing tasks
+  let failingTasks;
+  try {
+    failingTasks = await parseDebugDir(dir, sessionId);
+  } catch (error) {
+    console.error(
+      colors.red(`[ERROR] Failed to parse debug directory: ${error}`),
+    );
+    Deno.exit(1);
+  }
+
+  // Filter by task ID if specified
+  if (options.task) {
+    failingTasks = failingTasks.filter((t) => t.taskId === options.task);
+  }
+
+  // Filter by failure type
+  if (options.filter !== "all") {
+    const filterType = options.filter === "compile" ? "compilation" : "test";
+    failingTasks = failingTasks.filter((t) => t.failureType === filterType);
+  }
+
+  if (failingTasks.length === 0) {
+    console.log(colors.green("[OK] No failing tasks found!"));
+    return;
+  }
+
+  console.log(
+    colors.gray(`[INFO] Found ${failingTasks.length} failing task(s)`),
+  );
+  console.log();
+
+  // Create verify options
+  const verifyOptions: VerifyOptions = {
+    debugDir: dir,
+    session: sessionId,
+    task: options.task,
+    filter: options.filter as "compile" | "test" | "all",
+    dryRun: options.dryRun,
+    parallel: options.parallel,
+    model: options.model,
+    shortcomingsDir: options.shortcomingsDir,
+  };
+
+  // Create orchestrator
+  const orchestrator = createVerifyOrchestrator(verifyOptions);
+
+  // Subscribe to events
+  orchestrator.on((event) => {
+    switch (event.type) {
+      case "analyzing":
+        console.log(
+          colors.cyan(`[ANALYZE] ${event.taskId} (${event.model})`),
+        );
+        break;
+      case "analysis_complete":
+        if (isFixableResult(event.result)) {
+          console.log(
+            colors.yellow(
+              `[FIXABLE] ${event.result.category} in ${event.result.fix.filePath}`,
+            ),
+          );
+          console.log(`  ${event.result.description}`);
+        } else {
+          console.log(
+            colors.blue(
+              `[MODEL GAP] ${event.result.concept}`,
+            ),
+          );
+          console.log(`  ${event.result.description.slice(0, 100)}...`);
+        }
+        break;
+      case "fix_applied":
+        if (event.success) {
+          console.log(colors.green(`[OK] Applied fix to ${event.taskId}`));
+        } else {
+          console.log(
+            colors.red(`[FAIL] Could not apply fix to ${event.taskId}`),
+          );
+        }
+        break;
+      case "fix_skipped":
+        console.log(colors.gray(`[SKIP] Skipped fix for ${event.taskId}`));
+        break;
+      case "shortcoming_logged":
+        console.log(
+          colors.gray(
+            `  Logged to: ${options.shortcomingsDir}/${event.model}.json`,
+          ),
+        );
+        break;
+      case "error":
+        console.error(colors.red(`[ERROR] ${event.taskId}: ${event.error}`));
+        break;
+    }
+  });
+
+  // Run verification
+  const summary = await orchestrator.runVerification(
+    failingTasks,
+    verifyOptions,
+  );
+
+  // Print summary
+  console.log();
+  console.log(colors.bold("=== Summary ==="));
+  console.log(`Analyzed: ${summary.totalAnalyzed}`);
+  console.log(`Fixes applied: ${summary.fixesApplied}`);
+  console.log(`Fixes skipped: ${summary.fixesSkipped}`);
+
+  if (summary.modelShortcomings.size > 0) {
+    console.log("Model shortcomings logged:");
+    for (const [model, count] of summary.modelShortcomings) {
+      console.log(`  - ${model}: ${count} gaps`);
+    }
+  }
+
+  if (summary.errors.length > 0) {
+    console.log(colors.red(`\nErrors: ${summary.errors.length}`));
+    for (const error of summary.errors.slice(0, 5)) {
+      console.log(colors.red(`  - ${error}`));
+    }
+    if (summary.errors.length > 5) {
+      console.log(colors.gray(`  ... and ${summary.errors.length - 5} more`));
+    }
+  }
+}
+
+cli.command("verify [debug-dir]", "Analyze failing tasks and propose fixes")
+  .option("-s, --session <id:string>", "Specific session ID (default: latest)")
+  .option("-t, --task <id:string>", "Analyze specific task ID only")
+  .option("-f, --filter <type:string>", "Filter: compile, test, all", {
+    default: "all",
+  })
+  .option("--dry-run", "Show fixes without applying", { default: false })
+  .option("--parallel <n:number>", "Max parallel analysis (default: 1 for interactive)", { default: 1 })
+  .option("--model <model:string>", "LLM for analysis", {
+    default: "claude-sonnet-4-5-20250929",
+  })
+  .option(
+    "--shortcomings-dir <dir:string>",
+    "Dir for model shortcomings",
+    { default: "model-shortcomings" },
+  )
+  .example(
+    "Analyze all failures",
+    "centralgauge verify debug/",
+  )
+  .example(
+    "Analyze specific session",
+    "centralgauge verify debug/ --session 1765986258980",
+  )
+  .example(
+    "Dry run (no changes)",
+    "centralgauge verify debug/ --dry-run",
+  )
+  .example(
+    "Filter by failure type",
+    "centralgauge verify debug/ --filter compile",
+  )
+  .action(handleVerify);
 
 // Parse and execute
 if (import.meta.main) {

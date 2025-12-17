@@ -78,6 +78,10 @@ deno run --allow-all cli/centralgauge.ts stats-import results/   # Import JSON r
 deno run --allow-all cli/centralgauge.ts stats-runs              # View run history
 deno run --allow-all cli/centralgauge.ts stats-compare opus gpt  # Compare models
 deno run --allow-all cli/centralgauge.ts stats-cost              # Cost breakdown
+
+# Failure Analysis
+deno run --allow-all cli/centralgauge.ts verify debug/           # Analyze failures
+deno run --allow-all cli/centralgauge.ts verify debug/ --dry-run # Preview fixes only
 ```
 
 ## Model Variants
@@ -169,6 +173,62 @@ Debug output includes:
 - Extracted code blocks
 - Compilation results
 - Timing information
+
+## Failure Analysis & Verification
+
+Analyze failing benchmark tasks to identify root causes and track model limitations:
+
+```bash
+# Analyze failures from latest debug session
+deno run --allow-all cli/centralgauge.ts verify debug/
+
+# Analyze specific session
+deno run --allow-all cli/centralgauge.ts verify debug/ --session 1734567890123
+
+# Filter by failure type
+deno run --allow-all cli/centralgauge.ts verify debug/ --filter compile   # Compilation failures only
+deno run --allow-all cli/centralgauge.ts verify debug/ --filter test      # Test failures only
+
+# Dry run - show fixes without applying
+deno run --allow-all cli/centralgauge.ts verify debug/ --dry-run
+
+# Analyze specific task
+deno run --allow-all cli/centralgauge.ts verify debug/ --task CG-AL-E008
+```
+
+### Two Analysis Outcomes
+
+The verify command distinguishes between:
+
+1. **Fixable Issues** - Problems in task YAML or test AL files
+   - ID conflicts, syntax errors, test logic bugs, task definition issues
+   - Interactive prompt: `[A]pply`, `[S]kip`, `[Q]uit` for each fix
+
+2. **Model Knowledge Gaps** - The model lacks AL knowledge, but the test is valid
+   - Model doesn't know interfaces don't have IDs
+   - Model uses deprecated BC APIs
+   - Model misunderstands FlowField syntax
+   - Tracked per-model in `model-shortcomings/{model-name}.json` (default folder)
+
+### Model Shortcomings Tracking
+
+Knowledge gaps are deduplicated by AL concept with affected task lists:
+
+```json
+{
+  "model": "claude-opus-4-5-20251101",
+  "shortcomings": [
+    {
+      "concept": "interface-id-syntax",
+      "alConcept": "interface-definition",
+      "description": "Model incorrectly adds numeric IDs to interface definitions",
+      "correctPattern": "interface \"Name\"",
+      "affectedTasks": ["CG-AL-E008", "CG-AL-M015"],
+      "occurrences": 2
+    }
+  ]
+}
+```
 
 ## Historical Stats & Analytics
 
