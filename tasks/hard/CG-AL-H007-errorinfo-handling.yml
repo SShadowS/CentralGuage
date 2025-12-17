@@ -1,0 +1,45 @@
+id: CG-AL-H007
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit that demonstrates modern AL error handling with ErrorInfo.
+
+  Create codeunit "CG Validation Engine" (ID 70210) with Access = Public.
+
+  Create enum "CG Validation Error" (ID 70211) with values:
+  - value(0; None)
+  - value(1; EmptyField)
+  - value(2; InvalidFormat)
+  - value(3; OutOfRange)
+  - value(4; DuplicateValue)
+
+  The codeunit should have these procedures:
+
+  1. CreateValidationError(ErrorCode: Enum "CG Validation Error"; FieldName: Text; ErrorMessage: Text): ErrorInfo
+     - Returns an ErrorInfo with:
+       * Message set to ErrorMessage
+       * CustomDimensions containing 'ErrorCode' (the enum's integer value as text)
+       * CustomDimensions containing 'FieldName' (the field name)
+       * Collectible set based on IsCollectingErrors()
+
+  2. GetErrorCode(ErrInfo: ErrorInfo): Enum "CG Validation Error"
+     - Extracts the error code from ErrorInfo.CustomDimensions
+     - Uses Enum::"CG Validation Error".FromInteger() to convert back to enum
+
+  3. ValidateNotEmpty(Value: Text; FieldName: Text)
+     - If Value is empty, call Error() with ErrorInfo created using CreateValidationError
+     - ErrorCode = EmptyField, message = 'Field cannot be empty'
+
+  4. ValidateInRange(Value: Decimal; MinValue: Decimal; MaxValue: Decimal; FieldName: Text)
+     - If Value < MinValue or Value > MaxValue, error with OutOfRange
+     - Message = 'Value must be between [MinValue] and [MaxValue]' (actual values substituted)
+
+  Critical: Use ErrorInfo.Create() pattern and CustomDimensions correctly.
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H007.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

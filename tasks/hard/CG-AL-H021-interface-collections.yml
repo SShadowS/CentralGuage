@@ -1,0 +1,51 @@
+id: CG-AL-H021
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create AL objects demonstrating Lists and Dictionaries of interfaces (available in BC 2025 Wave 1).
+
+  1. Create an interface named "INotificationChannel" with procedures:
+     - Send(Message: Text): Boolean
+     - GetChannelName(): Text
+
+  2. Create a codeunit "CG Email Channel" with ID 70221 that implements "INotificationChannel".
+     Send() always returns true, GetChannelName() returns 'Email'.
+
+  3. Create a codeunit "CG SMS Channel" with ID 70222 that implements "INotificationChannel".
+     Send() always returns true, GetChannelName() returns 'SMS'.
+
+  4. Create a codeunit "CG Slack Channel" with ID 70223 that implements "INotificationChannel".
+     Send() always returns true, GetChannelName() returns 'Slack'.
+
+  5. Create a codeunit "CG Notification Manager" with ID 70220 with procedures:
+
+     a. RegisterChannel(Channel: Interface "INotificationChannel")
+        Adds channel to an internal List of [Interface "INotificationChannel"].
+
+     b. BroadcastMessage(Message: Text): Integer
+        Calls Send() on all registered channels, returns count of successful sends.
+
+     c. GetRegisteredChannelNames(): List of [Text]
+        Returns list of all channel names by calling GetChannelName() on each.
+
+     d. RegisterNamedChannel(Name: Text; Channel: Interface "INotificationChannel")
+        Adds to internal Dictionary of [Text, Interface "INotificationChannel"].
+
+     e. SendToChannel(Name: Text; Message: Text): Boolean
+        Looks up channel by name in dictionary and calls Send(). Returns false if not found.
+
+     f. GetChannelByName(Name: Text; var Channel: Interface "INotificationChannel"): Boolean
+        Gets channel from dictionary by name. Returns true if found, false otherwise.
+
+     g. ClearChannels()
+        Clears both the list and dictionary of channels.
+
+  All codeunits should have Access = Public.
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H021.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

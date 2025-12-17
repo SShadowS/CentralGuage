@@ -1,0 +1,27 @@
+id: CG-AL-E052
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Type Converter" with ID 70052 for converting simple types to text.
+
+  1. Procedure "IntegerToText" that takes Integer parameter Value and returns Text representation.
+
+  2. Procedure "DecimalToText" that takes Decimal parameter Value and returns Text representation.
+
+  3. Procedure "BooleanToText" that takes Boolean parameter Value and returns Text representation.
+
+  4. Procedure "DateToText" that takes Date parameter Value and returns Text representation.
+
+  5. Procedure "FormatOrderSummary" that takes Integer parameter OrderNo, Decimal parameter Amount,
+     Boolean parameter IsShipped, and Date parameter OrderDate. Returns Text in format:
+     "Order: [OrderNo], Amount: [Amount], Shipped: [IsShipped], Date: [OrderDate]"
+
+  Include Access = Public on the codeunit.
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E052.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

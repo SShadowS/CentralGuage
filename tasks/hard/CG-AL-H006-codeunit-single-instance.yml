@@ -1,0 +1,48 @@
+id: CG-AL-H006
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a SingleInstance codeunit that maintains state across calls within the same session.
+
+  Create codeunit "CG Session Counter" (ID 70208) with:
+  - SingleInstance = true property
+  - Access = Public
+
+  Private variables:
+  - CallCount: Integer
+  - LastCalledAt: DateTime
+  - SessionStarted: DateTime
+
+  Procedures:
+
+  Initialize()
+  - Sets SessionStarted to CurrentDateTime if not already set (only on first call)
+  - This must be idempotent - calling it multiple times should not reset SessionStarted
+
+  IncrementAndGet(): Integer
+  - Increments CallCount by 1
+  - Updates LastCalledAt to CurrentDateTime
+  - Returns the new CallCount value
+
+  GetCallCount(): Integer
+  - Returns current CallCount without incrementing
+
+  GetSessionDuration(): Duration
+  - Returns CurrentDateTime - SessionStarted
+  - Must handle the case where Initialize() was never called (return 0)
+
+  Reset()
+  - Sets CallCount to 0
+  - Clears LastCalledAt (set to 0DT)
+  - Does NOT clear SessionStarted (session is still the same)
+
+  Critical: The SingleInstance property must be set correctly for state to persist.
+  The Initialize() procedure must be idempotent.
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H006.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

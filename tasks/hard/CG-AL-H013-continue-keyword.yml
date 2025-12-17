@@ -1,0 +1,27 @@
+id: CG-AL-H013
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Loop Utilities" with ID 70013 that demonstrates the continue keyword:
+
+  1. Procedure "SumPositiveNumbers" that takes a List of [Decimal] parameter named Numbers
+     and returns Decimal sum of only positive numbers.
+     Use a foreach loop with continue to skip negative or zero numbers.
+
+  2. Procedure "CountValidCodes" that takes a List of [Code[20]] parameter named Codes
+     and returns Integer count of non-empty codes.
+     Use a foreach loop with continue to skip empty codes.
+
+  3. Procedure "FilterAndProcess" that takes an array[10] of Integer named Values and
+     an Integer parameter named "Threshold", returns Text with comma-separated values
+     above the threshold. Use a for loop with continue to skip values at or below threshold.
+     Return empty string if no values above threshold.
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H013.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

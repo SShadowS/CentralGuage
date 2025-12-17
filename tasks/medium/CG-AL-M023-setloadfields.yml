@@ -1,0 +1,37 @@
+id: CG-AL-M023
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit named "CG Partial Record Loader" with ID 70123 that demonstrates
+  the SetLoadFields method for optimized partial record loading.
+
+  1. Procedure "GetCustomerNames" that returns List of [Text].
+     Use SetLoadFields to load only the Name field from Customer table.
+     Iterate through all customers and return a list of their names.
+
+  2. Procedure "GetItemBasicInfo" that takes a var parameter ItemList: List of [Text]
+     and populates it with item info in format "[No.]: [Description]".
+     Use SetLoadFields to load only "No." and Description fields from Item table.
+
+  3. Procedure "SumItemInventory" that returns Decimal.
+     Use SetLoadFields to load only the Inventory field from Item table.
+     Return the sum of all item inventory quantities.
+
+  4. Procedure "CountBlockedCustomers" that returns Integer.
+     Use SetLoadFields with SetRange(Blocked, Customer.Blocked::All) to efficiently
+     count customers that are completely blocked. Load only the "No." field.
+
+  5. Procedure "GetHighValueItems" that takes Decimal parameter MinPrice and
+     returns List of [Code[20]].
+     Use SetLoadFields for "No." and "Unit Price" fields.
+     Return list of item numbers where Unit Price >= MinPrice.
+
+  Include Access = Public on the codeunit.
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M023.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

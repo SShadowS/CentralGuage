@@ -1,0 +1,40 @@
+id: CG-AL-H010
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a codeunit with IntegrationEvent publishers and demonstrate proper event patterns.
+
+  Create codeunit "CG Order Processor" (ID 70214) with Access = Public.
+
+  The codeunit should process orders with these procedures:
+
+  1. ProcessOrder(OrderNo: Code[20]; Amount: Decimal; var ProcessedAmount: Decimal; var IsHandled: Boolean)
+     - First, raise OnBeforeProcessOrder event (passing all parameters as var)
+     - If IsHandled is true after the event, exit without further processing
+     - Set ProcessedAmount = Amount * 1.1 (add 10% processing fee)
+     - Raise OnAfterProcessOrder event
+
+  2. ValidateOrder(OrderNo: Code[20]; Amount: Decimal): Boolean
+     - Raise OnBeforeValidateOrder event with var IsValid: Boolean parameter
+     - If event handler set IsValid, return that value
+     - Otherwise, return true if Amount > 0 and OrderNo is not empty
+
+  Event publishers (must use correct attributes):
+
+  [IntegrationEvent(false, false)]
+  local procedure OnBeforeProcessOrder(OrderNo: Code[20]; Amount: Decimal; var ProcessedAmount: Decimal; var IsHandled: Boolean)
+
+  [IntegrationEvent(false, false)]
+  local procedure OnAfterProcessOrder(OrderNo: Code[20]; OriginalAmount: Decimal; ProcessedAmount: Decimal)
+
+  [IntegrationEvent(true, false)]
+  local procedure OnBeforeValidateOrder(OrderNo: Code[20]; Amount: Decimal; var IsValid: Boolean; var Handled: Boolean)
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H010.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

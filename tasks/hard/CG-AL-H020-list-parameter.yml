@@ -1,0 +1,36 @@
+id: CG-AL-H020
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Collection Processor" with ID 70020 demonstrating List and Dictionary types:
+
+  1. procedure JoinTexts(Items: List of [Text]; Separator: Text): Text
+     - Joins all items with separator between them, returns combined Text
+
+  2. procedure FilterByPrefix(Items: List of [Text]; Prefix: Text): List of [Text]
+     - Returns new List containing only items that start with Prefix
+
+  3. procedure SumDecimals(Numbers: List of [Decimal]): Decimal
+     - Returns sum of all decimals in the list
+
+  4. procedure MapToUpperCase(var Items: List of [Text])
+     - Modifies list, converting each item to uppercase
+
+  5. procedure MergeDictionaries(Dict1: Dictionary of [Text, Text]; Dict2: Dictionary of [Text, Text]): Dictionary of [Text, Text]
+     - Returns new Dictionary with all entries from both (Dict2 values win on key conflicts)
+
+  6. procedure GroupByFirstLetter(Items: List of [Text]): Dictionary of [Text, List of [Text]]
+     - Groups items by their first letter
+     - Returns dictionary where key is first letter, value is list of matching items
+
+  7. procedure GetKeys(Dict: Dictionary of [Code[20], Decimal]): List of [Code[20]]
+     - Returns list of all keys from the dictionary
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H020.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

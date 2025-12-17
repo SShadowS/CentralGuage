@@ -1,0 +1,45 @@
+id: CG-AL-H005
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create a table and codeunit that test understanding of Rec vs xRec and Modify behavior.
+
+  1. Create table "CG Audit Log" (ID 70206) with fields:
+     - "Entry No." (Integer, primary key, AutoIncrement)
+     - "Table ID" (Integer)
+     - "Record ID" (RecordId)
+     - "Field Changed" (Text[50])
+     - "Old Value" (Text[250])
+     - "New Value" (Text[250])
+     - "Changed At" (DateTime)
+     - "Changed By" (Code[50])
+
+  2. Create table "CG Tracked Item" (ID 70207) with fields:
+     - Code (Code[20], primary key)
+     - Description (Text[100])
+     - "Unit Price" (Decimal)
+     - Blocked (Boolean)
+
+     In the OnModify trigger:
+     - Compare Rec with xRec
+     - If "Unit Price" changed, create an audit log entry with:
+       * "Field Changed" = 'Unit Price'
+       * "Old Value" = Format(xRec."Unit Price")
+       * "New Value" = Format(Rec."Unit Price")
+       * "Changed At" = CurrentDateTime
+       * "Changed By" = UserId
+     - If Blocked changed from false to true, create an audit log entry with:
+       * "Field Changed" = 'Blocked'
+       * "Old Value" = 'No'
+       * "New Value" = 'Yes'
+
+  Critical: The OnModify trigger must correctly use xRec to detect changes.
+  The audit log "Entry No." must auto-increment (use AutoIncrement property).
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H005.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

@@ -1,0 +1,39 @@
+id: CG-AL-E050
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Text Builder" with ID 70050 that uses multiline string literals.
+
+  1. Procedure "GetSqlQuery" that returns Text containing a multiline SQL-like query string:
+     SELECT CustomerNo, Name, Balance
+     FROM Customer
+     WHERE Active = true
+     ORDER BY Name
+     (Use a multiline string literal, not string concatenation)
+
+  2. Procedure "GetJsonTemplate" that returns Text containing a JSON template:
+     {
+       "type": "invoice",
+       "version": "1.0",
+       "data": null
+     }
+
+  3. Procedure "GetEmailBody" that takes Text parameter CustomerName and returns Text.
+     Return a multiline email template with the customer name inserted:
+     Dear [CustomerName],
+
+     Thank you for your order.
+
+     Best regards,
+     Sales Team
+     (Replace [CustomerName] with the actual parameter value)
+
+  Include Access = Public on the codeunit.
+expected:
+  compile: true
+  testApp: tests/al/easy/CG-AL-E050.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

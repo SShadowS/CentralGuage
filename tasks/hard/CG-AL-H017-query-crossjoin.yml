@@ -1,0 +1,24 @@
+id: CG-AL-H017
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL query object named "CG Dimension Matrix" with ID 70017 that:
+
+  1. Uses SqlJoinType = CrossJoin to create a Cartesian product between two dataitems
+  2. First dataitem is "Dimension Value" (from Microsoft.Finance.Dimension namespace)
+     with a filter on "Dimension Code" = const('DEPARTMENT')
+  3. Second dataitem is also "Dimension Value" with SqlJoinType = CrossJoin
+     and filter on "Dimension Code" = const('PROJECT')
+  4. Output columns: DepartmentCode (Code from first dataitem), DepartmentName (Name from first),
+     ProjectCode (Code from second dataitem), ProjectName (Name from second)
+  5. Has a third dataitem "Dimension Set Entry" with SqlJoinType = LeftOuterJoin
+  6. Include a column MatchCount with Method = Count
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H017.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

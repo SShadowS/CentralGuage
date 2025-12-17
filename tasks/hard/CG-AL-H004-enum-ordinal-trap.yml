@@ -1,0 +1,36 @@
+id: CG-AL-H004
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an enum and codeunit that demonstrate correct enum ordinal handling.
+
+  1. Create enum "CG Priority Level" (ID 70204) with non-sequential ordinal values:
+     - value(0; None) with Caption 'None'
+     - value(10; Low) with Caption 'Low'
+     - value(20; Medium) with Caption 'Medium'
+     - value(50; High) with Caption 'High'
+     - value(100; Critical) with Caption 'Critical'
+
+  2. Create codeunit "CG Priority Calculator" (ID 70205) with Access = Public and procedures:
+
+     GetPriorityScore(Priority: Enum "CG Priority Level"): Integer
+     - Must return the ORDINAL VALUE of the enum (0, 10, 20, 50, or 100)
+
+     GetNextHigherPriority(Priority: Enum "CG Priority Level"): Enum "CG Priority Level"
+     - Returns the next higher priority level
+     - If already Critical, return Critical
+     - None -> Low, Low -> Medium, Medium -> High, High -> Critical
+
+     ComparePriorities(A: Enum "CG Priority Level"; B: Enum "CG Priority Level"): Integer
+     - Returns -1 if A < B (lower priority)
+     - Returns 0 if A = B
+     - Returns 1 if A > B (higher priority)
+     - Must compare using ordinal values, not enum names
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H004.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

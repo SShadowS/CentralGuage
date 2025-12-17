@@ -1,0 +1,29 @@
+id: CG-AL-H014
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG JSON Parser" with ID 70014 that uses the typed JSON getter methods:
+
+  1. Procedure "ParseCustomerData" that takes a JsonObject parameter named CustomerJson
+     and returns Text. Extract: name using GetText('name'), age using GetInteger('age'),
+     active using GetBoolean('active'). Return formatted info like 'Name: X, Age: Y, Active: Z'.
+
+  2. Procedure "ProcessOrderItems" that takes a JsonObject parameter named OrderJson containing
+     an "items" JsonArray. Use GetArray('items') to extract the items, iterate through them,
+     and sum the "quantity" field from each item using GetInteger('quantity'). Return total as Integer.
+
+  3. Procedure "SafeGetText" that takes JsonObject named Obj, Text named Key, and Text named DefaultValue.
+     Uses GetText(Key, DefaultValue) overload that returns default on missing key. Returns Text.
+
+  4. Procedure "ExtractNestedValue" that takes a JsonObject named RootJson with nested structure
+     {data: {details: {amount: 123.45}}}. Navigate through nested objects using Get() and
+     extract the decimal amount. Return Decimal.
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H014.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

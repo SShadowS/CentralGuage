@@ -1,0 +1,24 @@
+id: CG-AL-H011
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL query object named "CG Sales Summary" with ID 70011 that:
+
+  1. Has QueryType = Normal
+  2. Uses "Sales Line" as the main dataitem (from Microsoft.Sales.Document namespace)
+  3. Groups by "Document No." and "Sell-to Customer No."
+  4. Calculates the sum of "Line Amount" using Method = Sum (column name: Line_Amount_Sum)
+  5. Calculates the count of lines using Method = Count (column name: Line_Count)
+  6. Has a filter element on "Document Type" that filters to Order only (ColumnFilter = const(Order))
+  7. Orders results by "Sell-to Customer No." ascending
+
+  The query should export columns for Document_No, Sell_to_Customer_No, Line_Amount_Sum, and Line_Count.
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H011.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

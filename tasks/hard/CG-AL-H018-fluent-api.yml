@@ -1,0 +1,31 @@
+id: CG-AL-H018
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG Request Builder" with ID 70018 implementing a fluent API pattern:
+
+  Internal state variables:
+  - RequestUrl: Text
+  - RequestMethod: Text
+  - RequestHeaders: Dictionary of [Text, Text]
+  - RequestBody: Text
+  - RequestTimeout: Integer
+
+  Procedures (all return Codeunit "CG Request Builder" except Build and Create):
+
+  1. SetUrl(Url: Text): Codeunit "CG Request Builder" - sets RequestUrl, returns self
+  2. SetMethod(Method: Text): Codeunit "CG Request Builder" - sets RequestMethod, returns self
+  3. AddHeader(Name: Text; Value: Text): Codeunit "CG Request Builder" - adds to RequestHeaders dictionary, returns self
+  4. SetBody(Body: Text): Codeunit "CG Request Builder" - sets RequestBody, returns self
+  5. SetTimeout(Timeout: Integer): Codeunit "CG Request Builder" - sets RequestTimeout, returns self
+  6. Build(): Text - returns formatted representation containing URL, method, headers, body, timeout
+  7. Create(): Codeunit "CG Request Builder" - returns a new cleared instance
+
+expected:
+  compile: true
+  testApp: tests/al/hard/CG-AL-H018.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt

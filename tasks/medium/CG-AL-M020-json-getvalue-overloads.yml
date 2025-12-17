@@ -1,0 +1,41 @@
+id: CG-AL-M020
+prompt_template: code-gen.md
+fix_template: bugfix.md
+max_attempts: 2
+description: >-
+  Create an AL codeunit named "CG JSON Value Extractor" with ID 70120.
+
+  1. Procedure "ExtractProductInfo" that takes JsonObject parameter ProductJson containing
+     {"name": "Widget", "price": 29.99, "inStock": true, "quantity": 150}.
+     Extract each value into appropriate typed variables:
+     - Text for name
+     - Decimal for price
+     - Boolean for inStock
+     - Integer for quantity
+     Returns Text formatted as: "Product: [name], Price: [price], In Stock: [inStock], Qty: [quantity]"
+
+  2. Procedure "ExtractWithDefaults" that takes JsonObject parameter DataJson and Text parameter Key.
+     If the key exists, return its text value. If the key does not exist, return "N/A".
+
+  3. Procedure "SumArrayValues" that takes JsonObject parameter DataJson containing
+     {"values": [10, 20, 30, 40, 50]}. Extract the array, iterate through it to get
+     Integer values, and return the sum as Integer.
+
+  4. Procedure "ParseConfigSettings" that takes JsonObject parameter ConfigJson with structure:
+     {"debug": false, "maxRetries": 3, "timeout": 30.5, "environment": "production"}.
+     Return a Dictionary of [Text, Text] where keys are the setting names and values are
+     their string representations.
+
+  5. Procedure "HandleMissingKeys" that takes JsonObject parameter PartialJson which may or may not
+     contain keys "required" (Text) and "optional" (Text).
+     Return the value of "required" if it exists, otherwise return the value of "optional",
+     otherwise return "none".
+
+  Include Access = Public on the codeunit.
+expected:
+  compile: true
+  testApp: tests/al/medium/CG-AL-M020.Test.al
+metrics:
+  - compile_pass
+  - tests_pass
+  - pass_attempt
