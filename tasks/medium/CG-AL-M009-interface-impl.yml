@@ -5,7 +5,7 @@ max_attempts: 2
 description: >-
   Create a comprehensive interface implementation for a shipping service.
 
-  First, define an interface called "Shipping Provider" with ID 70001:
+  First, define an interface called "Shipping Provider":
   - CalculateShippingCost(Weight: Decimal; FromCountry: Text; ToCountry: Text): Decimal
   - EstimateDeliveryTime(FromCountry: Text; ToCountry: Text; ServiceType: Text): Integer
   - CreateShipment(OrderNumber: Text; FromAddress: Text; ToAddress: Text; Weight: Decimal): Text[50] - returns tracking number
