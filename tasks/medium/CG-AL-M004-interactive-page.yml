@@ -9,11 +9,11 @@ description: >-
   Layout with multiple FastTabs:
   - General FastTab with fields: "No.", "Sell-to Customer No.", "Sell-to Customer Name", "Order Date", "Posting Date", "Status"
   - Financial FastTab with amount fields (Amount, "Amount Including VAT")
-  - Lines FastTab containing a subpage part showing Sales Lines
+  - Lines subpage part (named exactly "Lines") showing Sales Order Subform
 
   Custom Actions in the ribbon (use PascalCase names without spaces):
   - CalculateTotals action (Caption = 'Calculate Totals') - trigger CALCFIELDS on amount fields and display a message
-  - ApplyDiscount action (Caption = 'Apply Discount') - use DIALOG to ask for discount percentage
+  - ApplyDiscount action (Caption = 'Apply Discount') - use Confirm to ask before applying a fixed 10% discount
   - ExportPDF action (Caption = 'Export to PDF') - display a message indicating PDF would be generated
   - SendEmail action (Caption = 'Send Email') - display a message indicating email would be sent
 

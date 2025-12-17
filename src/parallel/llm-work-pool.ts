@@ -113,8 +113,12 @@ export class LLMWorkPool {
       // Generate code
       const llmResponse = await this.generateCode(item, adapter);
 
-      // Extract code from response
+      // Extract code from response and clean it
       const extracted = CodeExtractor.extract(llmResponse.content);
+      const cleanedCode = CodeExtractor.cleanCode(
+        extracted.code,
+        extracted.language === "diff" ? "diff" : "al",
+      );
 
       // Release lease with actual token count
       this.rateLimiter.release(lease, llmResponse.usage.totalTokens);
@@ -122,7 +126,7 @@ export class LLMWorkPool {
       return {
         workItemId: item.id,
         success: true,
-        code: extracted.code,
+        code: cleanedCode,
         llmResponse,
         duration: Date.now() - startTime,
         readyForCompile: extracted.confidence > 0.5,

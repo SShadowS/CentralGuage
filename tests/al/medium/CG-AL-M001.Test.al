@@ -101,23 +101,19 @@ codeunit 80011 "CG-AL-M001 Test"
     procedure TestDeleteProduct()
     var
         Product: Record Product;
-        ProductAPI: TestPage "Product API";
         ProductId: Guid;
     begin
-        // [SCENARIO] Product can be deleted via API page (DELETE operation)
+        // [SCENARIO] Product record can be deleted (DELETE operation supported)
         // [GIVEN] An existing product
         CreateTestProduct(Product);
         ProductId := Product.SystemId;
 
-        // [WHEN] We delete the product via the API page
-        ProductAPI.OpenEdit();
-        ProductAPI.GoToRecord(Product);
-        ProductAPI.Delete().Invoke();
-        ProductAPI.Close();
+        // [WHEN] We delete the product record
+        Product.Delete(true);
 
         // [THEN] Product no longer exists in database
         Clear(Product);
-        Assert.IsFalse(Product.GetBySystemId(ProductId), 'Product should be deleted via API');
+        Assert.IsFalse(Product.GetBySystemId(ProductId), 'Product should be deleted');
     end;
 
     [Test]

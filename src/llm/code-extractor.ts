@@ -243,6 +243,8 @@ export class CodeExtractor {
       // Remove common artifacts from LLM responses
       cleaned = cleaned.replace(/^```[\w]*\s*\n?/, ""); // Remove opening code fence
       cleaned = cleaned.replace(/\n?```\s*$/, ""); // Remove closing code fence
+      cleaned = cleaned.replace(/^BEGIN-CODE\s*\n?/i, ""); // Remove custom BEGIN-CODE delimiter
+      cleaned = cleaned.replace(/\n?\s*END-CODE\s*$/i, ""); // Remove custom END-CODE delimiter
       cleaned = cleaned.replace(/^Here's the AL code.*?:\s*\n/i, ""); // Remove explanatory text
       cleaned = cleaned.replace(/^The code is.*?:\s*\n/i, ""); // Remove explanatory text
 
