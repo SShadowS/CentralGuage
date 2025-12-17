@@ -106,6 +106,9 @@ function createMockFormatterInput(
     secondsPerTask: 30,
     promptTokens: 15000,
     completionTokens: 5000,
+    totalLLMDuration: 45000,
+    totalCompileDuration: 12000,
+    totalTestDuration: 3000,
   };
 
   const comparisons: TaskComparison[] = [

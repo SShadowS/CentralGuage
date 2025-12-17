@@ -415,19 +415,63 @@ function buildBenchmarkRows(
     `$${stats.totalCost.toFixed(4)}`,
   );
 
-  // Add timing row
+  // Add timing rows
   if (modelStats.length > 1) {
-    const timingRow = [
+    rows.push([
       "seconds_per_task",
       ...modelStats.map(() => "-"),
       stats.secondsPerTask.toFixed(1),
-    ];
-    rows.push(timingRow);
+    ]);
+    rows.push([
+      "llm_time",
+      ...modelStats.map(() => "-"),
+      formatDuration(stats.totalLLMDuration),
+    ]);
+    rows.push([
+      "compile_time",
+      ...modelStats.map(() => "-"),
+      formatDuration(stats.totalCompileDuration),
+    ]);
+    rows.push([
+      "test_time",
+      ...modelStats.map(() => "-"),
+      formatDuration(stats.totalTestDuration),
+    ]);
+    rows.push([
+      "total_time",
+      ...modelStats.map(() => "-"),
+      formatDuration(stats.totalDuration),
+    ]);
   } else {
     rows.push(["seconds_per_task", stats.secondsPerTask.toFixed(1)]);
+    rows.push(["llm_time", formatDuration(stats.totalLLMDuration)]);
+    rows.push(["compile_time", formatDuration(stats.totalCompileDuration)]);
+    rows.push(["test_time", formatDuration(stats.totalTestDuration)]);
+    rows.push(["total_time", formatDuration(stats.totalDuration)]);
   }
 
   return rows;
+}
+
+/**
+ * Format duration in ms to human-readable string (e.g., "1m 23s" or "45.2s")
+ */
+function formatDuration(ms: number): string {
+  if (ms < 1000) {
+    return `${ms}ms`;
+  }
+  const totalSeconds = ms / 1000;
+  if (totalSeconds < 60) {
+    return `${totalSeconds.toFixed(1)}s`;
+  }
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) {
+    return `${minutes}m ${seconds.toFixed(0)}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return `${hours}h ${remainingMinutes}m`;
 }
 
 /**
@@ -673,6 +717,24 @@ function formatWinnerCell(
   }
 
   if (comparison && comparison.passingModels.length > 1) {
+    // Find models that tied for first place (rank 1 or same as best score)
+    const tiedModels = comparison.ranking.filter(
+      (r) => r.score === comparison.bestScore && r.score > 0,
+    );
+
+    if (tiedModels.length > 1) {
+      // Show abbreviated names of tied models
+      const tiedNames = tiedModels.map((r) => {
+        const stat = stats.perModel.get(r.model);
+        return tinyModelName(stat?.model || r.model, stat?.variantConfig);
+      });
+
+      // If too many tied, show first 2 + count
+      if (tiedNames.length > 3) {
+        return `TIE: ${tiedNames.slice(0, 2).join(", ")} +${tiedNames.length - 2}`;
+      }
+      return `TIE: ${tiedNames.join(", ")}`;
+    }
     return "TIE";
   }
 
@@ -681,6 +743,33 @@ function formatWinnerCell(
   }
 
   return "-";
+}
+
+/** Very short model name for tie display */
+function tinyModelName(model: string, variantConfig?: VariantConfig): string {
+  // Ultra-short mappings for table display
+  const tinyNames: Record<string, string> = {
+    "claude-opus-4-5-20251101": "Opus",
+    "claude-sonnet-4-5-20250929": "Son",
+    "claude-haiku-4-5-20251001": "Haiku",
+    "gpt-5.1": "5.1",
+    "gpt-5.2": "5.2",
+    "gpt-5.2-2025": "5.2",
+    "gpt-4o": "4o",
+    "gpt-4o-mini": "4oM",
+    "gpt-4-turbo": "4T",
+    "gemini-3-pro-preview": "Gem3",
+    "gemini-2.5-pro": "Gem",
+    "gemini-2.5-flash": "GemF",
+  };
+
+  const baseName = tinyNames[model] || model.slice(0, 6);
+
+  // Add thinking indicator if present
+  if (variantConfig?.thinkingBudget !== undefined) {
+    return `${baseName}@T`;
+  }
+  return baseName;
 }
 
 /** Build the totals row */
@@ -718,6 +807,7 @@ function shortModelName(model: string, variantConfig?: VariantConfig): string {
     "gpt-4o": "GPT-4o",
     "gpt-4o-mini": "GPT-4o Mini",
     "gpt-4-turbo": "GPT-4 Turbo",
+    "gemini-3-pro-preview": "Gemini 3 Pro",
     "gemini-2.5-pro": "Gemini 2.5 Pro",
     "gemini-2.5-flash": "Gemini 2.5 Flash",
   };

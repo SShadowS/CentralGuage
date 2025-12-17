@@ -8,16 +8,22 @@ import type {
   LLMWorkResult,
   ParallelExecutionConfig,
 } from "./types.ts";
-import type {
-  GenerationContext,
-  LLMAdapter,
-  LLMRequest,
-  LLMResponse,
+import {
+  type ContinuationConfig,
+  DEFAULT_CONTINUATION_CONFIG,
+  type GenerationContext,
+  type LLMAdapter,
+  type LLMRequest,
 } from "../llm/types.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
+import {
+  type ContinuationResult,
+  createTruncationWarning,
+  generateWithContinuation,
+} from "../llm/continuation.ts";
 
 /**
  * Work pool for managing parallel LLM requests
@@ -28,16 +34,26 @@ export class LLMWorkPool {
   private activeRequests = 0;
   private shuttingDown = false;
   private templateRenderer: TemplateRenderer;
+  private continuationConfig: ContinuationConfig;
 
   constructor(
     config: ParallelExecutionConfig,
     rateLimiter?: ProviderRateLimiter,
+    continuationConfig?: ContinuationConfig,
   ) {
     this.config = config;
     this.rateLimiter = rateLimiter ?? getGlobalRateLimiter();
     this.templateRenderer = new TemplateRenderer(
       config.templateDir || "templates",
     );
+    this.continuationConfig = continuationConfig ?? DEFAULT_CONTINUATION_CONFIG;
+  }
+
+  /**
+   * Set continuation configuration
+   */
+  setContinuationConfig(config: ContinuationConfig): void {
+    this.continuationConfig = config;
   }
 
   /**
@@ -110,27 +126,46 @@ export class LLMWorkPool {
       // Get or create LLM adapter
       const adapter = this.getAdapter(item);
 
-      // Generate code
-      const llmResponse = await this.generateCode(item, adapter);
+      // Generate code with continuation support
+      const continuationResult = await this.generateCodeWithContinuation(
+        item,
+        adapter,
+      );
 
       // Extract code from response and clean it
-      const extracted = CodeExtractor.extract(llmResponse.content);
+      const extracted = CodeExtractor.extract(
+        continuationResult.response.content,
+      );
       const cleanedCode = CodeExtractor.cleanCode(
         extracted.code,
         extracted.language === "diff" ? "diff" : "al",
       );
 
       // Release lease with actual token count
-      this.rateLimiter.release(lease, llmResponse.usage.totalTokens);
+      this.rateLimiter.release(
+        lease,
+        continuationResult.response.usage.totalTokens,
+      );
 
-      return {
+      // Generate truncation warning if applicable
+      const truncationWarning = createTruncationWarning(
+        continuationResult.continuationCount,
+        continuationResult.wasTruncated,
+      );
+
+      const result: LLMWorkResult = {
         workItemId: item.id,
         success: true,
         code: cleanedCode,
-        llmResponse,
+        llmResponse: continuationResult.response,
         duration: Date.now() - startTime,
         readyForCompile: extracted.confidence > 0.5,
+        continuationCount: continuationResult.continuationCount,
       };
+      if (truncationWarning) {
+        result.truncationWarning = truncationWarning;
+      }
+      return result;
     } catch (error) {
       // Update rate limiter on error
       if (this.isRateLimitError(error)) {
@@ -169,12 +204,12 @@ export class LLMWorkPool {
   }
 
   /**
-   * Generate code using the LLM adapter
+   * Generate code with continuation support
    */
-  private async generateCode(
+  private async generateCodeWithContinuation(
     item: LLMWorkItem,
     adapter: LLMAdapter,
-  ): Promise<LLMResponse> {
+  ): Promise<ContinuationResult> {
     const context: GenerationContext = {
       taskId: item.taskManifest.id,
       attempt: item.attemptNumber,
@@ -191,9 +226,49 @@ export class LLMWorkPool {
       }
     }
 
-    // First attempt uses generateCode, retries use generateFix
+    // Create the generation function for the continuation helper
+    const generateFn = async (
+      request: LLMRequest,
+      ctx: GenerationContext,
+    ) => {
+      const previousAttempt =
+        item.previousAttempts[item.previousAttempts.length - 1];
+
+      if (item.attemptNumber === 1 || !previousAttempt) {
+        return await adapter.generateCode(request, ctx);
+      } else {
+        const errors = this.extractErrors(previousAttempt);
+        return await adapter.generateFix(
+          previousAttempt.extractedCode,
+          errors,
+          request,
+          ctx,
+        );
+      }
+    };
+
+    // Build the request
+    const request = await this.buildRequest(item, context);
+
+    // Use continuation helper for automatic handling of truncated responses
+    return generateWithContinuation(
+      generateFn,
+      request,
+      context,
+      this.continuationConfig,
+    );
+  }
+
+  /**
+   * Build LLM request for the work item
+   */
+  private async buildRequest(
+    item: LLMWorkItem,
+    _context: GenerationContext,
+  ): Promise<LLMRequest> {
     const previousAttempt =
       item.previousAttempts[item.previousAttempts.length - 1];
+
     if (item.attemptNumber === 1 || !previousAttempt) {
       // First attempt - render template with task description
       const promptTemplate = item.taskManifest.prompt_template || "code-gen.md";
@@ -205,13 +280,11 @@ export class LLMWorkPool {
           max_attempts: item.taskManifest.max_attempts,
         },
       );
-      const request: LLMRequest = {
+      return {
         prompt: renderedPrompt,
         temperature: item.context.temperature,
         maxTokens: item.context.maxTokens,
       };
-      const result = await adapter.generateCode(request, context);
-      return result.response;
     } else {
       // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
@@ -221,18 +294,11 @@ export class LLMWorkPool {
         errors,
         item.attemptNumber,
       );
-      const request: LLMRequest = {
+      return {
         prompt: fixPrompt,
         temperature: item.context.temperature,
         maxTokens: item.context.maxTokens,
       };
-      const result = await adapter.generateFix(
-        previousAttempt.extractedCode,
-        errors,
-        request,
-        context,
-      );
-      return result.response;
     }
   }
 

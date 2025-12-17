@@ -166,6 +166,14 @@ export interface ExecutionAttempt {
   tokensUsed: number;
   cost: number;
   duration: number;
+
+  // Step-by-step timing (in ms)
+  /** Duration of LLM call in ms */
+  llmDuration?: number | undefined;
+  /** Duration of compilation in ms */
+  compileDuration?: number | undefined;
+  /** Duration of test execution in ms (only if tests ran) */
+  testDuration?: number | undefined;
 }
 
 /**

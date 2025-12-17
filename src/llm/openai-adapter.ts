@@ -225,6 +225,21 @@ export class OpenAIAdapter implements LLMAdapter {
     );
   }
 
+  /**
+   * Get reasoning effort for supported models (o1, o3, GPT-5)
+   * Returns "low", "medium", or "high" if configured, undefined otherwise
+   */
+  private getReasoningEffort(): "low" | "medium" | "high" | undefined {
+    const budget = this.config.thinkingBudget;
+    if (typeof budget === "string") {
+      const lower = budget.toLowerCase();
+      if (lower === "low" || lower === "medium" || lower === "high") {
+        return lower as "low" | "medium" | "high";
+      }
+    }
+    return undefined;
+  }
+
   estimateCost(promptTokens: number, completionTokens: number): number {
     const modelCosts: Record<string, { input: number; output: number }> = {
       // 2025 GPT-5 pricing (estimated)
@@ -304,6 +319,9 @@ export class OpenAIAdapter implements LLMAdapter {
     const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
     const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
 
+    // Get reasoning effort for o1/o3/GPT-5 models (must be "low", "medium", or "high")
+    const reasoningEffort = this.getReasoningEffort();
+
     const completion = await this.client.chat.completions.create({
       model: this.config.model,
       messages,
@@ -312,7 +330,8 @@ export class OpenAIAdapter implements LLMAdapter {
         ? { max_completion_tokens: maxTokensValue }
         : { max_tokens: maxTokensValue }),
       ...(request.stop ? { stop: request.stop } : {}),
-    });
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
 
     const duration = Date.now() - startTime;
     const choice = completion.choices[0];

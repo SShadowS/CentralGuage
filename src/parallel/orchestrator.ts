@@ -107,6 +107,17 @@ export class ParallelBenchmarkOrchestrator {
   }
 
   /**
+   * Configure continuation behavior for truncated responses
+   * @param enabled Whether to enable automatic continuation (default: true)
+   */
+  setContinuationEnabled(enabled: boolean): void {
+    this.llmPool.setContinuationConfig({
+      enabled,
+      maxContinuations: 3,
+    });
+  }
+
+  /**
    * Subscribe to execution events
    */
   on(listener: EventListener): () => void {
@@ -311,11 +322,7 @@ export class ParallelBenchmarkOrchestrator {
     attemptNumber: number,
     llmResult: LLMWorkResult,
     workItemId: string,
-  ): Promise<{
-    compilationResult: import("./types.ts").CompilationResult;
-    testResult?: import("./types.ts").TestResult;
-    duration: number;
-  }> {
+  ): Promise<import("./types.ts").CompileWorkResult> {
     const compileItem: CompileWorkItem = {
       id: `compile_${executionId}_${attemptNumber}`,
       llmWorkItemId: workItemId,
@@ -539,11 +546,7 @@ export class ParallelBenchmarkOrchestrator {
   private createAttempt(
     attemptNumber: number,
     llmResult: LLMWorkResult,
-    compileResult: {
-      compilationResult: import("./types.ts").CompilationResult;
-      testResult?: import("./types.ts").TestResult;
-      duration: number;
-    },
+    compileResult: import("./types.ts").CompileWorkResult,
     context: TaskExecutionContext,
   ): ExecutionAttempt {
     const startTime = new Date(
@@ -596,9 +599,15 @@ export class ParallelBenchmarkOrchestrator {
       tokensUsed: llmResult.llmResponse?.usage.totalTokens ?? 0,
       cost: llmResult.llmResponse?.usage.estimatedCost ?? 0,
       duration: llmResult.duration + compileResult.duration,
+      // Step-by-step timing
+      llmDuration: llmResult.duration,
+      compileDuration: compileResult.compileDuration,
     };
     if (compileResult.testResult) {
       attempt.testResult = compileResult.testResult;
+    }
+    if (compileResult.testDuration !== undefined) {
+      attempt.testDuration = compileResult.testDuration;
     }
     return attempt;
   }
@@ -631,6 +640,9 @@ export class ParallelBenchmarkOrchestrator {
       tokensUsed: llmResult?.llmResponse?.usage.totalTokens ?? 0,
       cost: llmResult?.llmResponse?.usage.estimatedCost ?? 0,
       duration: llmResult?.duration ?? 0,
+      // Step timing: only LLM was attempted
+      llmDuration: llmResult?.duration ?? 0,
+      compileDuration: 0,
     };
   }
 

@@ -144,6 +144,12 @@ export interface LLMWorkResult {
 
   /** Ready for compilation */
   readyForCompile: boolean;
+
+  /** Warning about truncation (if response was or is truncated) */
+  truncationWarning?: string;
+
+  /** Number of continuation requests made (0 if none) */
+  continuationCount?: number;
 }
 
 /**
@@ -185,8 +191,14 @@ export interface CompileWorkResult {
   /** Test result (if compilation succeeded and tests configured) */
   testResult?: TestResult;
 
-  /** Duration of compile + test in ms */
+  /** Duration of compile + test in ms (total) */
   duration: number;
+
+  /** Duration of just the compilation in ms */
+  compileDuration: number;
+
+  /** Duration of just the test execution in ms (only if tests ran) */
+  testDuration?: number;
 }
 
 // =============================================================================
@@ -295,6 +307,17 @@ export interface AggregateStats {
 
   /** Total completion tokens */
   completionTokens: number;
+
+  // === Step timing stats ===
+
+  /** Total LLM call duration in ms */
+  totalLLMDuration: number;
+
+  /** Total compilation duration in ms */
+  totalCompileDuration: number;
+
+  /** Total test execution duration in ms */
+  totalTestDuration: number;
 }
 
 /**

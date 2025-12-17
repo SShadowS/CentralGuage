@@ -1938,6 +1938,7 @@ describe("runParallel() with mocked dependencies", () => {
               duration: 100,
             },
             duration: 100,
+            compileDuration: 100,
           };
         }
         return await originalEnqueue(item);

@@ -303,10 +303,14 @@ export class ResultAggregator {
     totalMalformed: number;
     promptTokens: number;
     completionTokens: number;
+    totalLLMDuration: number;
+    totalCompileDuration: number;
+    totalTestDuration: number;
   } {
     let passNum1 = 0, passNum2 = 0;
     let totalCompileErrors = 0, totalTestFailures = 0, totalMalformed = 0;
     let promptTokens = 0, completionTokens = 0;
+    let totalLLMDuration = 0, totalCompileDuration = 0, totalTestDuration = 0;
 
     for (const result of this.results) {
       // Count passes by attempt number
@@ -325,13 +329,17 @@ export class ResultAggregator {
         });
       }
 
-      // Sum up token usage from all attempts
+      // Sum up token usage and step timing from all attempts
       for (const attempt of result.attempts) {
         const usage = attempt.llmResponse?.usage;
         if (usage) {
           promptTokens += usage.promptTokens || 0;
           completionTokens += usage.completionTokens || 0;
         }
+        // Sum step timing
+        totalLLMDuration += attempt.llmDuration ?? 0;
+        totalCompileDuration += attempt.compileDuration ?? 0;
+        totalTestDuration += attempt.testDuration ?? 0;
       }
     }
 
@@ -343,6 +351,9 @@ export class ResultAggregator {
       totalMalformed,
       promptTokens,
       completionTokens,
+      totalLLMDuration,
+      totalCompileDuration,
+      totalTestDuration,
     };
   }
 
@@ -392,6 +403,10 @@ export class ResultAggregator {
         : 0,
       promptTokens: detailedStats.promptTokens,
       completionTokens: detailedStats.completionTokens,
+      // Step timing
+      totalLLMDuration: detailedStats.totalLLMDuration,
+      totalCompileDuration: detailedStats.totalCompileDuration,
+      totalTestDuration: detailedStats.totalTestDuration,
     };
   }
 

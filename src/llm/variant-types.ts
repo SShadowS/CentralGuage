@@ -18,11 +18,11 @@ export interface VariantConfig {
   timeout?: number;
   /**
    * Thinking/reasoning budget for supported models:
-   * - Claude 4.5+: Extended thinking token budget
-   * - OpenAI o1/o3: Reasoning effort (maps to reasoning_effort)
-   * - Gemini with thinking: Thinking token budget
+   * - Claude 4.5+: Extended thinking token budget (number)
+   * - OpenAI o1/o3/GPT-5: Reasoning effort ("low" | "medium" | "high")
+   * - Gemini with thinking: Thinking token budget (number)
    */
-  thinkingBudget?: number;
+  thinkingBudget?: number | string;
 }
 
 /**

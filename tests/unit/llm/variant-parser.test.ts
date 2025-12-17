@@ -182,6 +182,8 @@ describe("parseVariantSpec", () => {
       const variant = variants[0];
       assertExists(variant);
       assertEquals(variant.hasVariant, false);
+      // Config still has preset maxTokens applied
+      assertExists(variant.config.maxTokens);
     });
 
     it("should handle unknown parameter keys", () => {
@@ -190,8 +192,10 @@ describe("parseVariantSpec", () => {
       assertEquals(variants.length, 1);
       const variant = variants[0];
       assertExists(variant);
-      // Unknown params should be ignored, not cause errors
-      assertEquals(Object.keys(variant.config).length, 0);
+      // Unknown params should be ignored, hasVariant false since no valid params
+      assertEquals(variant.hasVariant, false);
+      // Config still has preset maxTokens applied
+      assertExists(variant.config.maxTokens);
     });
 
     it("should handle whitespace in parameters", () => {

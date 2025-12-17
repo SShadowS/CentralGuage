@@ -22,6 +22,7 @@
     "test": "deno test --allow-all --coverage=coverage",
     "test:watch": "deno test --allow-all --watch",
     "test:unit": "deno test --allow-all --coverage=coverage tests/unit/",
+    "test:status": "bash -c \"deno test --allow-all tests/unit/ 2>&1 | sed 's/\\x1b\\[[0-9;]*m//g' | grep -E '^ok \\||^FAILED \\|'\"",
     "test:integration": "deno test --allow-all --coverage=coverage tests/integration/",
     "test:e2e": "deno test --allow-all --coverage=coverage tests/e2e/",
     "coverage": "deno coverage coverage --lcov --output=coverage/lcov.info && deno coverage coverage",

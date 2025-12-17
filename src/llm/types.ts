@@ -12,9 +12,29 @@ export interface LLMConfig {
   // OpenRouter specific
   siteUrl?: string | undefined;
   siteName?: string | undefined;
-  // Extended thinking (Claude 4.5+)
-  thinkingBudget?: number | undefined;
+  // Extended thinking / reasoning effort
+  // Claude 4.5+: token budget (number)
+  // OpenAI o1/o3/GPT-5: reasoning effort ("low" | "medium" | "high")
+  thinkingBudget?: number | string | undefined;
+  // Continuation settings for handling truncated responses
+  continuation?: ContinuationConfig | undefined;
 }
+
+/**
+ * Configuration for automatic continuation when responses are truncated
+ */
+export interface ContinuationConfig {
+  /** Whether automatic continuation is enabled (default: true) */
+  enabled: boolean;
+  /** Maximum number of continuation requests (default: 3) */
+  maxContinuations: number;
+}
+
+/** Default continuation configuration */
+export const DEFAULT_CONTINUATION_CONFIG: ContinuationConfig = {
+  enabled: true,
+  maxContinuations: 3,
+};
 
 export interface LLMRequest {
   prompt: string;

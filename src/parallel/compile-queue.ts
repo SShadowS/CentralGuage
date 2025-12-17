@@ -194,11 +194,13 @@ export class CompileQueue {
     // Load the project
     const project = await ALProjectManager.loadProject(projectDir);
 
-    // Compile
+    // Compile (track time separately)
+    const compileStart = Date.now();
     const compilationResult = await this.containerProvider.compileProject(
       this.containerName,
       project,
     );
+    const compileDuration = Date.now() - compileStart;
 
     // Log compilation result if debug is enabled
     const debugLogger = DebugLogger.getInstance();
@@ -212,13 +214,16 @@ export class CompileQueue {
       );
     }
 
-    // Run tests if compilation succeeded and tests are configured
+    // Run tests if compilation succeeded and tests are configured (track time separately)
     let testResult: TestResult | undefined;
+    let testDuration: number | undefined;
     if (compilationResult.success && item.context.manifest.expected.testApp) {
+      const testStart = Date.now();
       testResult = await this.containerProvider.runTests(
         this.containerName,
         project,
       );
+      testDuration = Date.now() - testStart;
 
       // Log test result if debug is enabled
       if (debugLogger && testResult) {
@@ -250,9 +255,13 @@ export class CompileQueue {
       workItemId: item.id,
       compilationResult,
       duration: Date.now() - startTime,
+      compileDuration,
     };
     if (testResult) {
       result.testResult = testResult;
+    }
+    if (testDuration !== undefined) {
+      result.testDuration = testDuration;
     }
     return result;
   }

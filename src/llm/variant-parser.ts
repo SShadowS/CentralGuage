@@ -47,7 +47,6 @@ function resolveBaseModelsToVariants(
   variantConfig: VariantConfig,
   originalSpec?: string,
 ): ModelVariant[] {
-  const hasVariant = Object.keys(variantConfig).length > 0;
   const results: ModelVariant[] = [];
 
   // Check if it's a group - expand to all members
@@ -57,7 +56,8 @@ function resolveBaseModelsToVariants(
       const variants = resolveBaseModelsToVariants(
         member,
         variantConfig,
-        originalSpec || (hasVariant ? `${member}@...` : member),
+        originalSpec ||
+          (Object.keys(variantConfig).length > 0 ? `${member}@...` : member),
       );
       results.push(...variants);
     }
@@ -67,14 +67,26 @@ function resolveBaseModelsToVariants(
   // Resolve single model
   const { provider, model } = resolveProviderAndModel(baseSpec);
 
+  // Determine if user explicitly specified a variant (before applying preset defaults)
+  const hasUserSpecifiedVariant = Object.keys(variantConfig).length > 0;
+
+  // Apply preset's maxOutputTokens if not explicitly set in variant config
+  const effectiveConfig = { ...variantConfig };
+  if (effectiveConfig.maxTokens === undefined) {
+    const preset = MODEL_PRESETS[baseSpec];
+    if (preset?.maxOutputTokens) {
+      effectiveConfig.maxTokens = preset.maxOutputTokens;
+    }
+  }
+
   const variant: ModelVariant = {
     originalSpec: originalSpec || baseSpec,
     baseModel: baseSpec,
     provider,
     model,
-    config: variantConfig,
-    variantId: generateVariantId(provider, model, variantConfig),
-    hasVariant,
+    config: effectiveConfig,
+    variantId: generateVariantId(provider, model, variantConfig), // Use original variantConfig for ID
+    hasVariant: hasUserSpecifiedVariant, // Only true if user specified variant params
   };
 
   return [variant];
@@ -151,9 +163,17 @@ function parseAndSetVariantParam(
         result.systemPrompt = config.systemPrompts[value].content;
       }
       break;
-    case "thinkingBudget":
-      result.thinkingBudget = parseInt(value, 10);
+    case "thinkingBudget": {
+      // OpenAI uses string values: "low", "medium", "high"
+      // Claude/Gemini use numeric token budgets
+      const lowerValue = value.toLowerCase();
+      if (["low", "medium", "high"].includes(lowerValue)) {
+        result.thinkingBudget = lowerValue;
+      } else {
+        result.thinkingBudget = parseInt(value, 10);
+      }
       break;
+    }
   }
 }
 

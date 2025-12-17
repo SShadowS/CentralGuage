@@ -248,11 +248,13 @@ export class MockCompileQueue {
       workItemId: item.id,
       compilationResult,
       duration: compilationResult.duration,
+      compileDuration: compilationResult.duration,
     };
 
     // Add test result if compilation succeeded and tests are configured
     if (compilationResult.success && config.runTests !== false) {
       result.testResult = this.createTestResult(config);
+      result.testDuration = result.testResult.duration;
       result.duration += result.testResult.duration;
     }
 
@@ -315,13 +317,18 @@ export function createMockCompileWorkResult(
     duration: 1000,
     ...(compilationSuccess && { artifactPath: "/output/app.app" }),
   };
+  const compileDuration = compilationResult.duration;
   const result: CompileWorkResult = {
     workItemId: overrides?.workItemId ?? `mock-compile-${Date.now()}`,
     compilationResult,
     duration: overrides?.duration ?? 1000,
+    compileDuration: overrides?.compileDuration ?? compileDuration,
   };
   if (overrides?.testResult) {
     result.testResult = overrides.testResult;
+    if (overrides.testResult.duration !== undefined) {
+      result.testDuration = overrides.testResult.duration;
+    }
   }
   return result;
 }

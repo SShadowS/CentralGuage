@@ -16,6 +16,8 @@ export interface ModelPreset {
   readonly costTier: "free" | "budget" | "standard" | "premium";
   readonly performanceTier: "fast" | "balanced" | "quality";
   readonly category: string[];
+  /** Recommended max output tokens for this model (defaults to 4000 if not specified) */
+  readonly maxOutputTokens?: number;
 }
 
 export const MODEL_PRESETS: Record<string, ModelPreset> = {
@@ -29,6 +31,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "coding", "reasoning", "2025"],
+    maxOutputTokens: 16384,
   },
   "gpt-5-pro": {
     alias: "gpt-5-pro",
@@ -39,6 +42,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "quality", "2025"],
+    maxOutputTokens: 16384,
   },
   "codex-mini": {
     alias: "codex-mini",
@@ -49,6 +53,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "standard",
     performanceTier: "fast",
     category: ["coding", "fast", "2025"],
+    maxOutputTokens: 8192,
   },
   // OpenAI Models - GPT-4
   "gpt-4o": {
@@ -60,6 +65,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "coding", "reasoning"],
+    maxOutputTokens: 16384,
   },
   "gpt-4": {
     alias: "gpt-4",
@@ -70,6 +76,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "balanced",
     category: ["flagship", "coding"],
+    maxOutputTokens: 4096,
   },
   "gpt-3.5": {
     alias: "gpt-3.5",
@@ -80,6 +87,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "budget",
     performanceTier: "fast",
     category: ["budget", "speed"],
+    maxOutputTokens: 4096,
   },
   "o1": {
     alias: "o1",
@@ -90,6 +98,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["reasoning", "complex"],
+    maxOutputTokens: 32768,
   },
   "o3": {
     alias: "o3",
@@ -100,6 +109,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["reasoning", "flagship", "2025"],
+    maxOutputTokens: 100000,
   },
 
   // Anthropic Models - Claude 4.5 (2025)
@@ -112,47 +122,52 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "reasoning", "quality", "2025"],
+    maxOutputTokens: 16384,
   },
   "sonnet-4.5": {
     alias: "sonnet-4.5",
     provider: "anthropic",
-    model: "claude-sonnet-4-5-20251022",
+    model: "claude-sonnet-4-5-20250929",
     displayName: "Claude 4.5 Sonnet",
     description: "Balanced performance Claude 4.5 model",
     costTier: "standard",
     performanceTier: "balanced",
     category: ["flagship", "coding", "balanced", "2025"],
+    maxOutputTokens: 8192,
   },
   "haiku-4.5": {
     alias: "haiku-4.5",
     provider: "anthropic",
-    model: "claude-haiku-4-5-20251022",
+    model: "claude-haiku-4-5-20251001",
     displayName: "Claude 4.5 Haiku",
     description: "Fast and efficient Claude 4.5 model",
     costTier: "budget",
     performanceTier: "fast",
     category: ["budget", "speed", "2025"],
+    maxOutputTokens: 8192,
   },
   // Anthropic Models - Claude 4.5 (short aliases point to latest)
   "sonnet": {
     alias: "sonnet",
     provider: "anthropic",
-    model: "claude-sonnet-4-5-20251022",
+    model: "claude-sonnet-4-5-20250929",
     displayName: "Claude 4.5 Sonnet",
     description: "Balanced model for coding and analysis",
     costTier: "standard",
     performanceTier: "balanced",
     category: ["flagship", "coding", "balanced", "2025"],
+    maxOutputTokens: 8192,
   },
   "haiku": {
     alias: "haiku",
     provider: "anthropic",
-    model: "claude-haiku-4-5-20251022",
+    model: "claude-haiku-4-5-20251001",
     displayName: "Claude 4.5 Haiku",
     description: "Fast and efficient model for simple tasks",
     costTier: "budget",
     performanceTier: "fast",
     category: ["budget", "speed", "2025"],
+    maxOutputTokens: 8192,
   },
   "opus": {
     alias: "opus",
@@ -163,6 +178,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "reasoning", "quality", "2025"],
+    maxOutputTokens: 16384,
   },
 
   // Google Gemini Models - 2025
@@ -175,6 +191,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "multimodal", "reasoning", "2025"],
+    maxOutputTokens: 8192,
   },
   "gemini-2.5": {
     alias: "gemini-2.5",
@@ -185,6 +202,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "standard",
     performanceTier: "balanced",
     category: ["flagship", "balanced", "2025"],
+    maxOutputTokens: 8192,
   },
   "gemini-2.5-flash": {
     alias: "gemini-2.5-flash",
@@ -195,6 +213,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "budget",
     performanceTier: "fast",
     category: ["speed", "budget", "2025"],
+    maxOutputTokens: 65536,
   },
   // Google Gemini Models - Short aliases point to latest
   "gemini": {
@@ -206,6 +225,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["flagship", "multimodal", "2025"],
+    maxOutputTokens: 8192,
   },
   "gemini-flash": {
     alias: "gemini-flash",
@@ -216,6 +236,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "budget",
     performanceTier: "fast",
     category: ["budget", "speed", "2025"],
+    maxOutputTokens: 65536,
   },
 
   // Local Models (common ones)
@@ -228,6 +249,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "free",
     performanceTier: "balanced",
     category: ["local", "open-source"],
+    maxOutputTokens: 4096,
   },
   "codellama": {
     alias: "codellama",
@@ -238,6 +260,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "free",
     performanceTier: "balanced",
     category: ["local", "coding", "open-source"],
+    maxOutputTokens: 4096,
   },
 
   // OpenRouter Models (unified API gateway)
@@ -250,6 +273,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "premium",
     performanceTier: "quality",
     category: ["openrouter", "flagship"],
+    maxOutputTokens: 16384,
   },
   "openrouter-claude": {
     alias: "openrouter-claude",
@@ -260,6 +284,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "standard",
     performanceTier: "balanced",
     category: ["openrouter", "balanced"],
+    maxOutputTokens: 8192,
   },
   "openrouter-llama": {
     alias: "openrouter-llama",
@@ -270,6 +295,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "budget",
     performanceTier: "balanced",
     category: ["openrouter", "open-source"],
+    maxOutputTokens: 4096,
   },
   "openrouter-deepseek": {
     alias: "openrouter-deepseek",
@@ -280,6 +306,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "budget",
     performanceTier: "balanced",
     category: ["openrouter", "budget", "open-source"],
+    maxOutputTokens: 8192,
   },
 
   // Mock for testing
@@ -292,6 +319,7 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     costTier: "free",
     performanceTier: "fast",
     category: ["testing", "development"],
+    maxOutputTokens: 4096,
   },
 };
 
