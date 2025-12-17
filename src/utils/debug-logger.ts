@@ -770,4 +770,83 @@ export class DebugLogger {
       providersUsed: Array.from(this.logFiles.keys()),
     };
   }
+
+  /**
+   * Save AL project and compiled artifacts when verbose logging is enabled
+   * @param taskId - Task identifier
+   * @param model - Model/variant identifier
+   * @param attempt - Attempt number
+   * @param projectDir - Path to temp project directory (contains .al files, app.json)
+   * @param artifactPath - Path to compiled .app file (optional, may not exist if compile failed)
+   */
+  async saveVerboseArtifacts(
+    taskId: string,
+    model: string,
+    attempt: number,
+    projectDir: string,
+    artifactPath?: string,
+  ): Promise<void> {
+    if (!this.config.enabled || this.config.logLevel !== "verbose") {
+      return;
+    }
+
+    try {
+      // Sanitize model name for filesystem safety
+      const sanitizedModel = model.replace(/[\/\\:*?"<>|]/g, "_");
+      const artifactDir =
+        `${this.config.outputDir}/artifacts/${taskId}/${sanitizedModel}/attempt_${attempt}`;
+      await Deno.mkdir(artifactDir, { recursive: true });
+
+      // Copy entire project directory (preserves all .al files, app.json)
+      const projectDestDir = `${artifactDir}/project`;
+      await this.copyDirectory(projectDir, projectDestDir);
+
+      // Copy .app file if it exists
+      if (artifactPath) {
+        try {
+          const stat = await Deno.stat(artifactPath);
+          if (stat.isFile) {
+            const outputDir = `${artifactDir}/output`;
+            await Deno.mkdir(outputDir, { recursive: true });
+            const appFileName = artifactPath.split(/[/\\]/).pop() ||
+              "compiled.app";
+            await Deno.copyFile(artifactPath, `${outputDir}/${appFileName}`);
+          }
+        } catch {
+          // .app file doesn't exist or can't be accessed, skip
+        }
+      }
+
+      console.log(
+        `🔍 [Debug] Saved verbose artifacts: ${artifactDir}`,
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️  [Debug] Failed to save verbose artifacts: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Recursively copy a directory
+   */
+  private async copyDirectory(src: string, dest: string): Promise<void> {
+    await Deno.mkdir(dest, { recursive: true });
+
+    for await (const entry of Deno.readDir(src)) {
+      const srcPath = `${src}/${entry.name}`;
+      const destPath = `${dest}/${entry.name}`;
+
+      if (entry.isDirectory) {
+        // Skip output directory to avoid duplication (we handle .app separately)
+        if (entry.name !== "output") {
+          await this.copyDirectory(srcPath, destPath);
+        }
+      } else if (entry.isFile) {
+        await Deno.copyFile(srcPath, destPath);
+      }
+    }
+  }
 }

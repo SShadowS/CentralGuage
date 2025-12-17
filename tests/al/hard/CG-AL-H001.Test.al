@@ -1,4 +1,4 @@
-codeunit 80101 "CG-AL-H001 Test"
+codeunit 70099 "CG-AL-H001 Test"
 {
     // Tests for CG-AL-H001: Hard - Tax Calculator
     // Tests complex conditional logic, boundary conditions, and decimal rounding

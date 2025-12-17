@@ -1,4 +1,4 @@
-codeunit 80205 "CG-AL-M005 Mock HTTP Handler"
+codeunit 70095 "CG-AL-M005 Mock HTTP Handler"
 {
     // Mock HTTP Handler for testing External Payment Service
     // Simulates various HTTP response scenarios for payment gateway integration

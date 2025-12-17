@@ -3,7 +3,7 @@
  * Ensures only one compilation runs at a time
  */
 
-import { basename, join } from "@std/path";
+import { dirname, join } from "@std/path";
 import { exists } from "@std/fs";
 import type {
   CompileWorkItem,
@@ -232,6 +232,17 @@ export class CompileQueue {
       }
     }
 
+    // Save verbose artifacts (AL files and .app) before cleanup
+    if (debugLogger) {
+      await debugLogger.saveVerboseArtifacts(
+        item.context.manifest.id,
+        item.context.variantId || item.context.llmModel,
+        item.attemptNumber,
+        projectDir,
+        compilationResult.artifactPath,
+      );
+    }
+
     // Clean up temp project
     await this.cleanupTempProject(projectDir);
 
@@ -298,17 +309,29 @@ export class CompileQueue {
     const codeFileName = `${item.context.manifest.id}.al`;
     await Deno.writeTextFile(`${tempDir}/${codeFileName}`, item.code);
 
-    // Copy test file if testApp is specified
+    // Copy test file(s) if testApp is specified
+    // Also copies any helper files (enums, mocks) with the same task ID prefix
     if (hasTestApp) {
       const testAppPath = item.context.manifest.expected.testApp!;
       // Resolve testApp path relative to project root
       const fullTestPath = join(Deno.cwd(), testAppPath);
-      if (await exists(fullTestPath)) {
-        const testFileName = basename(testAppPath);
-        await Deno.copyFile(fullTestPath, join(tempDir, testFileName));
+      const testDir = dirname(fullTestPath);
+      const taskId = item.context.manifest.id;
+
+      if (await exists(testDir)) {
+        // Copy all .al files with the task ID prefix (test file + helpers)
+        for await (const entry of Deno.readDir(testDir)) {
+          if (
+            entry.isFile && entry.name.endsWith(".al") &&
+            entry.name.startsWith(taskId)
+          ) {
+            const srcPath = join(testDir, entry.name);
+            await Deno.copyFile(srcPath, join(tempDir, entry.name));
+          }
+        }
       } else {
         console.warn(
-          `[CompileQueue] Test file not found: ${fullTestPath}`,
+          `[CompileQueue] Test directory not found: ${testDir}`,
         );
       }
     }

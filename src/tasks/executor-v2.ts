@@ -2,7 +2,7 @@
  * Task Executor v2 - Uses transformation layer for clean architecture
  */
 
-import { basename, join } from "@std/path";
+import { basename, dirname, join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
 import type {
   ExecutionAttempt,
@@ -279,6 +279,17 @@ export class TaskExecutorV2 {
       }
     }
 
+    // Save verbose artifacts (AL files and .app) if debug is enabled
+    if (debugLogger) {
+      await debugLogger.saveVerboseArtifacts(
+        context.manifest.id,
+        context.variantId || context.llmModel,
+        attemptNumber,
+        projectDir,
+        compilationResult.artifactPath,
+      );
+    }
+
     // Evaluate success
     const { success, score, reasons } = this.evaluateAttempt(
       context,
@@ -439,17 +450,29 @@ export class TaskExecutorV2 {
     );
     await Deno.writeTextFile(codeFile, code);
 
-    // Copy test file if testApp is specified
+    // Copy test file(s) if testApp is specified
+    // Also copies any helper files (enums, mocks) with the same task ID prefix
     if (hasTestApp) {
       const testAppPath = context.manifest.expected.testApp!;
       // Resolve testApp path relative to project root
       const fullTestPath = join(Deno.cwd(), testAppPath);
-      if (await exists(fullTestPath)) {
-        const testFileName = basename(testAppPath);
-        await Deno.copyFile(fullTestPath, join(tempDir, testFileName));
+      const testDir = dirname(fullTestPath);
+      const taskId = context.manifest.id;
+
+      if (await exists(testDir)) {
+        // Copy all .al files with the task ID prefix (test file + helpers)
+        for await (const entry of Deno.readDir(testDir)) {
+          if (
+            entry.isFile && entry.name.endsWith(".al") &&
+            entry.name.startsWith(taskId)
+          ) {
+            const srcPath = join(testDir, entry.name);
+            await Deno.copyFile(srcPath, join(tempDir, entry.name));
+          }
+        }
       } else {
         console.warn(
-          `[Executor] Test file not found: ${fullTestPath}`,
+          `[Executor] Test directory not found: ${testDir}`,
         );
       }
     }
@@ -754,6 +777,17 @@ export class TaskExecutorV2 {
           testResult,
         );
       }
+    }
+
+    // Save verbose artifacts (AL files and .app) if debug is enabled
+    if (debugLogger) {
+      await debugLogger.saveVerboseArtifacts(
+        context.manifest.id,
+        context.variantId || context.llmModel,
+        attemptNumber,
+        projectDir,
+        compilationResult.artifactPath,
+      );
     }
 
     const result: {
