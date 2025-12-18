@@ -268,9 +268,12 @@ export async function* generateWithContinuationStream(
   let lastResult: StreamResult | undefined;
 
   // First generation - yield all chunks with global accumulation
+  // Use manual iteration to properly capture the return value
   const firstGenerator = generateStreamFn(request, context, options);
 
-  for await (const chunk of firstGenerator) {
+  let iterResult = await firstGenerator.next();
+  while (!iterResult.done) {
+    const chunk = iterResult.value;
     if (!chunk.done) {
       accumulatedContent += chunk.text;
 
@@ -283,11 +286,11 @@ export async function* generateWithContinuationStream(
 
       yield adjustedChunk;
     }
+    iterResult = await firstGenerator.next();
   }
 
-  // Get the final result from the generator
-  const firstGenResult = await firstGenerator.next();
-  lastResult = firstGenResult.value as StreamResult;
+  // When done is true, iterResult.value contains the StreamResult
+  lastResult = iterResult.value as StreamResult;
 
   // Accumulate usage from first generation
   totalUsage.promptTokens += lastResult.response.usage.promptTokens;
@@ -332,9 +335,12 @@ export async function* generateWithContinuationStream(
     );
 
     // Track this continuation's content for overlap detection
+    // Use manual iteration to properly capture the return value
     let continuationContent = "";
 
-    for await (const chunk of contGenerator) {
+    let contIterResult = await contGenerator.next();
+    while (!contIterResult.done) {
+      const chunk = contIterResult.value;
       if (!chunk.done) {
         continuationContent += chunk.text;
 
@@ -347,11 +353,11 @@ export async function* generateWithContinuationStream(
 
         yield adjustedChunk;
       }
+      contIterResult = await contGenerator.next();
     }
 
-    // Get the final result from continuation
-    const contResult = await contGenerator.next();
-    lastResult = contResult.value as StreamResult;
+    // When done is true, contIterResult.value contains the StreamResult
+    lastResult = contIterResult.value as StreamResult;
 
     // Merge content with overlap detection
     const trimmedContinuation = continuationContent.trimStart();

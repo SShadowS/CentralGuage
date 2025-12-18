@@ -12,8 +12,10 @@ import {
   type ContinuationConfig,
   DEFAULT_CONTINUATION_CONFIG,
   type GenerationContext,
+  isStreamingAdapter,
   type LLMAdapter,
   type LLMRequest,
+  type StreamingLLMAdapter,
 } from "../llm/types.ts";
 import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
@@ -23,6 +25,8 @@ import {
   type ContinuationResult,
   createTruncationWarning,
   generateWithContinuation,
+  generateWithContinuationStream,
+  type StreamingContinuationResult,
 } from "../llm/continuation.ts";
 
 /**
@@ -226,29 +230,39 @@ export class LLMWorkPool {
       }
     }
 
+    // Build the request
+    const request = await this.buildRequest(item, context);
+
+    // Use streaming if callback provided and adapter supports it
+    if (item.onChunk && isStreamingAdapter(adapter)) {
+      return this.generateCodeWithStreaming(
+        item,
+        adapter as StreamingLLMAdapter,
+        request,
+        context,
+      );
+    }
+
     // Create the generation function for the continuation helper
     const generateFn = async (
-      request: LLMRequest,
+      req: LLMRequest,
       ctx: GenerationContext,
     ) => {
       const previousAttempt =
         item.previousAttempts[item.previousAttempts.length - 1];
 
       if (item.attemptNumber === 1 || !previousAttempt) {
-        return await adapter.generateCode(request, ctx);
+        return await adapter.generateCode(req, ctx);
       } else {
         const errors = this.extractErrors(previousAttempt);
         return await adapter.generateFix(
           previousAttempt.extractedCode,
           errors,
-          request,
+          req,
           ctx,
         );
       }
     };
-
-    // Build the request
-    const request = await this.buildRequest(item, context);
 
     // Use continuation helper for automatic handling of truncated responses
     return generateWithContinuation(
@@ -257,6 +271,81 @@ export class LLMWorkPool {
       context,
       this.continuationConfig,
     );
+  }
+
+  /**
+   * Generate code with streaming support
+   */
+  private async generateCodeWithStreaming(
+    item: LLMWorkItem,
+    adapter: StreamingLLMAdapter,
+    request: LLMRequest,
+    context: GenerationContext,
+  ): Promise<ContinuationResult> {
+    const previousAttempt =
+      item.previousAttempts[item.previousAttempts.length - 1];
+
+    // Create streaming generator function - must pass options through!
+    const generateStreamFn = (
+      req: LLMRequest,
+      ctx: GenerationContext,
+      opts?: import("../llm/types.ts").StreamOptions,
+    ) => {
+      if (item.attemptNumber === 1 || !previousAttempt) {
+        return adapter.generateCodeStream(req, ctx, opts);
+      } else {
+        const errors = this.extractErrors(previousAttempt);
+        return adapter.generateFixStream(
+          previousAttempt.extractedCode,
+          errors,
+          req,
+          ctx,
+          opts,
+        );
+      }
+    };
+
+    // Use streaming continuation
+    const generator = generateWithContinuationStream(
+      generateStreamFn,
+      request,
+      context,
+      this.continuationConfig,
+      {
+        onChunk: (chunk) => {
+          if (!chunk.done && item.onChunk) {
+            item.onChunk(chunk.index);
+          }
+        },
+      },
+    );
+
+    // Consume the generator and get final result
+    // Must use manual iteration to access generator's return value
+    let iterResult = await generator.next();
+
+    while (!iterResult.done) {
+      // Chunks are processed via onChunk callback
+      iterResult = await generator.next();
+    }
+
+    // When done is true, value contains the return value
+    const result: StreamingContinuationResult | undefined = iterResult.value;
+
+    if (!result) {
+      throw new Error("Streaming completed without result");
+    }
+
+    // Convert StreamingContinuationResult to ContinuationResult
+    return {
+      code: result.content,
+      language: "al",
+      response: result.response,
+      extractedFromDelimiters: false,
+      continuationCount: result.continuationCount,
+      wasTruncated: result.wasTruncated,
+      totalUsage: result.totalUsage,
+    };
   }
 
   /**
@@ -456,6 +545,7 @@ export function createWorkItems(
   models: Array<{ provider: string; model: string }>,
   attemptNumber = 1,
   previousAttempts: import("./types.ts").ExecutionAttempt[] = [],
+  onChunk?: (model: string, chunkIndex: number) => void,
 ): LLMWorkItem[] {
   return models.map((m, index) => ({
     id: `${taskManifest.id}_${m.model}_${attemptNumber}_${Date.now()}`,
@@ -471,5 +561,6 @@ export function createWorkItems(
       llmProvider: m.provider,
       llmModel: m.model,
     },
+    onChunk: onChunk ? (idx: number) => onChunk(m.model, idx) : undefined,
   }));
 }
