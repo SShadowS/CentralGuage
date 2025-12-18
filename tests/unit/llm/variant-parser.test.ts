@@ -55,7 +55,7 @@ describe("parseVariantSpec", () => {
     });
 
     it("should parse multiple variant parameters", () => {
-      const variants = parseVariantSpec("sonnet@temp=0.7,tokens=8000");
+      const variants = parseVariantSpec("sonnet@temp=0.7;tokens=8000");
 
       assertEquals(variants.length, 1);
       const variant = variants[0];
@@ -199,7 +199,7 @@ describe("parseVariantSpec", () => {
     });
 
     it("should handle whitespace in parameters", () => {
-      const variants = parseVariantSpec("sonnet@ temp = 0.5 , tokens = 1000 ");
+      const variants = parseVariantSpec("sonnet@ temp = 0.5 ; tokens = 1000 ");
 
       assertEquals(variants.length, 1);
       const variant = variants[0];
@@ -280,7 +280,7 @@ describe("getVariantDisplayName", () => {
   });
 
   it("should include multiple parameters in suffix", () => {
-    const variants = parseVariantSpec("sonnet@temp=0.5,tokens=8000");
+    const variants = parseVariantSpec("sonnet@temp=0.5;tokens=8000");
     const variant = variants[0];
     assertExists(variant);
 

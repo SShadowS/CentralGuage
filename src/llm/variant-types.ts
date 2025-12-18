@@ -125,5 +125,5 @@ export function generateVariantId(
     return baseId;
   }
 
-  return `${baseId}@${parts.join(",")}`;
+  return `${baseId}@${parts.join(";")}`;
 }

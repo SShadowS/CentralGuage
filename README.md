@@ -105,11 +105,11 @@ Compare the same model with different configurations using the `@` syntax:
 # Compare different temperatures
 deno task bench --llms "opus@temp=0.1,opus@temp=0.5,opus@temp=0.9"
 
-# Override multiple parameters
-deno task bench --llms "gpt-5.2@temp=0.2,maxTokens=8000"
+# Override multiple parameters (use semicolon to separate params within a variant)
+deno task bench --llms "gpt-5.2@temp=0.2;maxTokens=8000"
 
 # Compare different thinking budgets (for reasoning models)
-deno task bench --llms "opus@thinking=10000,opus@thinking=50000"
+deno task bench --llms "opus@thinking=10000;tokens=16384,opus@thinking=16000;tokens=20000"
 deno task bench --llms "o3@reasoning=5000,o3@reasoning=20000"
 
 # Use named profiles from config
@@ -131,6 +131,9 @@ deno task bench --llms "opus@profile=conservative,opus@profile=creative"
 - **Claude 4.5+**: Extended thinking token budget
 - **OpenAI o1/o3**: Maps to reasoning effort
 - **Gemini**: Thinking token budget for supported models
+
+> **Note**: For Claude extended thinking without streaming, `max_tokens` must be ≤21,333.
+> Use `thinking=16000;tokens=20000` for safe non-streaming operation. Higher budgets require streaming support.
 
 ### Config File Profiles
 

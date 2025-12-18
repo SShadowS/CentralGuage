@@ -286,10 +286,24 @@ export class AnthropicAdapter implements LLMAdapter {
       });
     }
 
-    const message = await this.client.messages.create({
+    // Check if extended thinking is enabled
+    const thinkingBudget = typeof this.config.thinkingBudget === "number"
+      ? this.config.thinkingBudget
+      : undefined;
+
+    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
+    const temperature = thinkingBudget !== undefined
+      ? 1
+      : (request.temperature ?? this.config.temperature ?? 0.1);
+
+    // When thinking is enabled, max_tokens should accommodate both thinking and output
+    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    // Build the request parameters
+    // deno-lint-ignore no-explicit-any
+    const params: any = {
       model: this.config.model,
-      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
-      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      max_tokens: maxTokens,
       messages: [
         {
           role: "user",
@@ -298,10 +312,24 @@ export class AnthropicAdapter implements LLMAdapter {
       ],
       ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
       ...(request.stop ? { stop_sequences: request.stop } : {}),
-    });
+    };
+
+    // Add thinking configuration if budget is set
+    if (thinkingBudget !== undefined) {
+      params.thinking = {
+        type: "enabled",
+        budget_tokens: thinkingBudget,
+      };
+      // Temperature cannot be set when thinking is enabled - omit it entirely
+    } else {
+      params.temperature = temperature;
+    }
+
+    const message = await this.client.messages.create(params);
 
     const duration = Date.now() - startTime;
 
+    // Extract text content (exclude thinking blocks from output)
     const contentText = message.content
       .filter((block): block is Anthropic.TextBlock => block.type === "text")
       .map((block) => block.text)

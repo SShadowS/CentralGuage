@@ -14,7 +14,7 @@ import { MODEL_GROUPS, MODEL_PRESETS } from "./model-presets.ts";
 
 /**
  * Parse a model spec with optional variant configuration
- * @param spec e.g., "sonnet@temp=0.5,prompt=coding" or "sonnet@profile=conservative"
+ * @param spec e.g., "sonnet@temp=0.5;prompt=coding" or "sonnet@profile=conservative"
  * @param config Config containing systemPrompts and variantProfiles
  */
 export function parseVariantSpec(
@@ -186,8 +186,8 @@ function parseVariantConfig(
 ): VariantConfig {
   const result: VariantConfig = {};
 
-  // Parse key=value pairs
-  const pairs = variantSpec.split(",").map((p) => p.trim()).filter((p) => p);
+  // Parse key=value pairs (semicolon-separated to avoid conflict with CLI comma separator)
+  const pairs = variantSpec.split(";").map((p) => p.trim()).filter((p) => p);
 
   for (const pair of pairs) {
     const eqIndex = pair.indexOf("=");
@@ -264,5 +264,5 @@ export function getVariantDisplayName(variant: ModelVariant): string {
     parts.push(`thinking=${variant.config.thinkingBudget}`);
   }
 
-  return parts.length > 0 ? `${baseName}@${parts.join(",")}` : baseName;
+  return parts.length > 0 ? `${baseName}@${parts.join(";")}` : baseName;
 }
