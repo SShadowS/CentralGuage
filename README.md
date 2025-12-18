@@ -4,6 +4,7 @@
 
 > [!IMPORTANT]
 > Currently only pre-made containers are supported. Create a BC27 container with TestToolkit installed before running benchmarks:
+>
 > ```powershell
 > $cred = New-Object PSCredential 'admin', (ConvertTo-SecureString 'admin' -AsPlainText -Force)
 > New-BcContainer -containerName Cronus27 -credential $cred -artifactUrl (Get-BCArtifactUrl -country us -version 27) -includeTestToolkit
@@ -22,6 +23,7 @@ CentralGauge evaluates large language models on their ability to generate, debug
 - **Two-pass evaluation** - Models get a second chance to fix compilation errors
 - **Containerized testing** - Isolated Business Central environments via Docker
 - **Parallel execution** - Run multiple models and tasks concurrently (enabled by default)
+- **Streaming support** - Real-time progress feedback during code generation
 - **Rich reporting** - JSON data + beautiful HTML reports
 - **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, OpenRouter, and local LLMs
 - **Model variants** - Compare same model with different temperatures/prompts

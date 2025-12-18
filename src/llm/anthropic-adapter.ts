@@ -2,17 +2,21 @@ import Anthropic from "@anthropic-ai/sdk";
 import type {
   CodeGenerationResult,
   GenerationContext,
-  LLMAdapter,
   LLMConfig,
   LLMRequest,
   LLMResponse,
+  StreamChunk,
+  StreamingLLMAdapter,
+  StreamOptions,
+  StreamResult,
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 
-export class AnthropicAdapter implements LLMAdapter {
+export class AnthropicAdapter implements StreamingLLMAdapter {
   readonly name = "anthropic";
+  readonly supportsStreaming = true;
   readonly supportedModels = [
     // Claude 4.5 models (latest)
     "claude-opus-4-5-20251101",
@@ -370,6 +374,223 @@ export class AnthropicAdapter implements LLMAdapter {
         return "length";
       default:
         return "error";
+    }
+  }
+
+  // ============================================================================
+  // Streaming Methods
+  // ============================================================================
+
+  async *generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      `[Anthropic] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+    );
+
+    const result = yield* this.streamAnthropic(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "al");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "anthropic",
+        "generateCode",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  async *generateFixStream(
+    _originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      `[Anthropic] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
+    );
+
+    const result = yield* this.streamAnthropic(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "diff");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "anthropic",
+        "generateFix",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  private async *streamAnthropic(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const startTime = Date.now();
+
+    if (!this.client) {
+      if (!this.config.apiKey) {
+        throw new Error(
+          "Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable.",
+        );
+      }
+      this.client = new Anthropic({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl,
+        timeout: this.config.timeout,
+      });
+    }
+
+    // Check if extended thinking is enabled
+    const thinkingBudget = typeof this.config.thinkingBudget === "number"
+      ? this.config.thinkingBudget
+      : undefined;
+
+    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
+    const temperature = thinkingBudget !== undefined
+      ? 1
+      : (request.temperature ?? this.config.temperature ?? 0.1);
+
+    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    // Build the request parameters
+    // deno-lint-ignore no-explicit-any
+    const params: any = {
+      model: this.config.model,
+      max_tokens: maxTokens,
+      messages: [
+        {
+          role: "user",
+          content: request.prompt,
+        },
+      ],
+      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
+      ...(request.stop ? { stop_sequences: request.stop } : {}),
+    };
+
+    // Add thinking configuration if budget is set
+    if (thinkingBudget !== undefined) {
+      params.thinking = {
+        type: "enabled",
+        budget_tokens: thinkingBudget,
+      };
+      // Temperature cannot be set when thinking is enabled
+    } else {
+      params.temperature = temperature;
+    }
+
+    let accumulatedText = "";
+    let chunkIndex = 0;
+
+    try {
+      const stream = this.client.messages.stream(params);
+
+      // Handle abort signal
+      if (options?.abortSignal) {
+        options.abortSignal.addEventListener("abort", () => {
+          stream.abort();
+        });
+      }
+
+      for await (const event of stream) {
+        // Handle text delta events - the main content chunks
+        if (event.type === "content_block_delta") {
+          const delta = event.delta;
+          if (delta.type === "text_delta") {
+            accumulatedText += delta.text;
+
+            const chunk: StreamChunk = {
+              text: delta.text,
+              accumulatedText,
+              done: false,
+              index: chunkIndex++,
+            };
+
+            // Call optional callback
+            options?.onChunk?.(chunk);
+
+            yield chunk;
+          }
+        }
+        // Note: message_start and message_delta events contain token counts,
+        // but we get accurate final counts from stream.finalMessage()
+      }
+
+      // Get final message for complete usage data
+      const finalMessage = await stream.finalMessage();
+
+      const duration = Date.now() - startTime;
+
+      const usage: TokenUsage = {
+        promptTokens: finalMessage.usage.input_tokens,
+        completionTokens: finalMessage.usage.output_tokens,
+        totalTokens: finalMessage.usage.input_tokens +
+          finalMessage.usage.output_tokens,
+        estimatedCost: this.estimateCost(
+          finalMessage.usage.input_tokens,
+          finalMessage.usage.output_tokens,
+        ),
+      };
+
+      const response: LLMResponse = {
+        content: accumulatedText,
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: this.mapFinishReason(finalMessage.stop_reason),
+      };
+
+      const result: StreamResult = {
+        content: accumulatedText,
+        response,
+        chunkCount: chunkIndex,
+      };
+
+      // Final chunk to signal completion
+      const finalChunk: StreamChunk = {
+        text: "",
+        accumulatedText,
+        done: true,
+        usage,
+        index: chunkIndex,
+      };
+
+      options?.onChunk?.(finalChunk);
+      yield finalChunk;
+
+      options?.onComplete?.(result);
+
+      return result;
+    } catch (error) {
+      options?.onError?.(error as Error);
+      throw error;
     }
   }
 }

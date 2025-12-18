@@ -102,3 +102,95 @@ export interface LLMAdapter {
   estimateCost(promptTokens: number, completionTokens: number): number;
   isHealthy(): Promise<boolean>;
 }
+
+// ============================================================================
+// Streaming Support Types
+// ============================================================================
+
+/**
+ * A single chunk from a streaming response
+ */
+export interface StreamChunk {
+  /** The text content of this chunk */
+  text: string;
+  /** Cumulative text received so far */
+  accumulatedText: string;
+  /** Whether this is the final chunk */
+  done: boolean;
+  /** Partial usage data (may only be complete on final chunk) */
+  usage?: Partial<TokenUsage>;
+  /** Index of this chunk (0-based) */
+  index: number;
+}
+
+/**
+ * Final result after streaming completes
+ */
+export interface StreamResult {
+  /** The complete response content */
+  content: string;
+  /** The LLM response with full metrics */
+  response: LLMResponse;
+  /** Number of chunks streamed */
+  chunkCount: number;
+}
+
+/**
+ * Callback for streaming progress updates
+ */
+export type StreamCallback = (chunk: StreamChunk) => void;
+
+/**
+ * Options for streaming generation
+ */
+export interface StreamOptions {
+  /** Callback invoked for each chunk */
+  onChunk?: StreamCallback;
+  /** Callback invoked on completion */
+  onComplete?: (result: StreamResult) => void;
+  /** Callback invoked on error */
+  onError?: (error: Error) => void;
+  /** Signal for aborting the stream */
+  abortSignal?: AbortSignal;
+}
+
+/**
+ * Extended adapter interface with streaming support
+ */
+export interface StreamingLLMAdapter extends LLMAdapter {
+  /** Whether this adapter supports streaming */
+  readonly supportsStreaming: boolean;
+
+  /**
+   * Generate code with streaming response
+   * Returns an async generator yielding chunks
+   */
+  generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined>;
+
+  /**
+   * Generate fix with streaming response
+   */
+  generateFixStream(
+    originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined>;
+}
+
+/**
+ * Type guard to check if an adapter supports streaming
+ */
+export function isStreamingAdapter(
+  adapter: LLMAdapter,
+): adapter is StreamingLLMAdapter {
+  return (
+    "supportsStreaming" in adapter &&
+    (adapter as StreamingLLMAdapter).supportsStreaming === true
+  );
+}

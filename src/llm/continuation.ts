@@ -11,6 +11,9 @@ import {
   type GenerationContext,
   type LLMRequest,
   type LLMResponse,
+  type StreamChunk,
+  type StreamOptions,
+  type StreamResult,
   type TokenUsage,
 } from "./types.ts";
 
@@ -212,4 +215,191 @@ export function createTruncationWarning(
     return `Response required ${continuationCount} continuation(s) to complete.`;
   }
   return null;
+}
+
+// ============================================================================
+// Streaming Continuation Support
+// ============================================================================
+
+/**
+ * Function type for generating a streaming response (without continuation)
+ */
+export type GenerateStreamFn = (
+  request: LLMRequest,
+  context: GenerationContext,
+  options?: StreamOptions,
+) => AsyncGenerator<StreamChunk, StreamResult, undefined>;
+
+/**
+ * Result of a streaming continuation-aware generation
+ */
+export interface StreamingContinuationResult extends StreamResult {
+  /** Number of continuation requests made (0 if response was complete) */
+  continuationCount: number;
+  /** Whether the final response was still truncated after max continuations */
+  wasTruncated: boolean;
+  /** Combined token usage across all requests */
+  totalUsage: TokenUsage;
+}
+
+/**
+ * Generate with automatic continuation support using streaming
+ * If response is truncated (finishReason === "length"), automatically
+ * request continuation until complete or max attempts reached.
+ *
+ * Yields chunks from each generation, with accumulatedText updated across
+ * continuations.
+ */
+export async function* generateWithContinuationStream(
+  generateStreamFn: GenerateStreamFn,
+  request: LLMRequest,
+  context: GenerationContext,
+  config: ContinuationConfig = DEFAULT_CONTINUATION_CONFIG,
+  options?: StreamOptions,
+): AsyncGenerator<StreamChunk, StreamingContinuationResult, undefined> {
+  let continuationCount = 0;
+  let accumulatedContent = "";
+  let totalChunkIndex = 0;
+  const totalUsage: TokenUsage = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+  };
+  let lastResult: StreamResult | undefined;
+
+  // First generation - yield all chunks with global accumulation
+  const firstGenerator = generateStreamFn(request, context, options);
+
+  for await (const chunk of firstGenerator) {
+    if (!chunk.done) {
+      accumulatedContent += chunk.text;
+
+      // Re-yield with global accumulated text and index
+      const adjustedChunk: StreamChunk = {
+        ...chunk,
+        accumulatedText: accumulatedContent,
+        index: totalChunkIndex++,
+      };
+
+      yield adjustedChunk;
+    }
+  }
+
+  // Get the final result from the generator
+  const firstGenResult = await firstGenerator.next();
+  lastResult = firstGenResult.value as StreamResult;
+
+  // Accumulate usage from first generation
+  totalUsage.promptTokens += lastResult.response.usage.promptTokens;
+  totalUsage.completionTokens += lastResult.response.usage.completionTokens;
+  totalUsage.totalTokens += lastResult.response.usage.totalTokens;
+  if (lastResult.response.usage.estimatedCost !== undefined) {
+    totalUsage.estimatedCost = (totalUsage.estimatedCost ?? 0) +
+      lastResult.response.usage.estimatedCost;
+  }
+
+  // Check if continuation is needed and enabled
+  while (
+    config.enabled &&
+    lastResult.response.finishReason === "length" &&
+    continuationCount < config.maxContinuations
+  ) {
+    continuationCount++;
+
+    // Get the last portion of content for context
+    const lastChunk = getLastChunk(accumulatedContent, 500);
+
+    // Create continuation request
+    const continuationRequest: LLMRequest = {
+      ...request,
+      prompt: buildContinuationPrompt(request.prompt, lastChunk),
+    };
+
+    // Generate continuation with updated context
+    const continuationContext: GenerationContext = {
+      ...context,
+      metadata: {
+        ...context.metadata,
+        continuationAttempt: continuationCount,
+        previousContentLength: accumulatedContent.length,
+      },
+    };
+
+    const contGenerator = generateStreamFn(
+      continuationRequest,
+      continuationContext,
+      options,
+    );
+
+    // Track this continuation's content for overlap detection
+    let continuationContent = "";
+
+    for await (const chunk of contGenerator) {
+      if (!chunk.done) {
+        continuationContent += chunk.text;
+
+        // Re-yield with global accumulated text (including continuation)
+        const adjustedChunk: StreamChunk = {
+          ...chunk,
+          accumulatedText: accumulatedContent + continuationContent,
+          index: totalChunkIndex++,
+        };
+
+        yield adjustedChunk;
+      }
+    }
+
+    // Get the final result from continuation
+    const contResult = await contGenerator.next();
+    lastResult = contResult.value as StreamResult;
+
+    // Merge content with overlap detection
+    const trimmedContinuation = continuationContent.trimStart();
+    const overlapLength = findOverlap(accumulatedContent, trimmedContinuation);
+    if (overlapLength > 10) {
+      accumulatedContent += trimmedContinuation.slice(overlapLength);
+    } else {
+      accumulatedContent += "\n" + trimmedContinuation;
+    }
+
+    // Accumulate token usage
+    totalUsage.promptTokens += lastResult.response.usage.promptTokens;
+    totalUsage.completionTokens += lastResult.response.usage.completionTokens;
+    totalUsage.totalTokens += lastResult.response.usage.totalTokens;
+    if (lastResult.response.usage.estimatedCost !== undefined) {
+      totalUsage.estimatedCost = (totalUsage.estimatedCost ?? 0) +
+        lastResult.response.usage.estimatedCost;
+    }
+  }
+
+  // Build final response
+  const finalResponse: LLMResponse = {
+    content: accumulatedContent,
+    model: lastResult.response.model,
+    usage: totalUsage,
+    duration: lastResult.response.duration, // Note: only last duration, not total
+    finishReason: lastResult.response.finishReason,
+  };
+
+  const result: StreamingContinuationResult = {
+    content: accumulatedContent,
+    response: finalResponse,
+    chunkCount: totalChunkIndex,
+    continuationCount,
+    wasTruncated: lastResult.response.finishReason === "length",
+    totalUsage,
+  };
+
+  // Yield final done chunk
+  const finalChunk: StreamChunk = {
+    text: "",
+    accumulatedText: accumulatedContent,
+    done: true,
+    usage: totalUsage,
+    index: totalChunkIndex,
+  };
+
+  yield finalChunk;
+
+  return result;
 }
