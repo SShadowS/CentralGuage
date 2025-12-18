@@ -350,6 +350,80 @@ Deno.test("OpenAIAdapter - configure", async (t) => {
 });
 
 // =============================================================================
+// Thinking Budget / Reasoning Effort Tests
+// =============================================================================
+
+Deno.test("OpenAIAdapter - thinkingBudget configuration", async (t) => {
+  await t.step("accepts thinkingBudget='low' without error", () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "o3-mini",
+      apiKey: "test-key",
+      thinkingBudget: "low",
+    });
+    // No errors thrown
+    assertEquals(adapter.name, "openai");
+  });
+
+  await t.step("accepts thinkingBudget='medium' without error", () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "o3-mini",
+      apiKey: "test-key",
+      thinkingBudget: "medium",
+    });
+    assertEquals(adapter.name, "openai");
+  });
+
+  await t.step("accepts thinkingBudget='high' without error", () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "o1-preview",
+      apiKey: "test-key",
+      thinkingBudget: "high",
+    });
+    assertEquals(adapter.name, "openai");
+  });
+
+  await t.step("accepts thinkingBudget with GPT-5 models", () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "gpt-5.1",
+      apiKey: "test-key",
+      thinkingBudget: "high",
+    });
+    assertEquals(adapter.name, "openai");
+  });
+
+  await t.step("accepts case-insensitive thinkingBudget values", () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "o3-high",
+      apiKey: "test-key",
+      thinkingBudget: "HIGH",
+    });
+    assertEquals(adapter.name, "openai");
+  });
+
+  await t.step("accepts numeric thinkingBudget (falls through as undefined)", () => {
+    // OpenAI uses string values, numeric values should be ignored
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "o3-mini",
+      apiKey: "test-key",
+      thinkingBudget: 10000,
+    });
+    assertEquals(adapter.name, "openai");
+  });
+});
+
+// =============================================================================
 // Constructor Tests
 // =============================================================================
 
