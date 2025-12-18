@@ -118,6 +118,9 @@ export interface LLMWorkItem {
 
   /** Execution context */
   context: TaskExecutionContext;
+
+  /** Callback for streaming chunk events */
+  onChunk?: ((chunkIndex: number) => void) | undefined;
 }
 
 /**
@@ -476,6 +479,12 @@ export interface QueueStats {
 export type ParallelExecutionEvent =
   | { type: "task_started"; taskId: string; models: string[] }
   | { type: "llm_started"; taskId: string; model: string; attempt: number }
+  | {
+    type: "llm_chunk";
+    taskId: string;
+    model: string;
+    chunkIndex: number;
+  }
   | {
     type: "llm_completed";
     taskId: string;

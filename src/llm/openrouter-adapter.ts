@@ -2,10 +2,13 @@ import OpenAI from "@openai/openai";
 import type {
   CodeGenerationResult,
   GenerationContext,
-  LLMAdapter,
   LLMConfig,
   LLMRequest,
   LLMResponse,
+  StreamChunk,
+  StreamingLLMAdapter,
+  StreamOptions,
+  StreamResult,
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
@@ -15,8 +18,9 @@ import { DebugLogger } from "../utils/debug-logger.ts";
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
  * OpenRouter provides an OpenAI-compatible API for accessing 400+ models.
  */
-export class OpenRouterAdapter implements LLMAdapter {
+export class OpenRouterAdapter implements StreamingLLMAdapter {
   readonly name = "openrouter";
+  readonly supportsStreaming = true;
   readonly supportedModels = [
     // OpenAI models via OpenRouter
     "openai/gpt-4o",
@@ -357,6 +361,215 @@ export class OpenRouterAdapter implements LLMAdapter {
         return "content_filter";
       default:
         return "error";
+    }
+  }
+
+  // ============================================================================
+  // Streaming Methods
+  // ============================================================================
+
+  async *generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      `[OpenRouter] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+    );
+
+    const result = yield* this.streamOpenRouter(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "al");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "openrouter",
+        "generateCode",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  async *generateFixStream(
+    _originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      `[OpenRouter] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
+    );
+
+    const result = yield* this.streamOpenRouter(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "diff");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "openrouter",
+        "generateFix",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  private async *streamOpenRouter(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const startTime = Date.now();
+
+    if (!this.client) {
+      if (!this.config.apiKey) {
+        throw new Error(
+          "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
+        );
+      }
+      this.client = new OpenAI({
+        apiKey: this.config.apiKey,
+        baseURL: this.config.baseUrl ?? "https://openrouter.ai/api/v1",
+        timeout: this.config.timeout,
+        defaultHeaders: {
+          "HTTP-Referer": this.config.siteUrl ??
+            "https://github.com/centralgauge",
+          "X-Title": this.config.siteName ?? "CentralGauge",
+        },
+      });
+    }
+
+    // Build messages array with optional system prompt
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (request.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: request.systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: request.prompt,
+    });
+
+    let accumulatedText = "";
+    let chunkIndex = 0;
+    let finalUsage: TokenUsage | undefined;
+
+    try {
+      const stream = await this.client.chat.completions.create({
+        model: this.config.model,
+        messages,
+        temperature: request.temperature ?? this.config.temperature ?? 0.1,
+        max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+        ...(request.stop ? { stop: request.stop } : {}),
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+
+      // Handle abort signal
+      if (options?.abortSignal) {
+        options.abortSignal.addEventListener("abort", () => {
+          stream.controller.abort();
+        });
+      }
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || "";
+
+        if (content) {
+          accumulatedText += content;
+
+          const streamChunk: StreamChunk = {
+            text: content,
+            accumulatedText,
+            done: false,
+            index: chunkIndex++,
+          };
+
+          options?.onChunk?.(streamChunk);
+          yield streamChunk;
+        }
+
+        // Capture usage from final chunk (when stream_options.include_usage is true)
+        if (chunk.usage) {
+          finalUsage = {
+            promptTokens: chunk.usage.prompt_tokens,
+            completionTokens: chunk.usage.completion_tokens,
+            totalTokens: chunk.usage.total_tokens,
+            estimatedCost: this.estimateCost(
+              chunk.usage.prompt_tokens,
+              chunk.usage.completion_tokens,
+            ),
+          };
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      // Fallback usage estimation if not provided
+      const usage: TokenUsage = finalUsage ?? {
+        promptTokens: Math.ceil(request.prompt.length / 4),
+        completionTokens: Math.ceil(accumulatedText.length / 4),
+        totalTokens: Math.ceil(
+          (request.prompt.length + accumulatedText.length) / 4,
+        ),
+        estimatedCost: 0,
+      };
+
+      const response: LLMResponse = {
+        content: accumulatedText,
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: "stop",
+      };
+
+      const result: StreamResult = {
+        content: accumulatedText,
+        response,
+        chunkCount: chunkIndex,
+      };
+
+      // Final chunk to signal completion
+      const finalChunk: StreamChunk = {
+        text: "",
+        accumulatedText,
+        done: true,
+        usage,
+        index: chunkIndex,
+      };
+
+      options?.onChunk?.(finalChunk);
+      yield finalChunk;
+
+      options?.onComplete?.(result);
+
+      return result;
+    } catch (error) {
+      options?.onError?.(error as Error);
+      throw error;
     }
   }
 }

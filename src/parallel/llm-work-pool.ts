@@ -199,12 +199,36 @@ export class LLMWorkPool {
    * Get or create LLM adapter for work item
    */
   private getAdapter(item: LLMWorkItem): LLMAdapter {
+    // Get API key based on provider
+    const apiKey = this.getApiKeyForProvider(item.llmProvider);
+
     return LLMAdapterRegistry.create(item.llmProvider, {
       provider: item.llmProvider,
       model: item.llmModel,
       temperature: item.context.temperature,
       maxTokens: item.context.maxTokens,
+      apiKey,
     });
+  }
+
+  /**
+   * Get API key for a provider from environment
+   */
+  private getApiKeyForProvider(provider: string): string | undefined {
+    switch (provider) {
+      case "openai":
+        return Deno.env.get("OPENAI_API_KEY");
+      case "anthropic":
+        return Deno.env.get("ANTHROPIC_API_KEY");
+      case "gemini":
+        return Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY");
+      case "azure-openai":
+        return Deno.env.get("AZURE_OPENAI_API_KEY");
+      case "openrouter":
+        return Deno.env.get("OPENROUTER_API_KEY");
+      default:
+        return undefined;
+    }
   }
 
   /**

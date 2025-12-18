@@ -42,6 +42,7 @@ import {
   type FormatterInput,
   getFormatter,
   type OutputFormat,
+  shortVariantName,
   shouldCopyToClipboard,
   type TaskMatrixInput,
 } from "../src/utils/formatters.ts";
@@ -265,6 +266,8 @@ interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   format?: OutputFormat;
   // Continuation settings
   noContinuation?: boolean;
+  // Streaming mode
+  stream?: boolean;
 }
 
 /**
@@ -443,6 +446,12 @@ async function runParallelBenchmark(
             `${event.taskId}: Starting with ${event.models.length} models`,
           );
           break;
+        case "llm_chunk":
+          // Show streaming progress with dots
+          if (options.stream) {
+            Deno.stdout.writeSync(new TextEncoder().encode("."));
+          }
+          break;
         case "llm_completed":
           log.llm(
             event.model,
@@ -547,6 +556,7 @@ async function runParallelBenchmark(
         maxTokens: options.maxTokens || 4000,
         outputDir: options.outputDir,
         debugMode: options.debug || false,
+        stream: options.stream ?? false,
       };
     if (options.promptOverrides) {
       parallelOptions.promptOverrides = options.promptOverrides;
@@ -942,16 +952,60 @@ async function generateReport(
 
       console.log(`📄 Found ${jsonFiles.length} result file(s)`);
 
+      // Type definitions
+      interface BenchmarkResult {
+        taskId: string;
+        success: boolean;
+        finalScore: number;
+        totalDuration: number;
+        totalTokensUsed?: number;
+        attempts: Array<{ success: boolean; tokensUsed?: number }>;
+        context?: {
+          variantId?: string;
+          llmModel?: string;
+        };
+      }
+      interface PerModelStats {
+        model: string;
+        provider: string;
+        variantId: string;
+        tasksPassed: number;
+        tasksFailed: number;
+        avgScore: number;
+        tokens: number;
+        cost: number;
+        avgAttempts: number;
+        passedOnAttempt1: number;
+        passedOnAttempt2: number;
+        compileFailures: number;
+        testFailures: number;
+        malformedResponses: number;
+      }
+      interface BenchmarkStats {
+        overallPassRate: number;
+        averageScore: number;
+        totalTokens: number;
+        totalCost: number;
+        totalDuration: number;
+        perModel: Record<string, PerModelStats>;
+        perTask?: Record<string, unknown>;
+      }
+
       // Read and merge all result files
-      const allResults = [];
+      const allResults: BenchmarkResult[] = [];
+      let stats: BenchmarkStats | null = null;
+
       for (const jsonFile of jsonFiles) {
         try {
           const content = await Deno.readTextFile(jsonFile);
-          const results = JSON.parse(content);
+          const data = JSON.parse(content);
+          const results = Array.isArray(data) ? data : data.results;
           if (Array.isArray(results)) {
             allResults.push(...results);
-          } else {
-            allResults.push(results);
+          }
+          // Extract pre-computed stats if available
+          if (data.stats && !stats) {
+            stats = data.stats as BenchmarkStats;
           }
           console.log(`📋 Loaded results from ${jsonFile}`);
         } catch (error) {
@@ -963,82 +1017,278 @@ async function generateReport(
         }
       }
 
-      // Create a data file for the SvelteKit app
-      const dataFile = `reports/src/lib/data.ts`;
-      const dataContent = `// Auto-generated benchmark data
-export const benchmarkData = ${JSON.stringify(allResults, null, 2)};`;
+      // Use pre-computed stats if available, otherwise calculate from results
+      const uniqueTasks = stats?.perTask
+        ? Object.keys(stats.perTask).length
+        : new Set(allResults.map((r) => r.taskId)).size;
+      const modelCount = stats?.perModel
+        ? Object.keys(stats.perModel).length
+        : new Set(
+          allResults.map((r) => r.context?.variantId || r.context?.llmModel),
+        ).size;
+      const overallPassRate = stats?.overallPassRate ??
+        (allResults.length > 0
+          ? allResults.filter((r) => r.success).length / allResults.length
+          : 0);
+      const avgScore = stats?.averageScore ??
+        (allResults.length > 0
+          ? allResults.reduce((sum, r) => sum + (r.finalScore || 0), 0) /
+            allResults.length
+          : 0);
+      const totalTokens = stats?.totalTokens ??
+        allResults.reduce((sum, r) => sum + (r.totalTokensUsed || 0), 0);
+      const totalCost = stats?.totalCost ?? 0;
 
-      await Deno.writeTextFile(dataFile, dataContent);
-      console.log("💾 Generated data file for HTML report");
+      // Score is already 0-100, just format it
+      const formatScore = (score: number): string => score.toFixed(1) + "%";
+      // Rate is 0-1, convert to percentage
+      const formatRate = (rate: number): string =>
+        (rate * 100).toFixed(1) + "%";
+      // Format cost as currency
+      const formatCost = (cost: number): string => "$" + cost.toFixed(2);
 
-      // Update the main page to load the data
-      const pageFile = `reports/src/routes/+page.svelte`;
-      const pageContent = await Deno.readTextFile(pageFile);
-
-      // Replace the mock data loading with real data loading
-      const updatedPageContent = pageContent.replace(
-        "// This would typically load from uploaded files or a directory\n      // For now, we'll use mock data structure\n      loading = false;",
-        `import { benchmarkData } from '$lib/data.js';
-      loadResults(JSON.stringify(benchmarkData));
-      loading = false;`,
-      );
-
-      await Deno.writeTextFile(pageFile, updatedPageContent);
-      console.log("🔄 Updated page to load benchmark data");
-
-      // Build the static site
-      console.log("🔨 Building static site...");
-      const buildProcess = new Deno.Command("npm", {
-        args: ["run", "build"],
-        cwd: "reports",
-        stdout: "piped",
-        stderr: "piped",
-      });
-
-      const { code, stdout: _stdout, stderr } = await buildProcess.output();
-
-      if (code !== 0) {
-        const errorText = new TextDecoder().decode(stderr);
-        console.error("❌ Failed to build HTML report:");
-        console.error(errorText);
-        return;
+      // Generate model cards HTML using stats.perModel if available
+      let modelCardsHtml = "";
+      if (stats?.perModel) {
+        // Sort models by pass rate descending
+        const sortedModels = Object.entries(stats.perModel).sort(
+          ([, a], [, b]) => {
+            const aRate = a.tasksPassed / (a.tasksPassed + a.tasksFailed);
+            const bRate = b.tasksPassed / (b.tasksPassed + b.tasksFailed);
+            return bRate - aRate;
+          },
+        );
+        for (const [variantId, m] of sortedModels) {
+          const mTotal = m.tasksPassed + m.tasksFailed;
+          const passRate = mTotal > 0 ? m.tasksPassed / mTotal : 0;
+          const firstPassRate = mTotal > 0 ? m.passedOnAttempt1 / mTotal : 0;
+          modelCardsHtml += `
+          <div class="model-card">
+            <h3>${variantId}</h3>
+            <div class="model-stats">
+              <div class="stat"><span class="stat-label">Pass Rate:</span><span class="stat-value">${
+            formatRate(passRate)
+          }</span></div>
+              <div class="stat"><span class="stat-label">Avg Score:</span><span class="stat-value">${
+            formatScore(m.avgScore)
+          }</span></div>
+              <div class="stat"><span class="stat-label">First Pass:</span><span class="stat-value">${
+            formatRate(firstPassRate)
+          }</span></div>
+              <div class="stat"><span class="stat-label">Tokens:</span><span class="stat-value">${
+            Math.round(m.tokens).toLocaleString("en-US")
+          }</span></div>
+              <div class="stat"><span class="stat-label">Cost:</span><span class="stat-value">${
+            formatCost(m.cost)
+          }</span></div>
+            </div>
+          </div>`;
+        }
+      } else {
+        // Fallback: group by model from results
+        const modelMap = new Map<string, BenchmarkResult[]>();
+        for (const result of allResults) {
+          const model = result.context?.variantId ||
+            result.context?.llmModel || "unknown";
+          if (!modelMap.has(model)) {
+            modelMap.set(model, []);
+          }
+          modelMap.get(model)!.push(result);
+        }
+        for (const [model, results] of modelMap) {
+          const mTotal = results.length;
+          const mPassed = results.filter((r) => r.success === true).length;
+          const mAvgScore = mTotal > 0
+            ? results.reduce((sum, r) => sum + (r.finalScore || 0), 0) / mTotal
+            : 0;
+          const mFirstPass = results.filter((r) => r.attempts?.[0]?.success)
+            .length;
+          const mTokens = results.reduce(
+            (sum, r) => sum + (r.totalTokensUsed || 0),
+            0,
+          );
+          modelCardsHtml += `
+          <div class="model-card">
+            <h3>${model}</h3>
+            <div class="model-stats">
+              <div class="stat"><span class="stat-label">Pass Rate:</span><span class="stat-value">${
+            formatRate(mPassed / mTotal)
+          }</span></div>
+              <div class="stat"><span class="stat-label">Avg Score:</span><span class="stat-value">${
+            formatScore(mAvgScore)
+          }</span></div>
+              <div class="stat"><span class="stat-label">First Pass:</span><span class="stat-value">${
+            formatRate(mFirstPass / mTotal)
+          }</span></div>
+              <div class="stat"><span class="stat-label">Tokens:</span><span class="stat-value">${
+            Math.round(mTokens).toLocaleString("en-US")
+          }</span></div>
+            </div>
+          </div>`;
+        }
       }
 
-      // Copy built files to output directory
-      console.log("📁 Copying built files to output directory...");
+      // Build task results matrix: tasks as rows, models as columns
+      // Get sorted model list (by pass rate)
+      const modelList = stats?.perModel
+        ? Object.entries(stats.perModel)
+          .sort(([, a], [, b]) => {
+            const aRate = a.tasksPassed / (a.tasksPassed + a.tasksFailed);
+            const bRate = b.tasksPassed / (b.tasksPassed + b.tasksFailed);
+            return bRate - aRate;
+          })
+          .map(([id]) => id)
+        : [
+          ...new Set(allResults.map((r) => r.context?.variantId || "unknown")),
+        ];
 
-      // Remove existing output directory if it exists
-      try {
-        await Deno.remove(outputDir, { recursive: true });
-      } catch {
-        // Directory might not exist, ignore error
+      // Get unique task IDs sorted
+      const taskIds = [...new Set(allResults.map((r) => r.taskId))].sort();
+
+      // Build lookup: taskId -> variantId -> result
+      const resultMatrix = new Map<string, Map<string, BenchmarkResult>>();
+      for (const result of allResults) {
+        const variantId = result.context?.variantId ||
+          result.context?.llmModel || "unknown";
+        if (!resultMatrix.has(result.taskId)) {
+          resultMatrix.set(result.taskId, new Map());
+        }
+        resultMatrix.get(result.taskId)!.set(variantId, result);
       }
 
-      // Copy build directory to output
-      const copyProcess = new Deno.Command("cp", {
-        args: ["-r", "reports/build", outputDir],
-        stdout: "piped",
-        stderr: "piped",
-      });
+      // Generate matrix header
+      const matrixHeaderHtml = modelList
+        .map((m) => `<th title="${m}">${shortVariantName(m)}</th>`)
+        .join("");
 
-      const copyResult = await copyProcess.output();
-
-      if (copyResult.code !== 0) {
-        console.error("❌ Failed to copy built files");
-        return;
+      // Generate matrix rows
+      let matrixRowsHtml = "";
+      for (const taskId of taskIds) {
+        const taskResults = resultMatrix.get(taskId);
+        let cellsHtml = "";
+        for (const modelId of modelList) {
+          const result = taskResults?.get(modelId);
+          if (result) {
+            const cls = result.success ? "pass" : "fail";
+            const symbol = result.success ? "P" : "F";
+            const title = `${
+              result.success ? "Pass" : "Fail"
+            } - Score: ${result.finalScore}%`;
+            cellsHtml +=
+              `<td class="matrix-cell ${cls}" title="${title}">${symbol}</td>`;
+          } else {
+            cellsHtml += `<td class="matrix-cell">-</td>`;
+          }
+        }
+        matrixRowsHtml +=
+          `<tr><td class="task-id">${taskId}</td>${cellsHtml}</tr>`;
       }
 
-      // Clean up data file
-      await Deno.remove(dataFile);
+      // Generate standalone HTML
+      const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CentralGauge - Benchmark Results</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    header { text-align: center; margin-bottom: 3rem; }
+    header h1 { font-size: 2.5rem; margin: 0; color: #2563eb; }
+    header p { font-size: 1.1rem; color: #6b7280; margin: 0.5rem 0; }
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0 2rem; }
+    .metric-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .metric-card.success { border-color: #10b981; background: #f0fdf4; }
+    .metric-card.error { border-color: #ef4444; background: #fef2f2; }
+    .metric-value { font-size: 2rem; font-weight: bold; color: #1f2937; }
+    .metric-label { font-size: 0.875rem; color: #6b7280; margin-top: 0.5rem; }
+    h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+    .models-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
+    .model-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .model-card h3 { margin: 0 0 1rem 0; color: #1f2937; font-size: 1rem; word-break: break-all; }
+    .stat { display: flex; justify-content: space-between; margin-bottom: 0.5rem; }
+    .stat-label { color: #6b7280; font-size: 0.875rem; }
+    .stat-value { font-weight: 500; color: #1f2937; }
+    .matrix-legend { color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem; }
+    .matrix-legend .pass { color: #166534; font-weight: bold; }
+    .matrix-legend .fail { color: #991b1b; font-weight: bold; }
+    .matrix-container { overflow-x: auto; background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .result-matrix { border-collapse: collapse; width: 100%; font-size: 0.8rem; }
+    .result-matrix th, .result-matrix td { padding: 0.5rem; text-align: center; border: 1px solid #e5e7eb; }
+    .result-matrix th { background: #f9fafb; font-weight: 600; color: #374151; white-space: nowrap; }
+    .result-matrix .task-id { text-align: left; font-family: monospace; font-weight: 500; white-space: nowrap; background: #f9fafb; position: sticky; left: 0; }
+    .matrix-cell { width: 2rem; font-weight: bold; }
+    .matrix-cell.pass { background: #dcfce7; color: #166534; }
+    .matrix-cell.fail { background: #fee2e2; color: #991b1b; }
+    @media (max-width: 768px) {
+      .result-matrix { font-size: 0.7rem; }
+      .result-matrix th, .result-matrix td { padding: 0.25rem; }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>CentralGauge</h1>
+      <p>LLM Benchmark Results for Microsoft Dynamics 365 Business Central AL Code</p>
+    </header>
 
-      // Restore original page file
-      const originalPageContent = pageContent;
-      await Deno.writeTextFile(pageFile, originalPageContent);
+    <section>
+      <h2>Benchmark Overview</h2>
+      <div class="metrics-grid">
+        <div class="metric-card"><div class="metric-value">${uniqueTasks}</div><div class="metric-label">Unique Tasks</div></div>
+        <div class="metric-card"><div class="metric-value">${modelCount}</div><div class="metric-label">Models Tested</div></div>
+        <div class="metric-card success"><div class="metric-value">${
+        formatRate(overallPassRate)
+      }</div><div class="metric-label">Overall Pass Rate</div></div>
+        <div class="metric-card"><div class="metric-value">${
+        formatScore(avgScore)
+      }</div><div class="metric-label">Average Score</div></div>
+        <div class="metric-card"><div class="metric-value">${
+        Math.round(totalTokens).toLocaleString("en-US")
+      }</div><div class="metric-label">Total Tokens</div></div>
+        <div class="metric-card"><div class="metric-value">${
+        formatCost(totalCost)
+      }</div><div class="metric-label">Total Cost</div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Model Performance</h2>
+      <div class="models-grid">${modelCardsHtml}</div>
+    </section>
+
+    <section>
+      <h2>Task Results Matrix</h2>
+      <p class="matrix-legend"><span class="pass">P</span> = Pass, <span class="fail">F</span> = Fail (hover for details)</p>
+      <div class="matrix-container">
+        <table class="result-matrix">
+          <thead>
+            <tr><th>Task</th>${matrixHeaderHtml}</tr>
+          </thead>
+          <tbody>
+            ${matrixRowsHtml}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>`;
+
+      // Ensure output directory exists
+      await Deno.mkdir(outputDir, { recursive: true });
+
+      // Write the HTML file
+      const outputFile = `${outputDir}/index.html`;
+      await Deno.writeTextFile(outputFile, htmlContent);
 
       console.log("✅ HTML report generated successfully!");
-      console.log(`📂 Report available at: ${outputDir}/index.html`);
+      console.log(`📂 Report available at: ${outputFile}`);
       console.log(
-        `🌐 Open in browser: file://${Deno.cwd()}/${outputDir}/index.html`,
+        `🌐 Open in browser: file://${Deno.cwd()}/${outputFile}`,
       );
     } else {
       // Generate JSON summary report
@@ -1479,6 +1729,11 @@ cli.command("bench", "Run benchmark evaluation")
     "Disable automatic continuation for truncated responses",
     { default: false },
   )
+  .option(
+    "--stream",
+    "Enable streaming mode (show real-time progress)",
+    { default: false },
+  )
   .action(async (options) => {
     // Build prompt overrides from CLI options if any are provided
     let promptOverrides: CLIPromptOverrides | undefined;
@@ -1523,6 +1778,7 @@ cli.command("bench", "Run benchmark evaluation")
       maxConcurrency: typeof options.maxConcurrency === "number"
         ? options.maxConcurrency
         : parseInt(String(options.maxConcurrency), 10),
+      stream: options.stream,
     };
     if (promptOverrides) {
       benchOptions.promptOverrides = promptOverrides;
@@ -1577,7 +1833,9 @@ cli.command(
   "Generate HTML report from benchmark results",
 )
   .option("--html", "Generate HTML report", { default: false })
-  .option("-o, --output <dir>", "Output directory", { default: "reports/" })
+  .option("-o, --output <dir>", "Output directory", {
+    default: "reports-output/",
+  })
   .action(async (options, resultsDir: string) => {
     if (!await exists(resultsDir)) {
       console.error(
@@ -1838,9 +2096,10 @@ cli.command("stats-runs", "Show historical benchmark runs")
 
         // Filter by task set hash if provided (supports partial match)
         if (options.taskSet) {
+          const taskSetFilter = options.taskSet;
           runs = runs.filter((r) =>
-            r.taskSetHash.startsWith(options.taskSet) ||
-            r.taskSetHash.includes(options.taskSet)
+            r.taskSetHash.startsWith(taskSetFilter) ||
+            r.taskSetHash.includes(taskSetFilter)
           );
         }
 
@@ -2212,7 +2471,11 @@ cli.command("verify [debug-dir]", "Analyze failing tasks and propose fixes")
     default: "all",
   })
   .option("--dry-run", "Show fixes without applying", { default: false })
-  .option("--parallel <n:number>", "Max parallel analysis (default: 1 for interactive)", { default: 1 })
+  .option(
+    "--parallel <n:number>",
+    "Max parallel analysis (default: 1 for interactive)",
+    { default: 1 },
+  )
   .option("--model <model:string>", "LLM for analysis", {
     default: "claude-sonnet-4-5-20250929",
   })

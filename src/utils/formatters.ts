@@ -731,7 +731,9 @@ function formatWinnerCell(
 
       // If too many tied, show first 2 + count
       if (tiedNames.length > 3) {
-        return `TIE: ${tiedNames.slice(0, 2).join(", ")} +${tiedNames.length - 2}`;
+        return `TIE: ${tiedNames.slice(0, 2).join(", ")} +${
+          tiedNames.length - 2
+        }`;
       }
       return `TIE: ${tiedNames.join(", ")}`;
     }
@@ -796,7 +798,10 @@ function buildTotalsRow(
 /**
  * Shorten model name for display, including variant config suffix when present
  */
-function shortModelName(model: string, variantConfig?: VariantConfig): string {
+export function shortModelName(
+  model: string,
+  variantConfig?: VariantConfig,
+): string {
   // Common shortenings
   const shortenings: Record<string, string> = {
     "claude-opus-4-5-20251101": "Claude Opus 4.5",
@@ -832,6 +837,46 @@ function shortModelName(model: string, variantConfig?: VariantConfig): string {
   }
 
   return parts.length > 0 ? `${baseName}@${parts.join(",")}` : baseName;
+}
+
+/**
+ * Parse a variantId string and return a shortened display name.
+ * Handles formats like "anthropic/claude-opus-4-5-20251101@thinking=50000"
+ */
+export function shortVariantName(variantId: string): string {
+  // Extract provider and model parts
+  const [providerModel = "", ...configParts] = variantId.split("@");
+  const parts = providerModel.split("/");
+  const model = parts[parts.length - 1] || providerModel;
+
+  // Common shortenings for compact display
+  const shortenings: Record<string, string> = {
+    "claude-opus-4-5-20251101": "Opus 4.5",
+    "claude-sonnet-4-5-20250929": "Sonnet 4.5",
+    "claude-haiku-4-5-20251001": "Haiku 4.5",
+    "gpt-5.1": "GPT-5.1",
+    "gpt-5.2": "GPT-5.2",
+    "gpt-5.2-2025-12-11": "GPT-5.2",
+    "gpt-4o": "GPT-4o",
+    "gpt-4o-mini": "GPT-4o Mini",
+    "gpt-4-turbo": "GPT-4 Turbo",
+    "gemini-3-pro-preview": "Gemini 3 Pro",
+    "gemini-2.5-pro": "Gemini 2.5 Pro",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+  };
+
+  const baseName = shortenings[model] ?? model.split("-").slice(0, 3).join("-");
+
+  // Parse config suffix if present
+  const configStr = configParts.join("@");
+  if (!configStr) return baseName;
+
+  // Add thinking indicator if present
+  if (configStr.includes("thinking=") || configStr.includes("reasoning=")) {
+    return `${baseName} (think)`;
+  }
+
+  return baseName;
 }
 
 /**

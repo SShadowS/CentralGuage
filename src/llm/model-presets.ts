@@ -238,6 +238,17 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     category: ["budget", "speed", "2025"],
     maxOutputTokens: 65536,
   },
+  "gemini-3-flash-preview": {
+    alias: "gemini-3-flash-preview",
+    provider: "gemini",
+    model: "gemini-3-flash-preview",
+    displayName: "Gemini 3 Flash Preview",
+    description: "Latest Gemini 3 Flash preview model",
+    costTier: "budget",
+    performanceTier: "fast",
+    category: ["speed", "budget", "2025"],
+    maxOutputTokens: 65536,
+  },
 
   // Local Models (common ones)
   "llama": {

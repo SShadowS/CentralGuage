@@ -7,7 +7,7 @@ description: >-
      Values: Basic, Premium, Enterprise.
 
   2. Create a Codeunit with ID 70188 named "Subscription Engine".
-     
+
   3. Implement a procedure:
      GetNextBillingDate(LastBillingDate: Date; Plan: Enum "Subscription Plan"): Date
 
@@ -19,7 +19,7 @@ description: >-
 
   4. Implement a procedure:
      CalculateProratedRefund(TotalAmount: Decimal; DaysUsed: Integer; Plan: Enum "Subscription Plan"): Decimal
-     
+
   Logic:
   - If DaysUsed is negative, return 0.
   - Total days in period depends on Plan (Basic=30, Premium=90, Enterprise=365).

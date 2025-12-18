@@ -94,20 +94,27 @@ function resolveBaseModelsToVariants(
 
 /**
  * Resolve a base model spec to provider and model
+ * Supports formats:
+ * - "sonnet" → resolved via MODEL_PRESETS
+ * - "openai/gpt-5.1" → provider: openai, model: gpt-5.1
+ * - "openrouter/deepseek/deepseek-v3.2" → provider: openrouter, model: deepseek/deepseek-v3.2
  */
 function resolveProviderAndModel(
   spec: string,
 ): { provider: string; model: string } {
-  // If already provider/model format
-  if (spec.includes("/")) {
-    const [provider = spec, model = spec] = spec.split("/", 2);
-    return { provider, model };
-  }
-
-  // Check presets
+  // Check presets first (aliases like "sonnet", "opus", "gemini")
   const preset = MODEL_PRESETS[spec];
   if (preset) {
     return { provider: preset.provider, model: preset.model };
+  }
+
+  // If provider/model format, split on FIRST "/" only
+  // This allows models like "openrouter/deepseek/deepseek-v3.2"
+  const firstSlash = spec.indexOf("/");
+  if (firstSlash !== -1) {
+    const provider = spec.substring(0, firstSlash);
+    const model = spec.substring(firstSlash + 1);
+    return { provider, model };
   }
 
   // Unknown - return as-is (will be handled downstream)

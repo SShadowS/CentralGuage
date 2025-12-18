@@ -60,6 +60,9 @@ export interface ParallelBenchmarkOptions {
 
   /** Prompt injection overrides from CLI */
   promptOverrides?: import("../prompts/mod.ts").CLIPromptOverrides;
+
+  /** Enable streaming mode for real-time progress */
+  stream?: boolean;
 }
 
 /**
@@ -83,6 +86,9 @@ export class ParallelBenchmarkOrchestrator {
   private completedTasks = 0;
   private totalTasks = 0;
   private errors: string[] = [];
+
+  // Streaming mode
+  private streamEnabled = false;
 
   constructor(
     config?: Partial<ParallelExecutionConfig>,
@@ -162,6 +168,7 @@ export class ParallelBenchmarkOrchestrator {
     this.totalTasks = taskManifests.length;
     this.completedTasks = 0;
     this.errors = [];
+    this.streamEnabled = options.stream ?? false;
 
     // Initialize container (using injected factories for testability)
     this.containerProvider = this.containerProviderFactory(
@@ -288,6 +295,18 @@ export class ParallelBenchmarkOrchestrator {
       attempt: attemptNumber,
     });
 
+    // Create chunk callback if streaming is enabled
+    const onChunk = this.streamEnabled
+      ? (model: string, chunkIndex: number) => {
+        this.emit({
+          type: "llm_chunk",
+          taskId: manifest.id,
+          model,
+          chunkIndex,
+        });
+      }
+      : undefined;
+
     const modelCompat = { provider: variant.provider, model: variant.model };
     const workItems = createWorkItems(
       manifest,
@@ -295,6 +314,7 @@ export class ParallelBenchmarkOrchestrator {
       [modelCompat],
       attemptNumber,
       attempts,
+      onChunk,
     );
 
     const llmResults = await this.llmPool.submitBatch(workItems);

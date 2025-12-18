@@ -1,18 +1,27 @@
 import type {
   CodeGenerationResult,
   GenerationContext,
-  LLMAdapter,
   LLMConfig,
   LLMRequest,
   LLMResponse,
+  StreamChunk,
+  StreamingLLMAdapter,
+  StreamOptions,
+  StreamResult,
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import {
+  getStreamReader,
+  parseNDJSONStream,
+  parseSSEStream,
+} from "../utils/stream-parsers.ts";
 import * as colors from "@std/fmt/colors";
 
-export class LocalLLMAdapter implements LLMAdapter {
+export class LocalLLMAdapter implements StreamingLLMAdapter {
   readonly name = "local";
+  readonly supportsStreaming = true;
   readonly supportedModels = [
     // Ollama models
     "llama3.2:latest",
@@ -389,5 +398,370 @@ export class LocalLLMAdapter implements LLMAdapter {
         estimatedCost: 0,
       },
     };
+  }
+
+  // ============================================================================
+  // Streaming Methods
+  // ============================================================================
+
+  async *generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      colors.blue(
+        `[Local LLM] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+      ),
+    );
+
+    const result = yield* this.streamLocalLLM(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "al");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "local",
+        "generateCode",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  async *generateFixStream(
+    _originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      colors.blue(
+        `[Local LLM] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
+      ),
+    );
+
+    const result = yield* this.streamLocalLLM(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "diff");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "local",
+        "generateFix",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  private async *streamLocalLLM(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const startTime = Date.now();
+
+    // Determine endpoint and API type
+    const endpoint = this.getEndpoint();
+    const isOllama = this.isOllamaEndpoint(endpoint);
+
+    if (isOllama) {
+      return yield* this.streamOllama(endpoint, request, startTime, options);
+    } else {
+      return yield* this.streamOpenAICompatible(
+        endpoint,
+        request,
+        startTime,
+        options,
+      );
+    }
+  }
+
+  private async *streamOllama(
+    endpoint: string,
+    request: LLMRequest,
+    startTime: number,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const payload: Record<string, unknown> = {
+      model: this.config.model,
+      prompt: request.prompt,
+      options: {
+        temperature: request.temperature ?? this.config.temperature ?? 0.1,
+        num_predict: request.maxTokens ?? this.config.maxTokens ?? 4000,
+        stop: request.stop,
+      },
+      // Ollama streams by default, but we explicitly set it for clarity
+      stream: true,
+    };
+    if (request.systemPrompt) {
+      payload["system"] = request.systemPrompt;
+    }
+
+    const url = `${endpoint}/api/generate`;
+
+    let accumulatedText = "";
+    let chunkIndex = 0;
+    let promptTokens = 0;
+    let completionTokens = 0;
+
+    try {
+      const controller = new AbortController();
+
+      // Handle abort signal
+      if (options?.abortSignal) {
+        options.abortSignal.addEventListener("abort", () => {
+          controller.abort();
+        });
+      }
+
+      const apiResponse = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
+        throw new Error(
+          `Ollama API error (${apiResponse.status}): ${errorText}`,
+        );
+      }
+
+      const reader = getStreamReader(apiResponse);
+
+      for await (const data of parseNDJSONStream(reader)) {
+        const content = (data["response"] as string) || "";
+
+        if (content) {
+          accumulatedText += content;
+
+          const streamChunk: StreamChunk = {
+            text: content,
+            accumulatedText,
+            done: false,
+            index: chunkIndex++,
+          };
+
+          options?.onChunk?.(streamChunk);
+          yield streamChunk;
+        }
+
+        // Capture token counts from final chunk
+        if (data["done"] === true) {
+          promptTokens = (data["prompt_eval_count"] as number) || 0;
+          completionTokens = (data["eval_count"] as number) || 0;
+          break;
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      const usage: TokenUsage = {
+        promptTokens,
+        completionTokens,
+        totalTokens: promptTokens + completionTokens,
+        estimatedCost: 0, // Local models are free
+      };
+
+      const response: LLMResponse = {
+        content: accumulatedText,
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: "stop",
+      };
+
+      const result: StreamResult = {
+        content: accumulatedText,
+        response,
+        chunkCount: chunkIndex,
+      };
+
+      // Final chunk to signal completion
+      const finalChunk: StreamChunk = {
+        text: "",
+        accumulatedText,
+        done: true,
+        usage,
+        index: chunkIndex,
+      };
+
+      options?.onChunk?.(finalChunk);
+      yield finalChunk;
+
+      options?.onComplete?.(result);
+
+      return result;
+    } catch (error) {
+      options?.onError?.(error as Error);
+      throw error;
+    }
+  }
+
+  private async *streamOpenAICompatible(
+    endpoint: string,
+    request: LLMRequest,
+    startTime: number,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (request.systemPrompt) {
+      messages.push({ role: "system", content: request.systemPrompt });
+    }
+    messages.push({ role: "user", content: request.prompt });
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (this.config.apiKey) {
+      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
+    }
+
+    const url = `${endpoint}/v1/chat/completions`;
+    const payload = {
+      model: this.config.model,
+      messages,
+      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+      stop: request.stop,
+      stream: true,
+    };
+
+    let accumulatedText = "";
+    let chunkIndex = 0;
+    let lastFinishReason: string | undefined;
+
+    try {
+      const controller = new AbortController();
+
+      // Handle abort signal
+      if (options?.abortSignal) {
+        options.abortSignal.addEventListener("abort", () => {
+          controller.abort();
+        });
+      }
+
+      const apiResponse = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
+        throw new Error(
+          `Local LLM API error (${apiResponse.status}): ${errorText}`,
+        );
+      }
+
+      const reader = getStreamReader(apiResponse);
+
+      for await (const event of parseSSEStream(reader)) {
+        if (event.done) break;
+
+        try {
+          const data = JSON.parse(event.data) as {
+            choices?: Array<{
+              delta?: { content?: string };
+              finish_reason?: string;
+            }>;
+          };
+
+          const content = data.choices?.[0]?.delta?.content || "";
+
+          if (content) {
+            accumulatedText += content;
+
+            const streamChunk: StreamChunk = {
+              text: content,
+              accumulatedText,
+              done: false,
+              index: chunkIndex++,
+            };
+
+            options?.onChunk?.(streamChunk);
+            yield streamChunk;
+          }
+
+          // Capture finish reason
+          if (data.choices?.[0]?.finish_reason) {
+            lastFinishReason = data.choices[0].finish_reason;
+          }
+        } catch {
+          // Skip malformed JSON chunks
+          continue;
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      // Local models don't typically provide usage in streaming, estimate tokens
+      const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
+      const estimatedCompletionTokens = Math.ceil(accumulatedText.length / 4);
+
+      const usage: TokenUsage = {
+        promptTokens: estimatedPromptTokens,
+        completionTokens: estimatedCompletionTokens,
+        totalTokens: estimatedPromptTokens + estimatedCompletionTokens,
+        estimatedCost: 0, // Local models are free
+      };
+
+      const response: LLMResponse = {
+        content: accumulatedText,
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: lastFinishReason === "stop" ? "stop" : "error",
+      };
+
+      const result: StreamResult = {
+        content: accumulatedText,
+        response,
+        chunkCount: chunkIndex,
+      };
+
+      // Final chunk to signal completion
+      const finalChunk: StreamChunk = {
+        text: "",
+        accumulatedText,
+        done: true,
+        usage,
+        index: chunkIndex,
+      };
+
+      options?.onChunk?.(finalChunk);
+      yield finalChunk;
+
+      options?.onComplete?.(result);
+
+      return result;
+    } catch (error) {
+      options?.onError?.(error as Error);
+      throw error;
+    }
   }
 }

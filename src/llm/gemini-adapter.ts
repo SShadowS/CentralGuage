@@ -2,20 +2,25 @@ import { GoogleGenAI } from "@google/genai";
 import type {
   CodeGenerationResult,
   GenerationContext,
-  LLMAdapter,
   LLMConfig,
   LLMRequest,
   LLMResponse,
+  StreamChunk,
+  StreamingLLMAdapter,
+  StreamOptions,
+  StreamResult,
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 
-export class GeminiAdapter implements LLMAdapter {
+export class GeminiAdapter implements StreamingLLMAdapter {
   readonly name = "gemini";
+  readonly supportsStreaming = true;
   readonly supportedModels = [
     // 2025 Gemini models
     "gemini-3",
+    "gemini-3-flash-preview",
     "gemini-2.5-pro",
     "gemini-2.5-flash",
     // Gemini 2.0 models
@@ -210,6 +215,7 @@ export class GeminiAdapter implements LLMAdapter {
     const modelCosts: Record<string, { input: number; output: number }> = {
       // 2025 Gemini pricing (estimated)
       "gemini-3": { input: 0.005, output: 0.015 },
+      "gemini-3-flash-preview": { input: 0.0001, output: 0.0004 },
       "gemini-2.5-pro": { input: 0.00125, output: 0.005 },
       "gemini-2.5-flash": { input: 0.000075, output: 0.0003 },
       // Gemini 2.0 pricing
@@ -323,6 +329,192 @@ export class GeminiAdapter implements LLMAdapter {
         return "content_filter";
       default:
         return "error";
+    }
+  }
+
+  // ============================================================================
+  // Streaming Methods
+  // ============================================================================
+
+  async *generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      `[Gemini] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+    );
+
+    const result = yield* this.streamGemini(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "al");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "gemini",
+        "generateCode",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  async *generateFixStream(
+    _originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      `[Gemini] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
+    );
+
+    const result = yield* this.streamGemini(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "diff");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "gemini",
+        "generateFix",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  private async *streamGemini(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const startTime = Date.now();
+
+    if (!this.ai) {
+      if (!this.config.apiKey) {
+        throw new Error(
+          "Google API key not configured. Set GOOGLE_API_KEY environment variable.",
+        );
+      }
+      this.ai = new GoogleGenAI({ apiKey: this.config.apiKey });
+    }
+
+    let accumulatedText = "";
+    let chunkIndex = 0;
+    let lastFinishReason: string | undefined;
+    // deno-lint-ignore no-explicit-any
+    let usageMetadata: any;
+
+    try {
+      const stream = await this.ai.models.generateContentStream({
+        model: this.config.model,
+        contents: request.prompt,
+        config: {
+          temperature: request.temperature ?? this.config.temperature ?? 0.1,
+          maxOutputTokens: request.maxTokens ?? this.config.maxTokens ?? 8192,
+          ...(request.stop ? { stopSequences: request.stop } : {}),
+          ...(request.systemPrompt
+            ? { systemInstruction: request.systemPrompt }
+            : {}),
+        },
+      });
+
+      for await (const chunk of stream) {
+        const text = chunk.text || "";
+
+        if (text) {
+          accumulatedText += text;
+
+          const streamChunk: StreamChunk = {
+            text,
+            accumulatedText,
+            done: false,
+            index: chunkIndex++,
+          };
+
+          options?.onChunk?.(streamChunk);
+          yield streamChunk;
+        }
+
+        // Capture finish reason and usage metadata
+        if (chunk.candidates?.[0]?.finishReason) {
+          lastFinishReason = chunk.candidates[0].finishReason;
+        }
+        if (chunk.usageMetadata) {
+          usageMetadata = chunk.usageMetadata;
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      // Estimate tokens if not provided by the API
+      const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
+      const estimatedCompletionTokens = Math.ceil(accumulatedText.length / 4);
+
+      const usage: TokenUsage = {
+        promptTokens: usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
+        completionTokens: usageMetadata?.candidatesTokenCount ??
+          estimatedCompletionTokens,
+        totalTokens: usageMetadata?.totalTokenCount ??
+          (estimatedPromptTokens + estimatedCompletionTokens),
+        estimatedCost: this.estimateCost(
+          usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
+          usageMetadata?.candidatesTokenCount ?? estimatedCompletionTokens,
+        ),
+      };
+
+      const response: LLMResponse = {
+        content: accumulatedText,
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: this.mapFinishReason(lastFinishReason),
+      };
+
+      const result: StreamResult = {
+        content: accumulatedText,
+        response,
+        chunkCount: chunkIndex,
+      };
+
+      // Final chunk to signal completion
+      const finalChunk: StreamChunk = {
+        text: "",
+        accumulatedText,
+        done: true,
+        usage,
+        index: chunkIndex,
+      };
+
+      options?.onChunk?.(finalChunk);
+      yield finalChunk;
+
+      options?.onComplete?.(result);
+
+      return result;
+    } catch (error) {
+      options?.onError?.(error as Error);
+      throw error;
     }
   }
 }

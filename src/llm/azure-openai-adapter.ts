@@ -1,18 +1,23 @@
 import type {
   CodeGenerationResult,
   GenerationContext,
-  LLMAdapter,
   LLMConfig,
   LLMRequest,
   LLMResponse,
+  StreamChunk,
+  StreamingLLMAdapter,
+  StreamOptions,
+  StreamResult,
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import { getStreamReader, parseSSEStream } from "../utils/stream-parsers.ts";
 import * as colors from "@std/fmt/colors";
 
-export class AzureOpenAIAdapter implements LLMAdapter {
+export class AzureOpenAIAdapter implements StreamingLLMAdapter {
   readonly name = "azure-openai";
+  readonly supportsStreaming = true;
   readonly supportedModels = [
     "gpt-4o",
     "gpt-4o-mini",
@@ -325,6 +330,249 @@ export class AzureOpenAIAdapter implements LLMAdapter {
         return "content_filter";
       default:
         return "error";
+    }
+  }
+
+  // ============================================================================
+  // Streaming Methods
+  // ============================================================================
+
+  async *generateCodeStream(
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      colors.green(
+        `[Azure OpenAI] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
+      ),
+    );
+
+    const result = yield* this.streamAzureOpenAI(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "al");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "azure-openai",
+        "generateCode",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        "al",
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  async *generateFixStream(
+    _originalCode: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    console.log(
+      colors.green(
+        `[Azure OpenAI] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
+      ),
+    );
+
+    const result = yield* this.streamAzureOpenAI(request, options);
+
+    // Extract code from accumulated response
+    const extraction = CodeExtractor.extract(result.content, "diff");
+
+    // Log interaction
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger) {
+      await debugLogger.logInteraction(
+        "azure-openai",
+        "generateFix",
+        request,
+        context,
+        result.response,
+        extraction.code,
+        extraction.extractedFromDelimiters,
+        extraction.language === "unknown" ? "diff" : extraction.language,
+        undefined, // No raw response for streaming
+      );
+    }
+
+    return result;
+  }
+
+  private async *streamAzureOpenAI(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const startTime = Date.now();
+
+    if (!this.config.apiKey) {
+      throw new Error(
+        "Azure OpenAI API key not configured. Set AZURE_OPENAI_API_KEY environment variable.",
+      );
+    }
+
+    // Construct Azure OpenAI endpoint URL
+    const endpoint = this.config.baseUrl ||
+      Deno.env.get("AZURE_OPENAI_ENDPOINT");
+    if (!endpoint) {
+      throw new Error("Azure OpenAI endpoint not configured");
+    }
+
+    const deploymentName = this.config.deploymentName || this.config.model;
+    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
+
+    const url =
+      `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+
+    // Build messages array with optional system prompt
+    const messages: Array<{ role: string; content: string }> = [];
+    if (request.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: request.systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: request.prompt,
+    });
+
+    const payload = {
+      messages,
+      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+      stop: request.stop,
+      stream: true,
+    };
+
+    let accumulatedText = "";
+    let chunkIndex = 0;
+    let lastFinishReason: string | undefined;
+
+    try {
+      const controller = new AbortController();
+
+      // Handle abort signal
+      if (options?.abortSignal) {
+        options.abortSignal.addEventListener("abort", () => {
+          controller.abort();
+        });
+      }
+
+      const apiResponse = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "api-key": this.config.apiKey,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
+        throw new Error(
+          `Azure OpenAI API error (${apiResponse.status}): ${errorText}`,
+        );
+      }
+
+      const reader = getStreamReader(apiResponse);
+
+      for await (const event of parseSSEStream(reader)) {
+        if (event.done) break;
+
+        try {
+          const data = JSON.parse(event.data) as {
+            choices?: Array<{
+              delta?: { content?: string };
+              finish_reason?: string;
+            }>;
+          };
+
+          const content = data.choices?.[0]?.delta?.content || "";
+
+          if (content) {
+            accumulatedText += content;
+
+            const streamChunk: StreamChunk = {
+              text: content,
+              accumulatedText,
+              done: false,
+              index: chunkIndex++,
+            };
+
+            options?.onChunk?.(streamChunk);
+            yield streamChunk;
+          }
+
+          // Capture finish reason
+          if (data.choices?.[0]?.finish_reason) {
+            lastFinishReason = data.choices[0].finish_reason;
+          }
+        } catch {
+          // Skip malformed JSON chunks
+          continue;
+        }
+      }
+
+      const duration = Date.now() - startTime;
+
+      // Azure OpenAI doesn't provide usage in streaming mode, estimate tokens
+      const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
+      const estimatedCompletionTokens = Math.ceil(accumulatedText.length / 4);
+
+      const usage: TokenUsage = {
+        promptTokens: estimatedPromptTokens,
+        completionTokens: estimatedCompletionTokens,
+        totalTokens: estimatedPromptTokens + estimatedCompletionTokens,
+        estimatedCost: this.estimateCost(
+          estimatedPromptTokens,
+          estimatedCompletionTokens,
+        ),
+      };
+
+      const response: LLMResponse = {
+        content: accumulatedText,
+        model: deploymentName,
+        usage,
+        duration,
+        finishReason: this.mapFinishReason(lastFinishReason),
+      };
+
+      const result: StreamResult = {
+        content: accumulatedText,
+        response,
+        chunkCount: chunkIndex,
+      };
+
+      // Final chunk to signal completion
+      const finalChunk: StreamChunk = {
+        text: "",
+        accumulatedText,
+        done: true,
+        usage,
+        index: chunkIndex,
+      };
+
+      options?.onChunk?.(finalChunk);
+      yield finalChunk;
+
+      options?.onComplete?.(result);
+
+      return result;
+    } catch (error) {
+      options?.onError?.(error as Error);
+      throw error;
     }
   }
 }

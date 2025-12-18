@@ -17,7 +17,7 @@ description: >-
 
   4. Create a Codeunit (ID 70217) named "Payment Service".
      - Procedure: Process(Gateway: Interface "Payment Gateway"; Amount: Decimal): Text
-     - Logic: 
+     - Logic:
        Call the gateway's Authorize method.
        If true, return: 'Authorized by [GatewayName]'.
        If false, return: 'Declined by [GatewayName]'.
