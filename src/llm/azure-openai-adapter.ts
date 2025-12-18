@@ -13,6 +13,13 @@ import type {
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { getStreamReader, parseSSEStream } from "../utils/stream-parsers.ts";
+import {
+  createChunk,
+  createFallbackUsage,
+  createStreamState,
+  finalizeStream,
+  handleStreamError,
+} from "./stream-handler.ts";
 import * as colors from "@std/fmt/colors";
 
 export class AzureOpenAIAdapter implements StreamingLLMAdapter {
@@ -413,7 +420,7 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    const startTime = Date.now();
+    const state = createStreamState();
 
     if (!this.config.apiKey) {
       throw new Error(
@@ -455,8 +462,6 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
       stream: true,
     };
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
     let lastFinishReason: string | undefined;
 
     try {
@@ -502,17 +507,7 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
           const content = data.choices?.[0]?.delta?.content || "";
 
           if (content) {
-            accumulatedText += content;
-
-            const streamChunk: StreamChunk = {
-              text: content,
-              accumulatedText,
-              done: false,
-              index: chunkIndex++,
-            };
-
-            options?.onChunk?.(streamChunk);
-            yield streamChunk;
+            yield createChunk(content, state, options);
           }
 
           // Capture finish reason
@@ -525,54 +520,31 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
         }
       }
 
-      const duration = Date.now() - startTime;
-
       // Azure OpenAI doesn't provide usage in streaming mode, estimate tokens
-      const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
-      const estimatedCompletionTokens = Math.ceil(accumulatedText.length / 4);
-
+      const fallbackUsage = createFallbackUsage(
+        request.prompt,
+        state.accumulatedText,
+      );
       const usage: TokenUsage = {
-        promptTokens: estimatedPromptTokens,
-        completionTokens: estimatedCompletionTokens,
-        totalTokens: estimatedPromptTokens + estimatedCompletionTokens,
+        ...fallbackUsage,
         estimatedCost: this.estimateCost(
-          estimatedPromptTokens,
-          estimatedCompletionTokens,
+          fallbackUsage.promptTokens,
+          fallbackUsage.completionTokens,
         ),
       };
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: deploymentName,
         usage,
-        duration,
         finishReason: this.mapFinishReason(lastFinishReason),
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 }

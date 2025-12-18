@@ -13,6 +13,13 @@ import type {
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import {
+  createChunk,
+  createFallbackUsage,
+  createStreamState,
+  finalizeStream,
+  handleStreamError,
+} from "./stream-handler.ts";
 
 export class OpenAIAdapter implements StreamingLLMAdapter {
   readonly name = "openai";
@@ -339,9 +346,9 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
       model: this.config.model,
       messages,
       // Reasoning models (o1, o3) don't support temperature
-      ...(isReasoningOnly
-        ? {}
-        : { temperature: request.temperature ?? this.config.temperature ?? 0.1 }),
+      ...(isReasoningOnly ? {} : {
+        temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      }),
       ...(usesNewTokenParam
         ? { max_completion_tokens: maxTokensValue }
         : { max_tokens: maxTokensValue }),
@@ -467,7 +474,7 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    const startTime = Date.now();
+    const state = createStreamState();
 
     if (!this.client) {
       if (!this.config.apiKey) {
@@ -503,8 +510,6 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     // Get reasoning effort for o1/o3/GPT-5 models
     const reasoningEffort = this.getReasoningEffort();
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
     let finalUsage: TokenUsage | undefined;
 
     try {
@@ -512,9 +517,9 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
         model: this.config.model,
         messages,
         // Reasoning models (o1, o3) don't support temperature
-        ...(isReasoningOnly
-          ? {}
-          : { temperature: request.temperature ?? this.config.temperature ?? 0.1 }),
+        ...(isReasoningOnly ? {} : {
+          temperature: request.temperature ?? this.config.temperature ?? 0.1,
+        }),
         ...(usesNewTokenParam
           ? { max_completion_tokens: maxTokensValue }
           : { max_tokens: maxTokensValue }),
@@ -535,17 +540,7 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
         const content = chunk.choices[0]?.delta?.content || "";
 
         if (content) {
-          accumulatedText += content;
-
-          const streamChunk: StreamChunk = {
-            text: content,
-            accumulatedText,
-            done: false,
-            index: chunkIndex++,
-          };
-
-          options?.onChunk?.(streamChunk);
-          yield streamChunk;
+          yield createChunk(content, state, options);
         }
 
         // Capture usage from final chunk (when stream_options.include_usage is true)
@@ -562,50 +557,22 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
         }
       }
 
-      const duration = Date.now() - startTime;
-
       // Fallback usage estimation if not provided
-      const usage: TokenUsage = finalUsage ?? {
-        promptTokens: Math.ceil(request.prompt.length / 4),
-        completionTokens: Math.ceil(accumulatedText.length / 4),
-        totalTokens: Math.ceil(
-          (request.prompt.length + accumulatedText.length) / 4,
-        ),
-        estimatedCost: 0,
-      };
+      const usage: TokenUsage = finalUsage ??
+        createFallbackUsage(request.prompt, state.accumulatedText);
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: this.config.model,
         usage,
-        duration,
         finishReason: "stop",
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 }

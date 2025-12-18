@@ -17,6 +17,13 @@ import {
   parseNDJSONStream,
   parseSSEStream,
 } from "../utils/stream-parsers.ts";
+import {
+  createChunk,
+  createFallbackUsage,
+  createStreamState,
+  finalizeStream,
+  handleStreamError,
+} from "./stream-handler.ts";
 import * as colors from "@std/fmt/colors";
 
 export class LocalLLMAdapter implements StreamingLLMAdapter {
@@ -504,6 +511,8 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     startTime: number,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const state = createStreamState(startTime);
+
     const payload: Record<string, unknown> = {
       model: this.config.model,
       prompt: request.prompt,
@@ -521,8 +530,6 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
 
     const url = `${endpoint}/api/generate`;
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
     let promptTokens = 0;
     let completionTokens = 0;
 
@@ -556,17 +563,7 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         const content = (data["response"] as string) || "";
 
         if (content) {
-          accumulatedText += content;
-
-          const streamChunk: StreamChunk = {
-            text: content,
-            accumulatedText,
-            done: false,
-            index: chunkIndex++,
-          };
-
-          options?.onChunk?.(streamChunk);
-          yield streamChunk;
+          yield createChunk(content, state, options);
         }
 
         // Capture token counts from final chunk
@@ -577,8 +574,6 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         }
       }
 
-      const duration = Date.now() - startTime;
-
       const usage: TokenUsage = {
         promptTokens,
         completionTokens,
@@ -586,38 +581,18 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         estimatedCost: 0, // Local models are free
       };
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: this.config.model,
         usage,
-        duration,
         finishReason: "stop",
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 
@@ -627,6 +602,8 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     startTime: number,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const state = createStreamState(startTime);
+
     const messages: Array<{ role: string; content: string }> = [];
     if (request.systemPrompt) {
       messages.push({ role: "system", content: request.systemPrompt });
@@ -650,8 +627,6 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
       stream: true,
     };
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
     let lastFinishReason: string | undefined;
 
     try {
@@ -694,17 +669,7 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
           const content = data.choices?.[0]?.delta?.content || "";
 
           if (content) {
-            accumulatedText += content;
-
-            const streamChunk: StreamChunk = {
-              text: content,
-              accumulatedText,
-              done: false,
-              index: chunkIndex++,
-            };
-
-            options?.onChunk?.(streamChunk);
-            yield streamChunk;
+            yield createChunk(content, state, options);
           }
 
           // Capture finish reason
@@ -717,51 +682,24 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         }
       }
 
-      const duration = Date.now() - startTime;
-
       // Local models don't typically provide usage in streaming, estimate tokens
-      const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
-      const estimatedCompletionTokens = Math.ceil(accumulatedText.length / 4);
-
       const usage: TokenUsage = {
-        promptTokens: estimatedPromptTokens,
-        completionTokens: estimatedCompletionTokens,
-        totalTokens: estimatedPromptTokens + estimatedCompletionTokens,
+        ...createFallbackUsage(request.prompt, state.accumulatedText),
         estimatedCost: 0, // Local models are free
       };
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: this.config.model,
         usage,
-        duration,
         finishReason: lastFinishReason === "stop" ? "stop" : "error",
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 }

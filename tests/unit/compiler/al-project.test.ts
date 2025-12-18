@@ -75,7 +75,7 @@ describe("ALProjectManager", () => {
       const appJsonPath = join(projectPath, "app.json");
       const appJson = JSON.parse(await Deno.readTextFile(appJsonPath));
 
-      assertEquals(appJson.runtime, "13.0");
+      assertEquals(appJson.runtime, "15.0");
       assert(appJson.features.includes("NoImplicitWith"));
     });
 

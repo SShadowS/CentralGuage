@@ -13,6 +13,13 @@ import type {
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import {
+  createChunk,
+  createFallbackUsage,
+  createStreamState,
+  finalizeStream,
+  handleStreamError,
+} from "./stream-handler.ts";
 
 /**
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
@@ -440,7 +447,7 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    const startTime = Date.now();
+    const state = createStreamState();
 
     if (!this.client) {
       if (!this.config.apiKey) {
@@ -473,8 +480,6 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
       content: request.prompt,
     });
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
     let finalUsage: TokenUsage | undefined;
 
     try {
@@ -499,17 +504,7 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
         const content = chunk.choices[0]?.delta?.content || "";
 
         if (content) {
-          accumulatedText += content;
-
-          const streamChunk: StreamChunk = {
-            text: content,
-            accumulatedText,
-            done: false,
-            index: chunkIndex++,
-          };
-
-          options?.onChunk?.(streamChunk);
-          yield streamChunk;
+          yield createChunk(content, state, options);
         }
 
         // Capture usage from final chunk (when stream_options.include_usage is true)
@@ -526,50 +521,22 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
         }
       }
 
-      const duration = Date.now() - startTime;
-
       // Fallback usage estimation if not provided
-      const usage: TokenUsage = finalUsage ?? {
-        promptTokens: Math.ceil(request.prompt.length / 4),
-        completionTokens: Math.ceil(accumulatedText.length / 4),
-        totalTokens: Math.ceil(
-          (request.prompt.length + accumulatedText.length) / 4,
-        ),
-        estimatedCost: 0,
-      };
+      const usage: TokenUsage = finalUsage ??
+        createFallbackUsage(request.prompt, state.accumulatedText);
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: this.config.model,
         usage,
-        duration,
         finishReason: "stop",
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 }

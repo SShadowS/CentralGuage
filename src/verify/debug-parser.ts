@@ -3,7 +3,7 @@
  * Parses JSONL debug files to find failing tasks
  */
 
-import { exists } from "@std/fs";
+import { exists, expandGlob } from "@std/fs";
 import type {
   CompilationLogEntry,
   TestLogEntry,
@@ -13,7 +13,7 @@ import type { FailingTask, TaskDifficulty } from "./types.ts";
 /**
  * Session info extracted from debug directory
  */
-interface SessionInfo {
+export interface SessionInfo {
   sessionId: string;
   compilationLogPath: string | null;
   testLogPath: string | null;
@@ -32,9 +32,18 @@ function getDifficulty(taskId: string): TaskDifficulty {
 
 /**
  * Get the path to task YAML file based on task ID
+ * Uses glob to find files matching the pattern taskId-*.yml or taskId.yml
  */
-function getTaskYamlPath(taskId: string): string {
+async function getTaskYamlPath(taskId: string): Promise<string> {
   const difficulty = getDifficulty(taskId);
+  const pattern = `tasks/${difficulty}/${taskId}*.yml`;
+
+  for await (const entry of expandGlob(pattern)) {
+    // Return the first match (there should only be one)
+    return entry.path.replace(/\\/g, "/");
+  }
+
+  // Fallback to constructed path if no match found
   return `tasks/${difficulty}/${taskId}.yml`;
 }
 
@@ -64,7 +73,7 @@ function getGeneratedCodePath(
 /**
  * Find all sessions in the debug directory
  */
-async function findSessions(debugDir: string): Promise<SessionInfo[]> {
+export async function findSessions(debugDir: string): Promise<SessionInfo[]> {
   const sessions = new Map<string, SessionInfo>();
 
   for await (const entry of Deno.readDir(debugDir)) {
@@ -217,24 +226,39 @@ function taskEventuallySucceeded(
 }
 
 /**
- * Parse debug directory and find all failing tasks
+ * Loaded session entries for checking eventual success
  */
-export async function parseDebugDir(
+interface SessionEntries {
+  compilationEntries: CompilationLogEntry[];
+  testEntries: TestLogEntry[];
+}
+
+/**
+ * Context needed for processing failures
+ */
+interface FailureProcessingContext {
+  debugDir: string;
+  sessionId: string;
+  entries: SessionEntries;
+  existingFailures: FailingTask[];
+}
+
+/**
+ * Validate debug directory and get target session
+ */
+async function validateAndGetSession(
   debugDir: string,
   sessionId?: string,
-): Promise<FailingTask[]> {
-  // Validate debug directory exists
+): Promise<{ session: SessionInfo; targetSessionId: string }> {
   if (!await exists(debugDir)) {
     throw new Error(`Debug directory does not exist: ${debugDir}`);
   }
 
-  // Find session
   const targetSessionId = sessionId ?? await findLatestSession(debugDir);
   if (!targetSessionId) {
     throw new Error("No sessions found in debug directory");
   }
 
-  // Find session files
   const sessions = await findSessions(debugDir);
   const session = sessions.find((s) => s.sessionId === targetSessionId);
 
@@ -242,137 +266,213 @@ export async function parseDebugDir(
     throw new Error(`Session not found: ${targetSessionId}`);
   }
 
-  const failingTasks: FailingTask[] = [];
+  return { session, targetSessionId };
+}
 
-  // Parse all compilation entries (for checking eventual success)
+/**
+ * Load all session entries for checking eventual success
+ */
+async function loadAllSessionEntries(
+  session: SessionInfo,
+): Promise<SessionEntries> {
   type CompilationEntry = { type: string } & CompilationLogEntry;
   type TestEntry = { type: string } & TestLogEntry;
 
-  let allCompilationEntries: CompilationLogEntry[] = [];
-  let allTestEntries: TestLogEntry[] = [];
+  let compilationEntries: CompilationLogEntry[] = [];
+  let testEntries: TestLogEntry[] = [];
 
   if (session.compilationLogPath) {
-    allCompilationEntries = await parseJsonlFile<CompilationEntry>(
+    compilationEntries = await parseJsonlFile<CompilationEntry>(
       session.compilationLogPath,
       "compilation_result",
     );
   }
 
   if (session.testLogPath) {
-    allTestEntries = await parseJsonlFile<TestEntry>(
+    testEntries = await parseJsonlFile<TestEntry>(
       session.testLogPath,
       "test_result",
     );
   }
 
-  // Find compilation failures
-  if (session.compilationLogPath) {
-    const compilationFailures = await parseCompilationFailures(
-      session.compilationLogPath,
+  return { compilationEntries, testEntries };
+}
+
+/**
+ * Parse failure key into taskId and model
+ */
+function parseFailureKey(
+  key: string,
+): { taskId: string; model: string } | null {
+  const parts = key.split("_");
+  const taskId = parts[0];
+  const model = parts[1];
+  if (!taskId || !model) return null;
+  return { taskId, model };
+}
+
+/**
+ * Check if a failure should be skipped
+ */
+async function shouldSkipFailure(
+  taskId: string,
+  model: string,
+  entries: SessionEntries,
+): Promise<{ skip: boolean; taskYamlPath?: string }> {
+  // Skip if task eventually succeeded
+  if (
+    taskEventuallySucceeded(
+      taskId,
+      model,
+      entries.compilationEntries,
+      entries.testEntries,
+    )
+  ) {
+    return { skip: true };
+  }
+
+  // Skip if task file no longer exists
+  const taskYamlPath = await getTaskYamlPath(taskId);
+  if (!await exists(taskYamlPath)) {
+    return { skip: true };
+  }
+
+  return { skip: false, taskYamlPath };
+}
+
+/**
+ * Process compilation failures and return failing tasks
+ */
+async function collectCompilationFailures(
+  session: SessionInfo,
+  ctx: FailureProcessingContext,
+): Promise<FailingTask[]> {
+  if (!session.compilationLogPath) return [];
+
+  const failures: FailingTask[] = [];
+  const compilationFailures = await parseCompilationFailures(
+    session.compilationLogPath,
+  );
+
+  for (const [key, keyFailures] of compilationFailures) {
+    const sortedFailures = keyFailures.sort((a, b) => b.attempt - a.attempt);
+    const lastFailure = sortedFailures[0];
+    if (!lastFailure) continue;
+
+    const parsed = parseFailureKey(key);
+    if (!parsed) continue;
+
+    const { taskId, model } = parsed;
+    const skipResult = await shouldSkipFailure(taskId, model, ctx.entries);
+    if (skipResult.skip || !skipResult.taskYamlPath) continue;
+
+    failures.push({
+      taskId,
+      difficulty: getDifficulty(taskId),
+      failureType: "compilation",
+      model,
+      attempt: lastFailure.attempt,
+      compilationErrors: lastFailure.errors,
+      output: lastFailure.output,
+      taskYamlPath: skipResult.taskYamlPath,
+      testAlPath: getTestAlPath(taskId),
+      generatedCodePath: getGeneratedCodePath(
+        ctx.debugDir,
+        taskId,
+        model,
+        lastFailure.attempt,
+      ),
+      sessionId: ctx.sessionId,
+    });
+  }
+
+  return failures;
+}
+
+/**
+ * Process test failures and return failing tasks
+ */
+async function collectTestFailures(
+  session: SessionInfo,
+  ctx: FailureProcessingContext,
+): Promise<FailingTask[]> {
+  if (!session.testLogPath) return [];
+
+  const failures: FailingTask[] = [];
+  const testFailures = await parseTestFailures(session.testLogPath);
+
+  for (const [key, keyFailures] of testFailures) {
+    const sortedFailures = keyFailures.sort((a, b) => b.attempt - a.attempt);
+    const lastFailure = sortedFailures[0];
+    if (!lastFailure) continue;
+
+    const parsed = parseFailureKey(key);
+    if (!parsed) continue;
+
+    const { taskId, model } = parsed;
+    const skipResult = await shouldSkipFailure(taskId, model, ctx.entries);
+    if (skipResult.skip || !skipResult.taskYamlPath) continue;
+
+    // Skip if we already have a compilation failure for this task/model
+    const alreadyHasCompilationFailure = ctx.existingFailures.some(
+      (t) =>
+        t.taskId === taskId &&
+        t.model === model &&
+        t.failureType === "compilation",
     );
+    if (alreadyHasCompilationFailure) continue;
 
-    for (const [key, failures] of compilationFailures) {
-      // Get the last failure (highest attempt number)
-      const sortedFailures = failures.sort((a, b) => b.attempt - a.attempt);
-      const lastFailure = sortedFailures[0];
-      if (!lastFailure) continue;
-
-      const parts = key.split("_");
-      const taskId = parts[0];
-      const model = parts[1];
-      if (!taskId || !model) continue;
-
-      // Skip if task eventually succeeded
-      if (
-        taskEventuallySucceeded(
-          taskId,
-          model,
-          allCompilationEntries,
-          allTestEntries,
-        )
-      ) {
-        continue;
-      }
-
-      failingTasks.push({
+    failures.push({
+      taskId,
+      difficulty: getDifficulty(taskId),
+      failureType: "test",
+      model,
+      attempt: lastFailure.attempt,
+      testResults: lastFailure.results,
+      output: lastFailure.output,
+      taskYamlPath: skipResult.taskYamlPath,
+      testAlPath: getTestAlPath(taskId),
+      generatedCodePath: getGeneratedCodePath(
+        ctx.debugDir,
         taskId,
-        difficulty: getDifficulty(taskId),
-        failureType: "compilation",
         model,
-        attempt: lastFailure.attempt,
-        compilationErrors: lastFailure.errors,
-        output: lastFailure.output,
-        taskYamlPath: getTaskYamlPath(taskId),
-        testAlPath: getTestAlPath(taskId),
-        generatedCodePath: getGeneratedCodePath(
-          debugDir,
-          taskId,
-          model,
-          lastFailure.attempt,
-        ),
-        sessionId: targetSessionId,
-      });
-    }
+        lastFailure.attempt,
+      ),
+      sessionId: ctx.sessionId,
+    });
   }
 
-  // Find test failures (only for tasks that compiled successfully)
-  if (session.testLogPath) {
-    const testFailures = await parseTestFailures(session.testLogPath);
+  return failures;
+}
 
-    for (const [key, failures] of testFailures) {
-      const sortedFailures = failures.sort((a, b) => b.attempt - a.attempt);
-      const lastFailure = sortedFailures[0];
-      if (!lastFailure) continue;
+/**
+ * Parse debug directory and find all failing tasks
+ */
+export async function parseDebugDir(
+  debugDir: string,
+  sessionId?: string,
+): Promise<FailingTask[]> {
+  const { session, targetSessionId } = await validateAndGetSession(
+    debugDir,
+    sessionId,
+  );
+  const entries = await loadAllSessionEntries(session);
 
-      const parts = key.split("_");
-      const taskId = parts[0];
-      const model = parts[1];
-      if (!taskId || !model) continue;
+  const ctx: FailureProcessingContext = {
+    debugDir,
+    sessionId: targetSessionId,
+    entries,
+    existingFailures: [],
+  };
 
-      // Skip if task eventually succeeded
-      if (
-        taskEventuallySucceeded(
-          taskId,
-          model,
-          allCompilationEntries,
-          allTestEntries,
-        )
-      ) {
-        continue;
-      }
+  // Collect compilation failures first
+  const compilationFailures = await collectCompilationFailures(session, ctx);
+  ctx.existingFailures = compilationFailures;
 
-      // Skip if we already have a compilation failure for this task/model
-      const alreadyHasCompilationFailure = failingTasks.some(
-        (t) =>
-          t.taskId === taskId &&
-          t.model === model &&
-          t.failureType === "compilation",
-      );
+  // Collect test failures (excluding tasks with compilation failures)
+  const testFailures = await collectTestFailures(session, ctx);
 
-      if (alreadyHasCompilationFailure) continue;
-
-      failingTasks.push({
-        taskId,
-        difficulty: getDifficulty(taskId),
-        failureType: "test",
-        model,
-        attempt: lastFailure.attempt,
-        testResults: lastFailure.results,
-        output: lastFailure.output,
-        taskYamlPath: getTaskYamlPath(taskId),
-        testAlPath: getTestAlPath(taskId),
-        generatedCodePath: getGeneratedCodePath(
-          debugDir,
-          taskId,
-          model,
-          lastFailure.attempt,
-        ),
-        sessionId: targetSessionId,
-      });
-    }
-  }
-
-  return failingTasks;
+  return [...compilationFailures, ...testFailures];
 }
 
 /**

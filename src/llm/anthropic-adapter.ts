@@ -13,6 +13,12 @@ import type {
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import {
+  createChunk,
+  createStreamState,
+  finalizeStream,
+  handleStreamError,
+} from "./stream-handler.ts";
 
 export class AnthropicAdapter implements StreamingLLMAdapter {
   readonly name = "anthropic";
@@ -453,7 +459,7 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    const startTime = Date.now();
+    const state = createStreamState();
 
     if (!this.client) {
       if (!this.config.apiKey) {
@@ -506,9 +512,6 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       params.temperature = temperature;
     }
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
-
     try {
       const stream = this.client.messages.stream(params);
 
@@ -524,19 +527,7 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
         if (event.type === "content_block_delta") {
           const delta = event.delta;
           if (delta.type === "text_delta") {
-            accumulatedText += delta.text;
-
-            const chunk: StreamChunk = {
-              text: delta.text,
-              accumulatedText,
-              done: false,
-              index: chunkIndex++,
-            };
-
-            // Call optional callback
-            options?.onChunk?.(chunk);
-
-            yield chunk;
+            yield createChunk(delta.text, state, options);
           }
         }
         // Note: message_start and message_delta events contain token counts,
@@ -545,8 +536,6 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
 
       // Get final message for complete usage data
       const finalMessage = await stream.finalMessage();
-
-      const duration = Date.now() - startTime;
 
       const usage: TokenUsage = {
         promptTokens: finalMessage.usage.input_tokens,
@@ -559,38 +548,18 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
         ),
       };
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: this.config.model,
         usage,
-        duration,
         finishReason: this.mapFinishReason(finalMessage.stop_reason),
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 }

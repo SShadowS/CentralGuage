@@ -41,13 +41,13 @@ export class InMemoryStorage implements StatsStorage {
     await Promise.resolve();
   }
 
-  async getRun(
+  getRun(
     runId: string,
   ): Promise<import("./types.ts").RunRecord | null> {
-    return this.runs.get(runId) ?? null;
+    return Promise.resolve(this.runs.get(runId) ?? null);
   }
 
-  async listRuns(
+  listRuns(
     options: import("./types.ts").ListRunsOptions = {},
   ): Promise<import("./types.ts").RunRecord[]> {
     let runs = Array.from(this.runs.values());
@@ -74,18 +74,18 @@ export class InMemoryStorage implements StatsStorage {
       runs = runs.slice(0, options.limit);
     }
 
-    return runs;
+    return Promise.resolve(runs);
   }
 
-  async hasRun(runId: string): Promise<boolean> {
-    return this.runs.has(runId);
+  hasRun(runId: string): Promise<boolean> {
+    return Promise.resolve(this.runs.has(runId));
   }
 
-  async deleteRun(runId: string): Promise<boolean> {
+  deleteRun(runId: string): Promise<boolean> {
     const existed = this.runs.has(runId);
     this.runs.delete(runId);
     this.results = this.results.filter((r) => r.runId !== runId);
-    return existed;
+    return Promise.resolve(existed);
   }
 
   async persistResults(
@@ -98,7 +98,7 @@ export class InMemoryStorage implements StatsStorage {
     await Promise.resolve();
   }
 
-  async getResults(
+  getResults(
     options: import("./types.ts").GetResultsOptions,
   ): Promise<import("./types.ts").ResultRecord[]> {
     let results = [...this.results];
@@ -126,20 +126,20 @@ export class InMemoryStorage implements StatsStorage {
       results = results.slice(0, options.limit);
     }
 
-    return results;
+    return Promise.resolve(results);
   }
 
-  async getVariantIds(): Promise<string[]> {
+  getVariantIds(): Promise<string[]> {
     const ids = new Set(this.results.map((r) => r.variantId));
-    return Array.from(ids).sort();
+    return Promise.resolve(Array.from(ids).sort());
   }
 
-  async getTaskIds(): Promise<string[]> {
+  getTaskIds(): Promise<string[]> {
     const ids = new Set(this.results.map((r) => r.taskId));
-    return Array.from(ids).sort();
+    return Promise.resolve(Array.from(ids).sort());
   }
 
-  async getModelTrend(
+  getModelTrend(
     variantId: string,
     options: import("./types.ts").TrendOptions = {},
   ): Promise<import("./types.ts").TrendPoint[]> {
@@ -185,12 +185,12 @@ export class InMemoryStorage implements StatsStorage {
     points.sort((a, b) => b.executedAt.getTime() - a.executedAt.getTime());
 
     if (options.limit) {
-      return points.slice(0, options.limit);
+      return Promise.resolve(points.slice(0, options.limit));
     }
-    return points;
+    return Promise.resolve(points);
   }
 
-  async compareModels(
+  compareModels(
     variant1: string,
     variant2: string,
   ): Promise<import("./types.ts").ModelComparison> {
@@ -248,7 +248,7 @@ export class InMemoryStorage implements StatsStorage {
     }
 
     const count = perTask.length || 1;
-    return {
+    return Promise.resolve({
       variant1,
       variant2,
       variant1Wins: v1Wins,
@@ -259,17 +259,17 @@ export class InMemoryStorage implements StatsStorage {
       variant1Cost: v1Cost,
       variant2Cost: v2Cost,
       perTask,
-    };
+    });
   }
 
-  async detectRegressions(
+  detectRegressions(
     _options: import("./types.ts").RegressionOptions,
   ): Promise<import("./types.ts").Regression[]> {
     // Simplified implementation - full logic in SQLite version
-    return [];
+    return Promise.resolve([]);
   }
 
-  async getCostBreakdown(
+  getCostBreakdown(
     options: import("./types.ts").CostOptions,
   ): Promise<import("./types.ts").CostBreakdown[]> {
     const groups = new Map<
@@ -316,16 +316,18 @@ export class InMemoryStorage implements StatsStorage {
       groups.set(key, agg);
     }
 
-    return Array.from(groups.entries())
-      .map(([key, agg]) => ({
-        groupKey: key,
-        totalCost: agg.cost,
-        totalTokens: agg.tokens,
-        executionCount: agg.count,
-        avgCostPerExecution: agg.cost / agg.count,
-        costPerSuccess: agg.success > 0 ? agg.cost / agg.success : null,
-      }))
-      .sort((a, b) => b.totalCost - a.totalCost);
+    return Promise.resolve(
+      Array.from(groups.entries())
+        .map(([key, agg]) => ({
+          groupKey: key,
+          totalCost: agg.cost,
+          totalTokens: agg.tokens,
+          executionCount: agg.count,
+          avgCostPerExecution: agg.cost / agg.count,
+          costPerSuccess: agg.success > 0 ? agg.cost / agg.success : null,
+        }))
+        .sort((a, b) => b.totalCost - a.totalCost),
+    );
   }
 
   /** Clear all data (for testing) */

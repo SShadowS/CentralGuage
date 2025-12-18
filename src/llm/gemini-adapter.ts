@@ -13,6 +13,13 @@ import type {
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import {
+  createChunk,
+  createStreamState,
+  estimateTokens,
+  finalizeStream,
+  handleStreamError,
+} from "./stream-handler.ts";
 
 export class GeminiAdapter implements StreamingLLMAdapter {
   readonly name = "gemini";
@@ -408,7 +415,7 @@ export class GeminiAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    const startTime = Date.now();
+    const state = createStreamState();
 
     if (!this.ai) {
       if (!this.config.apiKey) {
@@ -419,8 +426,6 @@ export class GeminiAdapter implements StreamingLLMAdapter {
       this.ai = new GoogleGenAI({ apiKey: this.config.apiKey });
     }
 
-    let accumulatedText = "";
-    let chunkIndex = 0;
     let lastFinishReason: string | undefined;
     // deno-lint-ignore no-explicit-any
     let usageMetadata: any;
@@ -443,17 +448,7 @@ export class GeminiAdapter implements StreamingLLMAdapter {
         const text = chunk.text || "";
 
         if (text) {
-          accumulatedText += text;
-
-          const streamChunk: StreamChunk = {
-            text,
-            accumulatedText,
-            done: false,
-            index: chunkIndex++,
-          };
-
-          options?.onChunk?.(streamChunk);
-          yield streamChunk;
+          yield createChunk(text, state, options);
         }
 
         // Capture finish reason and usage metadata
@@ -465,56 +460,32 @@ export class GeminiAdapter implements StreamingLLMAdapter {
         }
       }
 
-      const duration = Date.now() - startTime;
-
-      // Estimate tokens if not provided by the API
-      const estimatedPromptTokens = Math.ceil(request.prompt.length / 4);
-      const estimatedCompletionTokens = Math.ceil(accumulatedText.length / 4);
+      // Build usage from API metadata or estimate tokens
+      const promptTokens = usageMetadata?.promptTokenCount ??
+        estimateTokens(request.prompt);
+      const completionTokens = usageMetadata?.candidatesTokenCount ??
+        estimateTokens(state.accumulatedText);
 
       const usage: TokenUsage = {
-        promptTokens: usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
-        completionTokens: usageMetadata?.candidatesTokenCount ??
-          estimatedCompletionTokens,
+        promptTokens,
+        completionTokens,
         totalTokens: usageMetadata?.totalTokenCount ??
-          (estimatedPromptTokens + estimatedCompletionTokens),
-        estimatedCost: this.estimateCost(
-          usageMetadata?.promptTokenCount ?? estimatedPromptTokens,
-          usageMetadata?.candidatesTokenCount ?? estimatedCompletionTokens,
-        ),
+          (promptTokens + completionTokens),
+        estimatedCost: this.estimateCost(promptTokens, completionTokens),
       };
 
-      const response: LLMResponse = {
-        content: accumulatedText,
+      const { finalChunk, result } = finalizeStream({
+        state,
         model: this.config.model,
         usage,
-        duration,
         finishReason: this.mapFinishReason(lastFinishReason),
-      };
+        options,
+      });
 
-      const result: StreamResult = {
-        content: accumulatedText,
-        response,
-        chunkCount: chunkIndex,
-      };
-
-      // Final chunk to signal completion
-      const finalChunk: StreamChunk = {
-        text: "",
-        accumulatedText,
-        done: true,
-        usage,
-        index: chunkIndex,
-      };
-
-      options?.onChunk?.(finalChunk);
       yield finalChunk;
-
-      options?.onComplete?.(result);
-
       return result;
     } catch (error) {
-      options?.onError?.(error as Error);
-      throw error;
+      handleStreamError(error, options);
     }
   }
 }

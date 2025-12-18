@@ -410,17 +410,20 @@ Deno.test("OpenAIAdapter - thinkingBudget configuration", async (t) => {
     assertEquals(adapter.name, "openai");
   });
 
-  await t.step("accepts numeric thinkingBudget (falls through as undefined)", () => {
-    // OpenAI uses string values, numeric values should be ignored
-    const adapter = new OpenAIAdapter();
-    adapter.configure({
-      provider: "openai",
-      model: "o3-mini",
-      apiKey: "test-key",
-      thinkingBudget: 10000,
-    });
-    assertEquals(adapter.name, "openai");
-  });
+  await t.step(
+    "accepts numeric thinkingBudget (falls through as undefined)",
+    () => {
+      // OpenAI uses string values, numeric values should be ignored
+      const adapter = new OpenAIAdapter();
+      adapter.configure({
+        provider: "openai",
+        model: "o3-mini",
+        apiKey: "test-key",
+        thinkingBudget: 10000,
+      });
+      assertEquals(adapter.name, "openai");
+    },
+  );
 });
 
 // =============================================================================

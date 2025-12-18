@@ -11,6 +11,7 @@ import type {
   VerificationSummary,
   VerifyEvent,
   VerifyEventListener,
+  VerifyMode,
   VerifyOptions,
 } from "./types.ts";
 import { isFixableResult, isModelShortcomingResult } from "./types.ts";
@@ -46,6 +47,8 @@ export interface OrchestratorConfig {
   dryRun: boolean;
   /** Interactive callback for fix prompts */
   interactivePrompt?: InteractivePromptFn;
+  /** Mode: run both, shortcomings only, or fixes only */
+  mode: VerifyMode;
 }
 
 /**
@@ -56,6 +59,7 @@ const DEFAULT_CONFIG: OrchestratorConfig = {
   analyzerConfig: {},
   shortcomingsDir: "model-shortcomings",
   dryRun: false,
+  mode: "all",
 };
 
 /**
@@ -169,9 +173,18 @@ export class VerifyOrchestrator {
 
       if (isFixableResult(result)) {
         summary.fixableIssues++;
-        await this.handleFixableResult(result, summary);
+        // In shortcomings-only mode, skip fixes
+        if (this.config.mode !== "shortcomings-only") {
+          await this.handleFixableResult(result, summary);
+        } else {
+          summary.fixesSkipped++;
+          this.emit({ type: "fix_skipped", taskId: result.taskId });
+        }
       } else if (isModelShortcomingResult(result)) {
-        await this.handleShortcoming(result, summary);
+        // In fixes-only mode, skip shortcomings
+        if (this.config.mode !== "fixes-only") {
+          await this.handleShortcoming(result, summary);
+        }
       }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -256,6 +269,8 @@ export class VerifyOrchestrator {
     summary: VerificationSummary,
   ): Promise<void> {
     await this.shortcomingsTracker.addShortcoming(result.model, result);
+    // Save immediately so we don't lose data if process is interrupted
+    await this.shortcomingsTracker.saveModel(result.model);
 
     const currentCount = summary.modelShortcomings.get(result.model) || 0;
     summary.modelShortcomings.set(result.model, currentCount + 1);
@@ -337,10 +352,11 @@ export function createVerifyOrchestrator(
     },
     shortcomingsDir: options.shortcomingsDir,
     dryRun: options.dryRun,
+    mode: options.mode,
   };
 
-  // Only add interactivePrompt if not in dry-run mode
-  if (!options.dryRun) {
+  // Only add interactivePrompt if not in dry-run mode and not in shortcomings-only mode
+  if (!options.dryRun && options.mode !== "shortcomings-only") {
     config.interactivePrompt = defaultInteractivePrompt;
   }
 

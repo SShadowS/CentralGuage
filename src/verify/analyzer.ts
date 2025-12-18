@@ -234,8 +234,9 @@ async function loadAnalysisContext(
 
 /**
  * Parse LLM response into an AnalysisResult
+ * Exported for testing
  */
-function parseAnalysisResponse(
+export function parseAnalysisResponse(
   response: string,
   task: FailingTask,
 ): AnalysisResult {
@@ -252,6 +253,12 @@ function parseAnalysisResponse(
     const parsed = JSON.parse(jsonStr);
 
     if (parsed.outcome === "fixable") {
+      // Always use the correct path from the task, not the LLM's suggestion
+      const isTaskYamlFix = parsed.affectedFile === "task_yaml";
+      const correctFilePath = isTaskYamlFix
+        ? task.taskYamlPath
+        : task.testAlPath;
+
       return {
         outcome: "fixable",
         taskId: task.taskId,
@@ -259,10 +266,8 @@ function parseAnalysisResponse(
         category: parsed.category as FixableCategory,
         description: parsed.description || "No description provided",
         fix: {
-          fileType: parsed.affectedFile === "task_yaml"
-            ? "task_yaml"
-            : "test_al",
-          filePath: parsed.fix?.filePath || task.testAlPath,
+          fileType: isTaskYamlFix ? "task_yaml" : "test_al",
+          filePath: correctFilePath,
           description: parsed.fix?.description || "No fix description",
           codeBefore: parsed.fix?.codeBefore || "",
           codeAfter: parsed.fix?.codeAfter || "",

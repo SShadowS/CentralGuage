@@ -152,7 +152,7 @@ export class SqliteStorage implements StatsStorage {
     await Promise.resolve();
   }
 
-  async getRun(runId: string): Promise<RunRecord | null> {
+  getRun(runId: string): Promise<RunRecord | null> {
     const db = this.getDb();
 
     const row = db.prepare(`
@@ -179,13 +179,13 @@ export class SqliteStorage implements StatsStorage {
     ]>(runId);
 
     if (!row) {
-      return null;
+      return Promise.resolve(null);
     }
 
-    return this.rowToRunRecord(row);
+    return Promise.resolve(this.rowToRunRecord(row));
   }
 
-  async listRuns(options: ListRunsOptions = {}): Promise<RunRecord[]> {
+  listRuns(options: ListRunsOptions = {}): Promise<RunRecord[]> {
     const db = this.getDb();
 
     let sql = `
@@ -243,21 +243,21 @@ export class SqliteStorage implements StatsStorage {
       string | null,
     ]>(...params);
 
-    return rows.map((row) => this.rowToRunRecord(row));
+    return Promise.resolve(rows.map((row) => this.rowToRunRecord(row)));
   }
 
-  async hasRun(runId: string): Promise<boolean> {
+  hasRun(runId: string): Promise<boolean> {
     const db = this.getDb();
     const row = db.prepare(
       "SELECT 1 FROM runs WHERE run_id = ?",
     ).value<[number]>(runId);
-    return row !== undefined;
+    return Promise.resolve(row !== undefined);
   }
 
-  async deleteRun(runId: string): Promise<boolean> {
+  deleteRun(runId: string): Promise<boolean> {
     const db = this.getDb();
     const result = db.prepare("DELETE FROM runs WHERE run_id = ?").run(runId);
-    return result > 0;
+    return Promise.resolve(result > 0);
   }
 
   private rowToRunRecord(
@@ -341,7 +341,7 @@ export class SqliteStorage implements StatsStorage {
     await Promise.resolve();
   }
 
-  async getResults(options: GetResultsOptions): Promise<ResultRecord[]> {
+  getResults(options: GetResultsOptions): Promise<ResultRecord[]> {
     const db = this.getDb();
 
     let sql = `
@@ -404,23 +404,23 @@ export class SqliteStorage implements StatsStorage {
       string | null,
     ]>(...params);
 
-    return rows.map((row) => this.rowToResultRecord(row));
+    return Promise.resolve(rows.map((row) => this.rowToResultRecord(row)));
   }
 
-  async getVariantIds(): Promise<string[]> {
+  getVariantIds(): Promise<string[]> {
     const db = this.getDb();
     const rows = db.prepare(
       "SELECT DISTINCT variant_id FROM results ORDER BY variant_id",
     ).values<[string]>();
-    return rows.map((row) => row[0]);
+    return Promise.resolve(rows.map((row) => row[0]));
   }
 
-  async getTaskIds(): Promise<string[]> {
+  getTaskIds(): Promise<string[]> {
     const db = this.getDb();
     const rows = db.prepare(
       "SELECT DISTINCT task_id FROM results ORDER BY task_id",
     ).values<[string]>();
-    return rows.map((row) => row[0]);
+    return Promise.resolve(rows.map((row) => row[0]));
   }
 
   private rowToResultRecord(
@@ -462,7 +462,7 @@ export class SqliteStorage implements StatsStorage {
 
   // ============ Analytics Queries ============
 
-  async getModelTrend(
+  getModelTrend(
     variantId: string,
     options: TrendOptions = {},
   ): Promise<TrendPoint[]> {
@@ -502,17 +502,19 @@ export class SqliteStorage implements StatsStorage {
       [string, string, number, number, number, number]
     >(...params);
 
-    return rows.map((row) => ({
-      runId: row[0],
-      executedAt: new Date(row[1]),
-      passed: row[2],
-      total: row[3],
-      avgScore: row[4],
-      cost: row[5],
-    }));
+    return Promise.resolve(
+      rows.map((row) => ({
+        runId: row[0],
+        executedAt: new Date(row[1]),
+        passed: row[2],
+        total: row[3],
+        avgScore: row[4],
+        cost: row[5],
+      })),
+    );
   }
 
-  async compareModels(
+  compareModels(
     variant1: string,
     variant2: string,
   ): Promise<ModelComparison> {
@@ -591,7 +593,7 @@ export class SqliteStorage implements StatsStorage {
     );
     const costs = new Map(costRows.map((r) => [r[0], r[1]]));
 
-    return {
+    return Promise.resolve({
       variant1,
       variant2,
       variant1Wins,
@@ -602,10 +604,10 @@ export class SqliteStorage implements StatsStorage {
       variant1Cost: costs.get(variant1) ?? 0,
       variant2Cost: costs.get(variant2) ?? 0,
       perTask,
-    };
+    });
   }
 
-  async detectRegressions(options: RegressionOptions): Promise<Regression[]> {
+  detectRegressions(options: RegressionOptions): Promise<Regression[]> {
     const db = this.getDb();
 
     const recentWindow = options.recentWindow ?? 3;
@@ -663,16 +665,18 @@ export class SqliteStorage implements StatsStorage {
       [string, string, number, number, number]
     >(...params);
 
-    return rows.map((row) => ({
-      taskId: row[0],
-      variantId: row[1],
-      baselineScore: row[2],
-      currentScore: row[3],
-      changePct: row[4] * 100,
-    }));
+    return Promise.resolve(
+      rows.map((row) => ({
+        taskId: row[0],
+        variantId: row[1],
+        baselineScore: row[2],
+        currentScore: row[3],
+        changePct: row[4] * 100,
+      })),
+    );
   }
 
-  async getCostBreakdown(options: CostOptions): Promise<CostBreakdown[]> {
+  getCostBreakdown(options: CostOptions): Promise<CostBreakdown[]> {
     const db = this.getDb();
 
     let groupExpr: string;
@@ -726,13 +730,15 @@ export class SqliteStorage implements StatsStorage {
       [string, number, number, number, number, number | null]
     >(...params);
 
-    return rows.map((row) => ({
-      groupKey: row[0],
-      totalCost: row[1],
-      totalTokens: row[2],
-      executionCount: row[3],
-      avgCostPerExecution: row[4],
-      costPerSuccess: row[5],
-    }));
+    return Promise.resolve(
+      rows.map((row) => ({
+        groupKey: row[0],
+        totalCost: row[1],
+        totalTokens: row[2],
+        executionCount: row[3],
+        avgCostPerExecution: row[4],
+        costPerSuccess: row[5],
+      })),
+    );
   }
 }

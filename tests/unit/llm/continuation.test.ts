@@ -72,7 +72,7 @@ describe("continuation", () => {
         "procedure Test() begin end;",
         "stop",
       );
-      const generateFn = async () => mockResult;
+      const generateFn = () => Promise.resolve(mockResult);
 
       const result = await generateWithContinuation(
         generateFn,
@@ -88,12 +88,16 @@ describe("continuation", () => {
 
     it("should continue when response is truncated", async () => {
       let callCount = 0;
-      const generateFn = async () => {
+      const generateFn = () => {
         callCount++;
         if (callCount === 1) {
-          return createMockResult("procedure Test() begin", "length");
+          return Promise.resolve(
+            createMockResult("procedure Test() begin", "length"),
+          );
         }
-        return createMockResult(" Message('Hello'); end;", "stop");
+        return Promise.resolve(
+          createMockResult(" Message('Hello'); end;", "stop"),
+        );
       };
 
       const result = await generateWithContinuation(
@@ -110,10 +114,10 @@ describe("continuation", () => {
 
     it("should respect maxContinuations limit", async () => {
       let callCount = 0;
-      const generateFn = async () => {
+      const generateFn = () => {
         callCount++;
         // Always return truncated
-        return createMockResult(`part${callCount}`, "length");
+        return Promise.resolve(createMockResult(`part${callCount}`, "length"));
       };
 
       const config: ContinuationConfig = {
@@ -135,9 +139,9 @@ describe("continuation", () => {
 
     it("should not continue when disabled", async () => {
       let callCount = 0;
-      const generateFn = async () => {
+      const generateFn = () => {
         callCount++;
-        return createMockResult("truncated code", "length");
+        return Promise.resolve(createMockResult("truncated code", "length"));
       };
 
       const config: ContinuationConfig = {
@@ -159,15 +163,15 @@ describe("continuation", () => {
 
     it("should accumulate token usage across continuations", async () => {
       let callCount = 0;
-      const generateFn = async () => {
+      const generateFn = () => {
         callCount++;
         if (callCount === 1) {
-          return createMockResult("part1", "length", 100, 200);
+          return Promise.resolve(createMockResult("part1", "length", 100, 200));
         }
         if (callCount === 2) {
-          return createMockResult("part2", "length", 150, 250);
+          return Promise.resolve(createMockResult("part2", "length", 150, 250));
         }
-        return createMockResult("part3", "stop", 120, 180);
+        return Promise.resolve(createMockResult("part3", "stop", 120, 180));
       };
 
       const config: ContinuationConfig = {
@@ -189,12 +193,16 @@ describe("continuation", () => {
 
     it("should accumulate content across continuations", async () => {
       let callCount = 0;
-      const generateFn = async () => {
+      const generateFn = () => {
         callCount++;
         if (callCount === 1) {
-          return createMockResult("procedure Test()", "length");
+          return Promise.resolve(
+            createMockResult("procedure Test()", "length"),
+          );
         }
-        return createMockResult("begin Message('Done'); end;", "stop");
+        return Promise.resolve(
+          createMockResult("begin Message('Done'); end;", "stop"),
+        );
       };
 
       const result = await generateWithContinuation(
@@ -212,19 +220,19 @@ describe("continuation", () => {
 
     it("should handle overlap detection in code merge", async () => {
       let callCount = 0;
-      const generateFn = async () => {
+      const generateFn = () => {
         callCount++;
         if (callCount === 1) {
-          return createMockResult(
+          return Promise.resolve(createMockResult(
             "procedure Test() begin\n    Message('Hello');",
             "length",
-          );
+          ));
         }
         // Continuation that overlaps with end of first response
-        return createMockResult(
+        return Promise.resolve(createMockResult(
           "Message('Hello');\n    Message('World');\nend;",
           "stop",
-        );
+        ));
       };
 
       const result = await generateWithContinuation(
@@ -246,7 +254,7 @@ describe("continuation", () => {
       let capturedContext: GenerationContext | undefined = undefined;
       let callCount = 0;
 
-      const generateFn = async (
+      const generateFn = (
         _request: LLMRequest,
         context: GenerationContext,
       ) => {
@@ -255,9 +263,9 @@ describe("continuation", () => {
           capturedContext = context;
         }
         if (callCount === 1) {
-          return createMockResult("part1", "length");
+          return Promise.resolve(createMockResult("part1", "length"));
         }
-        return createMockResult("part2", "stop");
+        return Promise.resolve(createMockResult("part2", "stop"));
       };
 
       await generateWithContinuation(
@@ -276,15 +284,17 @@ describe("continuation", () => {
       let capturedRequest: LLMRequest | undefined = undefined;
       let callCount = 0;
 
-      const generateFn = async (request: LLMRequest) => {
+      const generateFn = (request: LLMRequest) => {
         callCount++;
         if (callCount === 2) {
           capturedRequest = request;
         }
         if (callCount === 1) {
-          return createMockResult("some generated code here", "length");
+          return Promise.resolve(
+            createMockResult("some generated code here", "length"),
+          );
         }
-        return createMockResult("more code", "stop");
+        return Promise.resolve(createMockResult("more code", "stop"));
       };
 
       await generateWithContinuation(

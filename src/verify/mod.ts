@@ -29,21 +29,28 @@ export type {
   VerificationSummary,
   VerifyEvent,
   VerifyEventListener,
+  VerifyMode,
   VerifyOptions,
 } from "./types.ts";
 
 export { isFixableResult, isModelShortcomingResult } from "./types.ts";
 
 // Debug parser
+export type { SessionInfo } from "./debug-parser.ts";
 export {
   findLatestSession,
+  findSessions,
   getSessionStats,
   parseDebugDir,
 } from "./debug-parser.ts";
 
 // Analyzer
 export type { AnalyzerConfig } from "./analyzer.ts";
-export { DEFAULT_ANALYZER_CONFIG, FailureAnalyzer } from "./analyzer.ts";
+export {
+  DEFAULT_ANALYZER_CONFIG,
+  FailureAnalyzer,
+  parseAnalysisResponse,
+} from "./analyzer.ts";
 
 // Shortcomings tracker
 export { ShortcomingsTracker } from "./shortcomings-tracker.ts";

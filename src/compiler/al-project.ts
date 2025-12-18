@@ -60,7 +60,7 @@ export class ALProjectManager {
         allowDownloadingSource: false,
         includeSourceInSymbolFile: false,
       },
-      runtime: "13.0",
+      runtime: "15.0",
       features: ["NoImplicitWith"],
     };
 

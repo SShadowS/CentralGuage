@@ -54,3 +54,13 @@ PLAN.md
 .claude/
 .mcp.json
 debug/
+
+# Local output directories
+model-shortcomings/
+reports-output/
+
+# Local test scripts
+test-streaming.ts
+
+# Local docs
+DEPLOY.md

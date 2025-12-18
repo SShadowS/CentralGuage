@@ -186,6 +186,11 @@ export interface ModelShortcomingsFile {
 }
 
 /**
+ * Verify command mode - which analysis to run
+ */
+export type VerifyMode = "all" | "shortcomings-only" | "fixes-only";
+
+/**
  * Options for the verify command
  */
 export interface VerifyOptions {
@@ -205,6 +210,8 @@ export interface VerifyOptions {
   model: string;
   /** Directory for model shortcomings files */
   shortcomingsDir: string;
+  /** Mode: run both, shortcomings only, or fixes only */
+  mode: VerifyMode;
 }
 
 /**
