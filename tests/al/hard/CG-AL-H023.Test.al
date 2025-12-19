@@ -449,7 +449,7 @@ codeunit 80025 "CG-AL-H023 Test"
     var
         TestRecord: Record "CG Test Record";
         ResultRecRef: RecordRef;
-        KeyValues: List of [Variant];
+        KeyValues: List of [Text];
         Found: Boolean;
     begin
         // [SCENARIO] GetRecordByPrimaryKey finds record by PK values

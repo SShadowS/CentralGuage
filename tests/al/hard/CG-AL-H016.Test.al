@@ -27,7 +27,7 @@ codeunit 80017 "CG-AL-H016 Test"
         Password: SecretText;
         Result: Boolean;
     begin
-        Password := 'correct-password';
+        Password := SecretText.SecretStrSubstNo('correct-password');
 
         // This test assumes internal validation logic
         Result := SecureStorage.ValidateCredentials('admin', Password);
@@ -43,7 +43,7 @@ codeunit 80017 "CG-AL-H016 Test"
         Password: SecretText;
         Result: Boolean;
     begin
-        Password := 'some-password';
+        Password := SecretText.SecretStrSubstNo('some-password');
 
         Result := SecureStorage.ValidateCredentials('', Password);
 
@@ -56,7 +56,7 @@ codeunit 80017 "CG-AL-H016 Test"
         Secret: SecretText;
         Result: Text;
     begin
-        Secret := 'mysecretkey123';
+        Secret := SecretText.SecretStrSubstNo('mysecretkey123');
 
         Result := SecureStorage.MaskSecret(Secret);
 
@@ -69,7 +69,7 @@ codeunit 80017 "CG-AL-H016 Test"
         Secret: SecretText;
         Result: Text;
     begin
-        Secret := 'abc';
+        Secret := SecretText.SecretStrSubstNo('abc');
 
         Result := SecureStorage.MaskSecret(Secret);
 
@@ -84,7 +84,7 @@ codeunit 80017 "CG-AL-H016 Test"
         RetrievedKey: SecretText;
         OriginalText, RetrievedText: Text;
     begin
-        OriginalKey := 'my-secret-api-key';
+        OriginalKey := SecretText.SecretStrSubstNo('my-secret-api-key');
 
         SecureStorage.StoreApiKey(OriginalKey);
         RetrievedKey := SecureStorage.RetrieveApiKey();

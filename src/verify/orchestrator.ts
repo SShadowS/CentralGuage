@@ -18,6 +18,7 @@ import { isFixableResult, isModelShortcomingResult } from "./types.ts";
 import { type AnalyzerConfig, FailureAnalyzer } from "./analyzer.ts";
 import { ShortcomingsTracker } from "./shortcomings-tracker.ts";
 import { applyFix, generateDiffPreview } from "./fix-applicator.ts";
+import { analyzeFailurePatterns } from "./debug-parser.ts";
 
 /**
  * User response to a fix prompt
@@ -49,6 +50,60 @@ export interface OrchestratorConfig {
   interactivePrompt?: InteractivePromptFn;
   /** Mode: run both, shortcomings only, or fixes only */
   mode: VerifyMode;
+}
+
+/**
+ * Model priority for selecting best output to analyze.
+ * Higher priority = better model = more informative output for analysis.
+ * Models not in this list get priority 0.
+ */
+const MODEL_PRIORITY: Record<string, number> = {
+  // Opus/O-series (highest priority - best reasoning)
+  "claude-opus-4-5-20251101": 100,
+  "o3": 95,
+  "o1": 90,
+  "gpt-5": 85,
+  // Sonnet/GPT-4o tier
+  "claude-sonnet-4-5-20250929": 70,
+  "gpt-4o": 65,
+  "gemini-2.0-flash-thinking-exp": 60,
+  // Fast/Haiku tier (lower priority)
+  "claude-haiku-4-5-20251001": 40,
+  "gpt-4o-mini": 35,
+  "gemini-2.0-flash": 30,
+};
+
+/**
+ * Get priority for a model (higher = better).
+ * Matches by prefix to handle versioned model names.
+ */
+function getModelPriority(model: string): number {
+  // Exact match first
+  if (MODEL_PRIORITY[model] !== undefined) {
+    return MODEL_PRIORITY[model];
+  }
+  // Prefix match for versioned names (e.g., "gpt-5.2-2025-12-11" matches "gpt-5")
+  for (const [key, priority] of Object.entries(MODEL_PRIORITY)) {
+    if (model.startsWith(key)) {
+      return priority;
+    }
+  }
+  // Unknown models get middle priority
+  return 50;
+}
+
+/**
+ * Select the best model's task for analysis.
+ * Prefers higher-tier models as their output is more informative.
+ */
+function selectBestModelTask(tasks: FailingTask[]): FailingTask {
+  if (tasks.length === 1) return tasks[0]!;
+
+  return tasks.reduce((best, current) => {
+    const bestPriority = getModelPriority(best.model);
+    const currentPriority = getModelPriority(current.model);
+    return currentPriority > bestPriority ? current : best;
+  });
 }
 
 /**
@@ -123,10 +178,72 @@ export class VerifyOrchestrator {
     };
 
     this.shouldQuit = false;
-    this.emit({ type: "started", totalTasks: failingTasks.length });
+
+    // Pre-filter tasks based on mode using failure pattern analysis
+    let tasksToProcess = failingTasks;
+    if (this.config.mode !== "all") {
+      const allModels = [...new Set(failingTasks.map((t) => t.model))];
+      const analysis = analyzeFailurePatterns(failingTasks, allModels);
+
+      if (this.config.mode === "fixes-only") {
+        // Keep only tasks where ALL models failed (likely fixable benchmark issues)
+        tasksToProcess = failingTasks.filter((t) =>
+          analysis.get(t.taskId)?.isUnanimousFail === true
+        );
+
+        // IMPORTANT: Deduplicate by taskId - test files are shared across models,
+        // so we only need to analyze and fix each task once, not once per model.
+        // Pick the best model's output for analysis (better models produce more
+        // informative code to analyze for benchmark issues).
+        const tasksByTaskId = new Map<string, FailingTask[]>();
+        for (const task of tasksToProcess) {
+          const existing = tasksByTaskId.get(task.taskId) || [];
+          existing.push(task);
+          tasksByTaskId.set(task.taskId, existing);
+        }
+
+        // Select best model's task for each taskId
+        const deduplicatedTasks: FailingTask[] = [];
+        for (const tasks of tasksByTaskId.values()) {
+          const best = selectBestModelTask(tasks);
+          deduplicatedTasks.push(best);
+        }
+
+        const skippedPartial = failingTasks.length - tasksToProcess.length;
+        const skippedDupes = tasksToProcess.length - deduplicatedTasks.length;
+        tasksToProcess = deduplicatedTasks;
+
+        if (skippedPartial > 0 || skippedDupes > 0) {
+          this.emit({
+            type: "tasks_filtered",
+            kept: tasksToProcess.length,
+            skipped: skippedPartial,
+            reason: skippedDupes > 0
+              ? `partial failures (likely model shortcomings), ${skippedDupes} duplicate tasks`
+              : "partial failures (likely model shortcomings)",
+          });
+        }
+      } else if (this.config.mode === "shortcomings-only") {
+        // Keep only tasks where SOME models failed (model knowledge gaps)
+        tasksToProcess = failingTasks.filter((t) =>
+          analysis.get(t.taskId)?.isUnanimousFail === false
+        );
+        const skipped = failingTasks.length - tasksToProcess.length;
+        if (skipped > 0) {
+          this.emit({
+            type: "tasks_filtered",
+            kept: tasksToProcess.length,
+            skipped,
+            reason: "unanimous failures (likely fixable issues)",
+          });
+        }
+      }
+    }
+
+    this.emit({ type: "started", totalTasks: tasksToProcess.length });
 
     // Process tasks with concurrency control
-    const queue = [...failingTasks];
+    const queue = [...tasksToProcess];
     const inProgress = new Set<Promise<void>>();
 
     while ((queue.length > 0 || inProgress.size > 0) && !this.shouldQuit) {

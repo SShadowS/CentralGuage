@@ -200,3 +200,145 @@ end;`;
     await Deno.remove(tempFile);
   }
 });
+
+// ============================================================================
+// Multi-change format tests
+// ============================================================================
+
+Deno.test("fix-applicator: applyFix handles multi-change format with // ...", async () => {
+  // Create temp file with multiple lines to replace
+  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  try {
+    const initialContent = `codeunit 80017 "Test Codeunit"
+{
+    procedure TestOne()
+    var
+        Password: SecretText;
+    begin
+        Password := 'secret1';
+    end;
+
+    procedure TestTwo()
+    var
+        Password: SecretText;
+    begin
+        Password := 'secret2';
+    end;
+}`;
+    await Deno.writeTextFile(tempFile, initialContent);
+
+    // Multi-change fix with "// ..." separator
+    const fix: SuggestedFix = {
+      fileType: "test_al",
+      filePath: tempFile,
+      description: "Fix SecretText assignments",
+      codeBefore: `Password := 'secret1';
+
+// ...
+
+Password := 'secret2';`,
+      codeAfter: `Password := SecretText.SecretStrSubstNo('secret1');
+
+// ...
+
+Password := SecretText.SecretStrSubstNo('secret2');`,
+    };
+
+    const result = await applyFix(fix);
+    assertEquals(result, true);
+
+    const newContent = await Deno.readTextFile(tempFile);
+    assertStringIncludes(newContent, "SecretText.SecretStrSubstNo('secret1')");
+    assertStringIncludes(newContent, "SecretText.SecretStrSubstNo('secret2')");
+    // Verify original lines are gone
+    assertEquals(newContent.includes("Password := 'secret1';"), false);
+    assertEquals(newContent.includes("Password := 'secret2';"), false);
+  } finally {
+    await Deno.remove(tempFile);
+  }
+});
+
+Deno.test("fix-applicator: applyFix multi-change preserves indentation", async () => {
+  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  try {
+    const initialContent = `procedure Test()
+begin
+        Value := 'old';
+end;`;
+    await Deno.writeTextFile(tempFile, initialContent);
+
+    const fix: SuggestedFix = {
+      fileType: "test_al",
+      filePath: tempFile,
+      description: "Replace value",
+      codeBefore: "Value := 'old';",
+      codeAfter: "Value := 'new';",
+    };
+
+    const result = await applyFix(fix);
+    assertEquals(result, true);
+
+    const newContent = await Deno.readTextFile(tempFile);
+    // Check that indentation is preserved (8 spaces before Value)
+    assertStringIncludes(newContent, "        Value := 'new';");
+  } finally {
+    await Deno.remove(tempFile);
+  }
+});
+
+Deno.test("fix-applicator: applyFix multi-change returns false for mismatched counts", async () => {
+  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  try {
+    await Deno.writeTextFile(tempFile, "a := 1;\nb := 2;");
+
+    const fix: SuggestedFix = {
+      fileType: "test_al",
+      filePath: tempFile,
+      description: "Mismatched changes",
+      codeBefore: `a := 1;
+
+// ...
+
+b := 2;`,
+      codeAfter: `a := 10;`, // Missing second change!
+    };
+
+    const result = await applyFix(fix);
+    assertEquals(result, false);
+  } finally {
+    await Deno.remove(tempFile);
+  }
+});
+
+Deno.test("fix-applicator: applyFix applies partial changes when some not found", async () => {
+  const tempFile = await Deno.makeTempFile({ suffix: ".al" });
+  try {
+    const initialContent = "found := 'yes';\n// some other code";
+    await Deno.writeTextFile(tempFile, initialContent);
+
+    const fix: SuggestedFix = {
+      fileType: "test_al",
+      filePath: tempFile,
+      description: "Partial fix",
+      codeBefore: `found := 'yes';
+
+// ...
+
+notfound := 'no';`,
+      codeAfter: `found := 'replaced';
+
+// ...
+
+notfound := 'also replaced';`,
+    };
+
+    const result = await applyFix(fix);
+    // Should still succeed with partial application
+    assertEquals(result, true);
+
+    const newContent = await Deno.readTextFile(tempFile);
+    assertStringIncludes(newContent, "found := 'replaced'");
+  } finally {
+    await Deno.remove(tempFile);
+  }
+});

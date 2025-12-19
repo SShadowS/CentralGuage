@@ -191,6 +191,22 @@ export interface ModelShortcomingsFile {
 export type VerifyMode = "all" | "shortcomings-only" | "fixes-only";
 
 /**
+ * Analysis of failure patterns for a single task across models
+ */
+export interface TaskFailureAnalysis {
+  /** Task identifier */
+  taskId: string;
+  /** List of models that failed this task */
+  failedModels: string[];
+  /** Total number of failures (may be > models if multiple attempts) */
+  totalFailures: number;
+  /** True if ALL tested models failed this task (likely fixable) */
+  isUnanimousFail: boolean;
+  /** The actual failing task entries */
+  tasks: FailingTask[];
+}
+
+/**
  * Options for the verify command
  */
 export interface VerifyOptions {
@@ -237,6 +253,7 @@ export interface VerificationSummary {
  */
 export type VerifyEvent =
   | { type: "started"; totalTasks: number }
+  | { type: "tasks_filtered"; kept: number; skipped: number; reason: string }
   | { type: "analyzing"; taskId: string; model: string }
   | { type: "analysis_complete"; result: AnalysisResult }
   | { type: "fix_proposed"; taskId: string; fix: SuggestedFix }

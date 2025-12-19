@@ -191,6 +191,7 @@ async function generateReport(
           m.tasksFailed++;
         }
         m.tokens += result.totalTokensUsed || 0;
+        m.cost += result.totalCost || 0;
         m.avgScore += result.finalScore || 0;
       }
       // Calculate averages
@@ -208,7 +209,7 @@ async function generateReport(
           (sum, r) => sum + (r.totalTokensUsed || 0),
           0,
         ),
-        totalCost: 0,
+        totalCost: allResults.reduce((sum, r) => sum + (r.totalCost || 0), 0),
         totalDuration: 0,
         perModel: Object.fromEntries(perModelMap),
       };
@@ -240,6 +241,13 @@ async function generateReport(
           .replace(/</g, "&lt;")
           .replace(/>/g, "&gt;");
 
+      // Sanitize model name for URL/filename
+      const sanitizeModelNameForUrl = (modelName: string): string =>
+        modelName
+          .replace(/\//g, "-")
+          .replace(/[^a-zA-Z0-9-_.]/g, "_")
+          .toLowerCase();
+
       // Helper to generate shortcomings HTML for a model
       const generateShortcomingsHtml = (variantId: string): string => {
         const modelName = extractModelName(variantId);
@@ -253,26 +261,33 @@ async function generateReport(
 
         const listItems = topShortcomings
           .map((s) => {
-            const truncatedDesc = s.description.length > 200
-              ? s.description.substring(0, 200) + "..."
-              : s.description;
-            return `<li class="shortcoming-item" title="${
-              escapeHtml(truncatedDesc)
-            }">
+            // Use data-tooltip for CSS tooltip with FULL description
+            const fullDesc = escapeHtml(s.description);
+            return `<li class="shortcoming-item has-tooltip" data-tooltip="${fullDesc}">
               <span class="shortcoming-concept">${escapeHtml(s.concept)}</span>
               <span class="shortcoming-count">${s.occurrences}x</span>
             </li>`;
           })
           .join("");
 
-        const moreCount = modelShortcomings.shortcomings.length - 5;
-        const moreIndicator = moreCount > 0
-          ? `<div class="shortcomings-more">+${moreCount} more</div>`
+        const totalCount = modelShortcomings.shortcomings.length;
+        const moreCount = totalCount - 5;
+
+        // Generate link to detail page
+        const sanitizedName = sanitizeModelNameForUrl(modelName);
+        const viewAllLink = totalCount > 0
+          ? `<a href="model-${sanitizedName}.html" class="view-all-link">View all ${totalCount}</a>`
           : "";
+
+        const moreIndicator = moreCount > 0
+          ? `<div class="shortcomings-more">+${moreCount} more ${viewAllLink}</div>`
+          : (totalCount > 0
+            ? `<div class="shortcomings-more">${viewAllLink}</div>`
+            : "");
 
         return `
           <div class="shortcomings-section">
-            <h4>Known Shortcomings (${modelShortcomings.shortcomings.length})</h4>
+            <h4>Known Shortcomings (${totalCount})</h4>
             <ul class="shortcomings-list">${listItems}</ul>
             ${moreIndicator}
           </div>`;
@@ -538,9 +553,49 @@ async function generateReport(
       // Ensure output directory exists
       await Deno.mkdir(outputDir, { recursive: true });
 
+      // Copy favicon if it exists
+      const faviconSource = "./reports/static/favicon.svg";
+      try {
+        await Deno.copyFile(faviconSource, `${outputDir}/favicon.svg`);
+      } catch {
+        // Favicon not found - continue without it
+      }
+
       // Write the HTML file
       const outputFile = `${outputDir}/index.html`;
       await Deno.writeTextFile(outputFile, htmlContent);
+
+      // Generate model detail pages
+      if (stats?.perModel) {
+        let detailPagesGenerated = 0;
+        for (const [variantId, modelStats] of Object.entries(stats.perModel)) {
+          const modelName = extractModelName(variantId);
+          const modelShortcomings = shortcomingsMap.get(modelName);
+
+          if (modelShortcomings && modelShortcomings.shortcomings.length > 0) {
+            const sortedShortcomings = [...modelShortcomings.shortcomings]
+              .sort((a, b) => b.occurrences - a.occurrences);
+
+            const sanitizedName = sanitizeModelNameForUrl(modelName);
+            const detailPageContent = generateModelDetailPage({
+              modelName,
+              variantId,
+              shortcomings: sortedShortcomings,
+              stats: modelStats,
+              escapeHtml,
+            });
+
+            const detailFile = `${outputDir}/model-${sanitizedName}.html`;
+            await Deno.writeTextFile(detailFile, detailPageContent);
+            detailPagesGenerated++;
+          }
+        }
+        if (detailPagesGenerated > 0) {
+          console.log(
+            `[OK] Generated ${detailPagesGenerated} model detail page(s)`,
+          );
+        }
+      }
 
       console.log("[OK] HTML report generated successfully!");
       console.log(`Report available at: ${outputFile}`);
@@ -597,6 +652,7 @@ function generateHtmlTemplate(params: {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <title>CentralGauge - Benchmark Results</title>
   <style>
     * { box-sizing: border-box; }
@@ -625,6 +681,33 @@ function generateHtmlTemplate(params: {
     .shortcoming-concept { color: #dc2626; }
     .shortcoming-count { color: #6b7280; font-size: 0.75rem; }
     .shortcomings-more { font-size: 0.75rem; color: #9ca3af; margin-top: 0.25rem; }
+    .view-all-link { color: #2563eb; text-decoration: none; font-weight: 500; margin-left: 0.5rem; }
+    .view-all-link:hover { text-decoration: underline; }
+    /* CSS Tooltips */
+    .has-tooltip { position: relative; }
+    .has-tooltip::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin-top: 4px;
+      background: #1f2937;
+      color: #f3f4f6;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      white-space: pre-wrap;
+      max-width: 350px;
+      min-width: 200px;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 0.2s, visibility 0.2s;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      font-size: 0.75rem;
+      line-height: 1.4;
+    }
+    .has-tooltip:hover::after { opacity: 1; visibility: visible; }
     .matrix-legend { color: #6b7280; font-size: 0.875rem; margin-bottom: 1rem; }
     .matrix-legend .pass { color: #166534; font-weight: bold; }
     .matrix-legend .fail { color: #991b1b; font-weight: bold; }
@@ -678,6 +761,8 @@ function generateHtmlTemplate(params: {
     body.dark .shortcoming-concept { color: #f87171; }
     body.dark .shortcoming-count { color: #9ca3af; }
     body.dark .shortcomings-more { color: #6b7280; }
+    body.dark .view-all-link { color: #60a5fa; }
+    body.dark .has-tooltip::after { background: #374151; }
     body.dark .chart-card { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
     body.dark .chart-legend { color: #d1d5db; }
     body.dark .h-bar-chart .bar-label { color: #d1d5db; }
@@ -761,6 +846,184 @@ function generateHtmlTemplate(params: {
           </tbody>
         </table>
       </div>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function generateModelDetailPage(params: {
+  modelName: string;
+  variantId: string;
+  shortcomings: ModelShortcomingEntry[];
+  stats: PerModelStats;
+  escapeHtml: (text: string) => string;
+}): string {
+  const { modelName, variantId, shortcomings, stats, escapeHtml } = params;
+  const total = stats.tasksPassed + stats.tasksFailed;
+  const passRate = total > 0
+    ? (stats.tasksPassed / total * 100).toFixed(1)
+    : "0.0";
+
+  const shortcomingRows = shortcomings.map((s, idx) => `
+    <tr class="shortcoming-row">
+      <td class="rank">${idx + 1}</td>
+      <td class="concept">${escapeHtml(s.concept)}</td>
+      <td class="al-concept">${escapeHtml(s.alConcept)}</td>
+      <td class="count">${s.occurrences}</td>
+      <td class="tasks">${s.affectedTasks.join(", ")}</td>
+    </tr>
+    <tr class="description-row">
+      <td colspan="5">
+        <div class="description-content">
+          <p><strong>Description:</strong> ${escapeHtml(s.description)}</p>
+          <div class="code-patterns">
+            <div class="pattern correct">
+              <span class="pattern-label">Correct Pattern:</span>
+              <pre><code>${escapeHtml(s.correctPattern)}</code></pre>
+            </div>
+            <div class="pattern incorrect">
+              <span class="pattern-label">Incorrect Pattern:</span>
+              <pre><code>${escapeHtml(s.incorrectPattern)}</code></pre>
+            </div>
+          </div>
+          ${
+    s.errorCodes.length > 0
+      ? `<p class="error-codes"><strong>Error Codes:</strong> ${
+        s.errorCodes.join(", ")
+      }</p>`
+      : ""
+  }
+        </div>
+      </td>
+    </tr>
+  `).join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <title>${escapeHtml(modelName)} - Model Shortcomings - CentralGauge</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #f5f5f5; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+    h1 { color: #1f2937; margin: 0 0 0.5rem; font-size: 1.5rem; word-break: break-all; }
+    h2 { color: #1f2937; margin: 2rem 0 1rem; border-bottom: 2px solid #e5e7eb; padding-bottom: 0.5rem; }
+    p { color: #6b7280; margin: 0.5rem 0; }
+    .back-link { display: inline-block; margin-bottom: 1.5rem; color: #2563eb; text-decoration: none; font-weight: 500; }
+    .back-link:hover { text-decoration: underline; }
+    .model-header { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .model-meta { display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1rem; }
+    .model-meta .stat { font-size: 0.9rem; }
+    .model-meta .stat-label { color: #6b7280; margin-right: 0.25rem; }
+    .model-meta .stat-value { font-weight: 600; color: #1f2937; }
+    .shortcomings-table { width: 100%; border-collapse: collapse; background: white; border-radius: 0.5rem; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .shortcomings-table th { background: #f9fafb; text-align: left; padding: 0.75rem; border-bottom: 2px solid #e5e7eb; font-weight: 600; color: #374151; }
+    .shortcomings-table td { padding: 0.75rem; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+    .shortcomings-table .rank { width: 40px; text-align: center; font-weight: 500; }
+    .shortcomings-table .concept { font-weight: 500; color: #dc2626; }
+    .shortcomings-table .al-concept { color: #6b7280; font-size: 0.875rem; }
+    .shortcomings-table .count { text-align: center; font-weight: 600; }
+    .shortcomings-table .tasks { font-family: monospace; font-size: 0.8rem; color: #4b5563; }
+    .shortcoming-row { background: white; }
+    .description-row { background: #f9fafb; }
+    .description-content { padding: 0.5rem; font-size: 0.875rem; line-height: 1.6; color: #374151; }
+    .code-patterns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+    @media (max-width: 768px) { .code-patterns { grid-template-columns: 1fr; } }
+    .pattern { border-radius: 0.5rem; padding: 0.75rem; }
+    .pattern.correct { background: #dcfce7; border: 1px solid #86efac; }
+    .pattern.incorrect { background: #fee2e2; border: 1px solid #fca5a5; }
+    .pattern-label { display: block; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.75rem; text-transform: uppercase; color: #374151; }
+    .pattern pre { margin: 0; overflow-x: auto; font-size: 0.75rem; background: rgba(0,0,0,0.05); padding: 0.5rem; border-radius: 0.25rem; }
+    .pattern code { white-space: pre-wrap; word-break: break-word; }
+    .error-codes { margin-top: 0.75rem; font-family: monospace; color: #6b7280; }
+    .theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 100; background: #e5e7eb; border: none; border-radius: 2rem; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; transition: background 0.2s, color 0.2s; }
+    .theme-toggle:hover { background: #d1d5db; }
+    .theme-toggle .icon { font-size: 1rem; }
+    /* Dark mode */
+    body.dark { background: #111827; color: #f3f4f6; }
+    body.dark h1, body.dark h2 { color: #f3f4f6; }
+    body.dark h2 { border-bottom-color: #374151; }
+    body.dark p { color: #9ca3af; }
+    body.dark .back-link { color: #60a5fa; }
+    body.dark .theme-toggle { background: #374151; color: #f3f4f6; }
+    body.dark .theme-toggle:hover { background: #4b5563; }
+    body.dark .model-header { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    body.dark .model-meta .stat-label { color: #9ca3af; }
+    body.dark .model-meta .stat-value { color: #f3f4f6; }
+    body.dark .shortcomings-table { background: #1f2937; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    body.dark .shortcomings-table th { background: #111827; border-color: #374151; color: #d1d5db; }
+    body.dark .shortcomings-table td { border-color: #374151; }
+    body.dark .shortcomings-table .concept { color: #f87171; }
+    body.dark .shortcomings-table .al-concept { color: #9ca3af; }
+    body.dark .shortcomings-table .tasks { color: #9ca3af; }
+    body.dark .shortcoming-row { background: #1f2937; }
+    body.dark .description-row { background: #111827; }
+    body.dark .description-content { color: #d1d5db; }
+    body.dark .pattern.correct { background: #064e3b; border-color: #10b981; }
+    body.dark .pattern.incorrect { background: #7f1d1d; border-color: #ef4444; }
+    body.dark .pattern-label { color: #d1d5db; }
+    body.dark .pattern pre { background: rgba(0,0,0,0.3); }
+    body.dark .error-codes { color: #9ca3af; }
+  </style>
+</head>
+<body>
+  <button class="theme-toggle" id="theme-toggle" aria-label="Toggle dark mode">
+    <span class="icon" id="theme-icon">&#9790;</span>
+    <span id="theme-label">Dark</span>
+  </button>
+  <script>
+    (function() {
+      var toggle = document.getElementById('theme-toggle');
+      var icon = document.getElementById('theme-icon');
+      var label = document.getElementById('theme-label');
+      function setTheme(dark) {
+        document.body.classList.toggle('dark', dark);
+        icon.innerHTML = dark ? '&#9788;' : '&#9790;';
+        label.textContent = dark ? 'Light' : 'Dark';
+        localStorage.setItem('cg-theme', dark ? 'dark' : 'light');
+      }
+      var saved = localStorage.getItem('cg-theme');
+      var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var isDark = saved === 'dark' || (!saved && prefersDark);
+      setTheme(isDark);
+      toggle.addEventListener('click', function() {
+        setTheme(!document.body.classList.contains('dark'));
+      });
+    })();
+  </script>
+  <main class="container">
+    <a href="index.html" class="back-link">&larr; Back to Benchmark Results</a>
+
+    <div class="model-header">
+      <h1>${escapeHtml(variantId)}</h1>
+      <div class="model-meta">
+        <div class="stat"><span class="stat-label">Pass Rate:</span><span class="stat-value">${passRate}%</span></div>
+        <div class="stat"><span class="stat-label">Tasks Passed:</span><span class="stat-value">${stats.tasksPassed}/${total}</span></div>
+        <div class="stat"><span class="stat-label">Total Shortcomings:</span><span class="stat-value">${shortcomings.length}</span></div>
+      </div>
+    </div>
+
+    <section>
+      <h2>All Known Shortcomings</h2>
+      <p>Sorted by occurrence count (most frequent first)</p>
+      <table class="shortcomings-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Concept</th>
+            <th>AL Concept</th>
+            <th>Count</th>
+            <th>Affected Tasks</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${shortcomingRows}
+        </tbody>
+      </table>
     </section>
   </main>
 </body>

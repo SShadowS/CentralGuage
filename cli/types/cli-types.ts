@@ -39,7 +39,8 @@ export interface BenchmarkResult {
   finalScore: number;
   totalDuration: number;
   totalTokensUsed?: number;
-  attempts: Array<{ success: boolean; tokensUsed?: number }>;
+  totalCost?: number;
+  attempts: Array<{ success: boolean; tokensUsed?: number; cost?: number }>;
   context?: {
     variantId?: string;
     llmModel?: string;

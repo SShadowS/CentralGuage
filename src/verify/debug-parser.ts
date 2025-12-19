@@ -8,7 +8,11 @@ import type {
   CompilationLogEntry,
   TestLogEntry,
 } from "../utils/debug-logger.ts";
-import type { FailingTask, TaskDifficulty } from "./types.ts";
+import type {
+  FailingTask,
+  TaskDifficulty,
+  TaskFailureAnalysis,
+} from "./types.ts";
 
 /**
  * Session info extracted from debug directory
@@ -33,14 +37,16 @@ function getDifficulty(taskId: string): TaskDifficulty {
 /**
  * Get the path to task YAML file based on task ID
  * Uses glob to find files matching the pattern taskId-*.yml or taskId.yml
+ * Always returns a relative path for consistency with other path functions
  */
 async function getTaskYamlPath(taskId: string): Promise<string> {
   const difficulty = getDifficulty(taskId);
   const pattern = `tasks/${difficulty}/${taskId}*.yml`;
 
   for await (const entry of expandGlob(pattern)) {
-    // Return the first match (there should only be one)
-    return entry.path.replace(/\\/g, "/");
+    // Return relative path using the found filename, not the absolute path
+    // expandGlob returns absolute paths, but we want relative for consistency
+    return `tasks/${difficulty}/${entry.name}`;
   }
 
   // Fallback to constructed path if no match found
@@ -57,6 +63,7 @@ function getTestAlPath(taskId: string): string {
 
 /**
  * Get the path to generated code artifact directory
+ * The path is relative to debugDir and uses forward slashes for consistency
  */
 function getGeneratedCodePath(
   debugDir: string,
@@ -67,7 +74,9 @@ function getGeneratedCodePath(
   // Model format in artifacts: "anthropic_claude-opus-4-5-20251101"
   // The model we get from logs is just "claude-opus-4-5-20251101"
   // We need to find the actual directory that contains this model
-  return `${debugDir}/artifacts/${taskId}/anthropic_${model}/attempt_${attempt}/project`;
+  // Normalize backslashes to forward slashes for consistency
+  const normalizedDebugDir = debugDir.replace(/\\/g, "/");
+  return `${normalizedDebugDir}/artifacts/${taskId}/anthropic_${model}/attempt_${attempt}/project`;
 }
 
 /**
@@ -541,4 +550,54 @@ export async function getSessionStats(
     totalTests,
     failedTests,
   };
+}
+
+/**
+ * Analyze failure patterns across models for filtering
+ *
+ * Groups failing tasks by taskId and determines whether each task
+ * failed unanimously (all models) or partially (some models).
+ *
+ * @param tasks - List of failing tasks to analyze
+ * @param allModels - List of all models that were tested
+ * @returns Map of taskId -> TaskFailureAnalysis
+ */
+export function analyzeFailurePatterns(
+  tasks: FailingTask[],
+  allModels: string[],
+): Map<string, TaskFailureAnalysis> {
+  const analysis = new Map<string, TaskFailureAnalysis>();
+
+  // Group tasks by taskId
+  for (const task of tasks) {
+    if (!analysis.has(task.taskId)) {
+      analysis.set(task.taskId, {
+        taskId: task.taskId,
+        failedModels: [],
+        totalFailures: 0,
+        isUnanimousFail: false,
+        tasks: [],
+      });
+    }
+
+    const entry = analysis.get(task.taskId)!;
+    entry.tasks.push(task);
+    entry.totalFailures++;
+
+    // Track unique models that failed
+    if (!entry.failedModels.includes(task.model)) {
+      entry.failedModels.push(task.model);
+    }
+  }
+
+  // Determine unanimous failures
+  const allModelsSet = new Set(allModels);
+  for (const entry of analysis.values()) {
+    // A task is unanimous if ALL tested models failed it
+    entry.isUnanimousFail = allModelsSet.size > 0 &&
+      entry.failedModels.length === allModelsSet.size &&
+      entry.failedModels.every((m) => allModelsSet.has(m));
+  }
+
+  return analysis;
 }

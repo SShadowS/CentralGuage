@@ -1,4 +1,4 @@
-codeunit 80224 "CG-AL-H022 Test"
+codeunit 70324 "CG-AL-H022 Test"
 {
     Subtype = Test;
     TestPermissions = Disabled;

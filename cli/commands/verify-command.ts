@@ -133,6 +133,16 @@ async function handleVerify(
   // Subscribe to events
   orchestrator.on((event) => {
     switch (event.type) {
+      case "tasks_filtered":
+        console.log(
+          colors.gray(
+            `[FILTER] Skipped ${event.skipped} tasks: ${event.reason}`,
+          ),
+        );
+        console.log(
+          colors.gray(`[FILTER] Analyzing ${event.kept} task(s)`),
+        );
+        break;
       case "analyzing":
         console.log(
           colors.cyan(`[ANALYZE] ${event.taskId} (${event.model})`),
@@ -147,6 +157,7 @@ async function handleVerify(
           );
           console.log(`  ${event.result.description}`);
         } else {
+          // Show model gap info (same format regardless of mode)
           console.log(
             colors.blue(
               `[MODEL GAP] ${event.result.concept}`,
@@ -228,7 +239,7 @@ export function registerVerifyCommand(cli: Command): void {
       { default: 1 },
     )
     .option("--model <model:string>", "LLM for analysis", {
-      default: "claude-sonnet-4-5-20250929",
+      default: "claude-opus-4-5-20251101",
     })
     .option(
       "--shortcomings-dir <dir:string>",

@@ -49,7 +49,10 @@ export function generateDiffPreview(fix: SuggestedFix): string {
  * Apply a suggested fix to a file
  * Uses string replacement to apply the fix
  */
-export async function applyFix(fix: SuggestedFix): Promise<boolean> {
+export async function applyFix(
+  fix: SuggestedFix,
+  debug = false,
+): Promise<boolean> {
   // Validate file exists
   if (!await exists(fix.filePath)) {
     console.error(
@@ -61,6 +64,17 @@ export async function applyFix(fix: SuggestedFix): Promise<boolean> {
   // Read current content
   const currentContent = await Deno.readTextFile(fix.filePath);
 
+  if (debug) {
+    console.log(colors.gray(`[DEBUG] File path: ${fix.filePath}`));
+    console.log(colors.gray(`[DEBUG] File size: ${currentContent.length}`));
+    console.log(
+      colors.gray(`[DEBUG] codeBefore length: ${fix.codeBefore?.length ?? 0}`),
+    );
+    console.log(
+      colors.gray(`[DEBUG] codeAfter length: ${fix.codeAfter?.length ?? 0}`),
+    );
+  }
+
   // Check if the "before" code exists in the file
   if (!fix.codeBefore || !fix.codeAfter) {
     console.error(
@@ -69,17 +83,48 @@ export async function applyFix(fix: SuggestedFix): Promise<boolean> {
     return false;
   }
 
+  // Check if this is a multi-change format (contains "// ..." separator)
+  if (fix.codeBefore.includes("// ...")) {
+    if (debug) {
+      console.log(colors.gray("[DEBUG] Detected multi-change format"));
+    }
+    return applyMultiChangeFix(currentContent, fix, debug);
+  }
+
+  if (debug) {
+    console.log(colors.gray("[DEBUG] codeBefore:"));
+    console.log(colors.gray(`  "${fix.codeBefore.replace(/\n/g, "\\n")}"`));
+  }
+
   // Normalize whitespace for comparison
   const normalizedBefore = normalizeWhitespace(fix.codeBefore);
   const normalizedContent = normalizeWhitespace(currentContent);
 
   // Check if the before code exists
   if (!normalizedContent.includes(normalizedBefore)) {
+    if (debug) {
+      console.log(
+        colors.gray(
+          "[DEBUG] Normalized content does not include normalized codeBefore",
+        ),
+      );
+      console.log(
+        colors.gray(`[DEBUG] Normalized codeBefore: "${normalizedBefore}"`),
+      );
+    }
     // Try fuzzy matching
     const fuzzyMatch = findFuzzyMatch(currentContent, fix.codeBefore);
     if (fuzzyMatch) {
-      // Apply with fuzzy match
-      const newContent = currentContent.replace(fuzzyMatch, fix.codeAfter);
+      if (debug) {
+        console.log(colors.gray("[DEBUG] Found fuzzy match:"));
+        console.log(colors.gray(`  "${fuzzyMatch.replace(/\n/g, "\\n")}"`));
+      }
+      // Apply with fuzzy match - preserve indentation from original
+      const newContent = applyWithIndentPreservation(
+        currentContent,
+        fuzzyMatch,
+        fix.codeAfter,
+      );
       await Deno.writeTextFile(fix.filePath, newContent);
       console.log(
         colors.yellow("[WARN] Applied fix with fuzzy matching"),
@@ -110,6 +155,145 @@ export async function applyFix(fix: SuggestedFix): Promise<boolean> {
   await Deno.writeTextFile(fix.filePath, newContent);
 
   return true;
+}
+
+/**
+ * Apply a fix that contains multiple changes separated by "// ..." markers
+ * LLMs often return fixes in this format when multiple similar changes are needed
+ */
+async function applyMultiChangeFix(
+  content: string,
+  fix: SuggestedFix,
+  debug = false,
+): Promise<boolean> {
+  // Split both before and after by the "// ..." separator
+  const separator = /\n?\s*\/\/\s*\.\.\.\s*\n?/;
+  const beforeParts = fix.codeBefore.split(separator).map((s) => s.trim())
+    .filter(Boolean);
+  const afterParts = fix.codeAfter.split(separator).map((s) => s.trim()).filter(
+    Boolean,
+  );
+
+  if (debug) {
+    console.log(
+      colors.gray(`[DEBUG] Found ${beforeParts.length} before parts`),
+    );
+    console.log(colors.gray(`[DEBUG] Found ${afterParts.length} after parts`));
+  }
+
+  if (beforeParts.length !== afterParts.length) {
+    console.error(
+      colors.red(
+        `[ERROR] Mismatched change count: ${beforeParts.length} before vs ${afterParts.length} after`,
+      ),
+    );
+    return false;
+  }
+
+  if (beforeParts.length === 0) {
+    console.error(
+      colors.red("[ERROR] No changes found in multi-change format"),
+    );
+    return false;
+  }
+
+  let currentContent = content;
+  let appliedCount = 0;
+
+  for (let i = 0; i < beforeParts.length; i++) {
+    const beforePart = beforeParts[i];
+    const afterPart = afterParts[i];
+
+    if (!beforePart || !afterPart) continue;
+
+    if (debug) {
+      console.log(
+        colors.gray(`[DEBUG] Applying change ${i + 1}/${beforeParts.length}:`),
+      );
+      console.log(colors.gray(`  before: "${beforePart}"`));
+      console.log(colors.gray(`  after: "${afterPart}"`));
+    }
+
+    // Try fuzzy matching for this part
+    const fuzzyMatch = findFuzzyMatch(currentContent, beforePart);
+    if (fuzzyMatch) {
+      currentContent = applyWithIndentPreservation(
+        currentContent,
+        fuzzyMatch,
+        afterPart,
+      );
+      appliedCount++;
+      if (debug) {
+        console.log(colors.gray(`  [OK] Applied change ${i + 1}`));
+      }
+    } else {
+      // Try exact match with the trimmed content
+      if (currentContent.includes(beforePart)) {
+        currentContent = currentContent.replace(beforePart, afterPart);
+        appliedCount++;
+        if (debug) {
+          console.log(
+            colors.gray(`  [OK] Applied change ${i + 1} (exact match)`),
+          );
+        }
+      } else {
+        console.log(
+          colors.yellow(
+            `[WARN] Could not find code for change ${i + 1}: "${
+              beforePart.slice(0, 50)
+            }..."`,
+          ),
+        );
+      }
+    }
+  }
+
+  if (appliedCount === 0) {
+    console.error(colors.red("[ERROR] No changes could be applied"));
+    return false;
+  }
+
+  // Write the updated content
+  await Deno.writeTextFile(fix.filePath, currentContent);
+
+  if (appliedCount < beforeParts.length) {
+    console.log(
+      colors.yellow(
+        `[WARN] Applied ${appliedCount}/${beforeParts.length} changes`,
+      ),
+    );
+  } else {
+    console.log(
+      colors.green(`[OK] Applied all ${appliedCount} changes`),
+    );
+  }
+
+  return true;
+}
+
+/**
+ * Apply a fix while preserving the indentation from the original matched text
+ */
+function applyWithIndentPreservation(
+  content: string,
+  matchedText: string,
+  replacement: string,
+): string {
+  // Extract the indentation from the first line of matched text
+  const matchedLines = matchedText.split("\n");
+  const firstLine = matchedLines[0] || "";
+  const indentMatch = firstLine.match(/^(\s*)/);
+  const indent = indentMatch ? indentMatch[1] : "";
+
+  // Apply indentation to replacement lines
+  const replacementLines = replacement.split("\n");
+  const indentedReplacement = replacementLines.map((line, idx) => {
+    // First line already positioned, subsequent lines need indent
+    if (idx === 0) return indent + line.trim();
+    return line.trim() ? indent + line.trim() : line;
+  }).join("\n");
+
+  return content.replace(matchedText, indentedReplacement);
 }
 
 /**
