@@ -215,16 +215,6 @@ async function generateReport(
       };
       const stats = calculatedStats;
 
-      const uniqueTasks = new Set(allResults.map((r) => r.taskId)).size;
-      const modelCount = stats?.perModel
-        ? Object.keys(stats.perModel).length
-        : new Set(
-          allResults.map((r) => r.context?.variantId || r.context?.llmModel),
-        ).size;
-      const totalTokens = stats?.totalTokens ??
-        allResults.reduce((sum, r) => sum + (r.totalTokensUsed || 0), 0);
-      const totalCost = stats?.totalCost ?? 0;
-
       // Score is already 0-100, just format it
       const formatScore = (score: number): string => score.toFixed(1) + "%";
       // Rate is 0-1, convert to percentage
@@ -398,10 +388,10 @@ async function generateReport(
               <div class="stat"><span class="stat-label">First Pass:</span><span class="stat-value">${
             formatRate(firstPassRate)
           }</span></div>
-              <div class="stat"><span class="stat-label">Temperature:</span><span class="stat-value">${
+              <div class="stat"><span class="stat-label" title="Controls randomness in responses. Lower values (0) produce more deterministic output, higher values (1) increase creativity and variability.">Temperature:</span><span class="stat-value">${
             temperature !== undefined ? temperature : "-"
           }</span></div>
-              <div class="stat"><span class="stat-label">Thinking:</span><span class="stat-value">${thinkingDisplay}</span></div>
+              <div class="stat"><span class="stat-label" title="Extended thinking capability. Shows token budget or effort level (low/medium/high) for models that support chain-of-thought reasoning.">Thinking:</span><span class="stat-value">${thinkingDisplay}</span></div>
               <div class="stat"><span class="stat-label">Tokens:</span><span class="stat-value">${
             Math.round(m.tokens).toLocaleString("en-US")
           }</span></div>
@@ -539,15 +529,15 @@ async function generateReport(
 
       // Generate standalone HTML
       const htmlContent = generateHtmlTemplate({
-        uniqueTasks,
-        modelCount,
-        totalTokens,
-        totalCost,
         chartsHtml,
         modelCardsHtml,
         matrixHeaderHtml,
         matrixRowsHtml,
-        formatCost,
+        generatedDate: new Date().toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
       });
 
       // Ensure output directory exists
@@ -637,15 +627,11 @@ async function generateReport(
 }
 
 function generateHtmlTemplate(params: {
-  uniqueTasks: number;
-  modelCount: number;
-  totalTokens: number;
-  totalCost: number;
   chartsHtml: string;
   modelCardsHtml: string;
   matrixHeaderHtml: string;
   matrixRowsHtml: string;
-  formatCost: (cost: number) => string;
+  generatedDate: string;
 }): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -661,6 +647,8 @@ function generateHtmlTemplate(params: {
     header { text-align: center; margin-bottom: 3rem; }
     header h1 { font-size: 2.5rem; margin: 0; color: #2563eb; }
     header p { font-size: 1.1rem; color: #6b7280; margin: 0.5rem 0; }
+    .report-date { font-size: 0.875rem; color: #9ca3af; margin-top: 1rem; }
+    .stat-label[title] { cursor: help; border-bottom: 1px dotted #9ca3af; }
     .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0 2rem; }
     .metric-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .metric-card.success { border-color: #10b981; background: #f0fdf4; }
@@ -807,25 +795,12 @@ function generateHtmlTemplate(params: {
     <header>
       <h1>CentralGauge</h1>
       <p>LLM Benchmark Results for Microsoft Dynamics 365 Business Central AL Code</p>
+      <p class="report-date">Report generated: ${params.generatedDate}</p>
     </header>
 
     <section>
       <h2>Model Rankings</h2>
       ${params.chartsHtml}
-    </section>
-
-    <section>
-      <h2>Benchmark Overview</h2>
-      <div class="metrics-grid">
-        <div class="metric-card"><div class="metric-value">${params.uniqueTasks}</div><div class="metric-label">Unique Tasks</div></div>
-        <div class="metric-card"><div class="metric-value">${params.modelCount}</div><div class="metric-label">Models Tested</div></div>
-        <div class="metric-card"><div class="metric-value">${
-    Math.round(params.totalTokens).toLocaleString("en-US")
-  }</div><div class="metric-label">Total Tokens</div></div>
-        <div class="metric-card"><div class="metric-value">${
-    params.formatCost(params.totalCost)
-  }</div><div class="metric-label">Total Cost</div></div>
-      </div>
     </section>
 
     <section>
