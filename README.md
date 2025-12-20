@@ -257,6 +257,76 @@ Knowledge gaps are deduplicated by AL concept with affected task lists:
 }
 ```
 
+## Agent-Based Benchmarking
+
+Compare different Claude Agent configurations to find the optimal setup for AL code generation.
+
+### Agent Configs
+
+Agent configurations define how the Claude Agent SDK runs tasks. Each agent can have:
+
+- `workingDir` - Directory with CLAUDE.md, skills, and rules
+- `allowedTools` - Which tools the agent can use
+- `systemPrompt` - Custom or Claude Code preset prompts
+- `maxTurns` - Maximum conversation turns
+
+```yaml
+# agents/config-b.yml
+id: config-b
+name: "Config B (Detailed)"
+extends: default
+workingDir: test-configs/config-b  # Points to Claude Code config directory
+```
+
+### Running Agent Benchmarks
+
+```bash
+# Compare two agent configurations
+deno task bench --agents config-a,config-b
+
+# On specific tasks
+deno task bench --agents config-a,config-b --tasks "tasks/easy/*.yml"
+
+# With debug output
+deno task bench --agents config-a,config-b --debug
+```
+
+### Configuration Testing
+
+Create test configurations in `test-configs/`:
+
+```
+test-configs/
+├── config-a/                    # Minimal guidance
+│   ├── CLAUDE.md                # Brief instructions
+│   └── .claude/
+│       ├── skills/              # Few/no skills
+│       └── rules/               # Minimal rules
+│
+└── config-b/                    # Detailed guidance
+    ├── CLAUDE.md                # Full AL language rules
+    └── .claude/
+        ├── skills/              # AL patterns, examples
+        └── rules/               # Naming conventions
+```
+
+### Combined Reports
+
+Run both LLM and Agent benchmarks, then generate a unified report:
+
+```bash
+# Run LLM benchmark
+deno task bench --llms sonnet --tasks "tasks/easy/*.yml" -o results/combined
+
+# Run Agent benchmark (same output directory)
+deno task bench --agents config-b --tasks "tasks/easy/*.yml" -o results/combined
+
+# Generate combined HTML report
+deno task report results/combined --html
+```
+
+The report shows LLM and Agent results together, with agents prefixed as `agent:config-b`.
+
 ## Historical Stats & Analytics
 
 Track benchmark results over time with SQLite-based persistence. Compare models, detect regressions, and analyze costs across runs.

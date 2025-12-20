@@ -5,7 +5,7 @@
 
 import { Command } from "@cliffy/command";
 import { exists, expandGlob } from "@std/fs";
-import { Select } from "@cliffy/prompt";
+import { Checkbox } from "@cliffy/prompt";
 import { extractModelName } from "../helpers/mod.ts";
 import { shortVariantName } from "../../src/utils/formatters.ts";
 import type {
@@ -18,6 +18,52 @@ import type {
   FileOption,
   PerModelStats,
 } from "../types/cli-types.ts";
+import {
+  type AgentResultEntry,
+  normalizeAgentResult,
+} from "../helpers/result-normalizer.ts";
+
+/**
+ * Get metadata about a result file for display in picker
+ */
+async function getFileMetadata(
+  filePath: string,
+): Promise<{ type: string; count: number; models: string[] }> {
+  try {
+    const content = await Deno.readTextFile(filePath);
+    const data = JSON.parse(content);
+    const fileName = filePath.split(/[\\/]/).pop() || "";
+    const isAgent = fileName.startsWith("agent-benchmark");
+
+    if (isAgent) {
+      const results = data.results as AgentResultEntry[] | undefined;
+      if (Array.isArray(results)) {
+        const agents = [...new Set(results.map((r) => r.agentId))];
+        return { type: "Agent", count: results.length, models: agents };
+      }
+    } else {
+      const results = Array.isArray(data) ? data : data.results;
+      if (Array.isArray(results)) {
+        const models = [
+          ...new Set(
+            results.map(
+              (r: { context?: { variantId?: string } }) =>
+                r.context?.variantId || "unknown",
+            ),
+          ),
+        ];
+        return {
+          type: "LLM",
+          count: results.length,
+          models: models as string[],
+        };
+      }
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return { type: "Unknown", count: 0, models: [] };
+}
 
 async function generateReport(
   resultsDir: string,
@@ -68,35 +114,43 @@ async function generateReport(
       // Sort by date descending (most recent first)
       fileOptions.sort((a, b) => b.date.getTime() - a.date.getTime());
 
-      // Let user select which file to use
+      // Let user select which files to use
       let selectedFiles: string[];
       const firstFile = fileOptions[0];
       if (fileOptions.length === 1 && firstFile) {
         selectedFiles = [firstFile.path];
         console.log(`Using: ${firstFile.name}`);
       } else {
-        const choices = [
-          { name: "All files (merge results)", value: "__all__" },
-          ...fileOptions.map((f) => ({
-            name: `${f.name} (${
-              (f.size / 1024).toFixed(1)
-            }KB, ${f.date.toLocaleString()})`,
-            value: f.path,
-          })),
-        ];
+        // Build choices with metadata
+        const choices = await Promise.all(
+          fileOptions.map(async (f) => {
+            const meta = await getFileMetadata(f.path);
+            const modelList = meta.models.slice(0, 2).join(", ");
+            const moreModels = meta.models.length > 2
+              ? ` +${meta.models.length - 2}`
+              : "";
+            return {
+              name:
+                `${f.name} (${meta.type}: ${modelList}${moreModels}, ${meta.count} results)`,
+              value: f.path,
+              checked: true, // Default all selected
+            };
+          }),
+        );
 
-        const selected = await Select.prompt({
-          message: "Select which result file to use for the report:",
+        selectedFiles = await Checkbox.prompt({
+          message: "Select result files to include (space to toggle):",
           options: choices,
+          minOptions: 1,
+          hint: "Use arrow keys, space to toggle, enter to confirm",
         });
 
-        if (selected === "__all__") {
-          selectedFiles = fileOptions.map((f) => f.path);
-          console.log(`Using all ${selectedFiles.length} files`);
-        } else {
-          selectedFiles = [selected];
-          console.log(`Using: ${selected.split(/[\\/]/).pop()}`);
+        if (selectedFiles.length === 0) {
+          console.error("[ERROR] No files selected");
+          return;
         }
+
+        console.log(`Using ${selectedFiles.length} file(s)`);
       }
 
       // Read and merge selected result files
@@ -106,9 +160,28 @@ async function generateReport(
         try {
           const content = await Deno.readTextFile(jsonFile);
           const data = JSON.parse(content);
-          const results = Array.isArray(data) ? data : data.results;
-          if (Array.isArray(results)) {
-            allResults.push(...results);
+          const fileName = jsonFile.split(/[\\/]/).pop() || "";
+
+          // Check if this is an agent benchmark result file
+          if (fileName.startsWith("agent-benchmark")) {
+            // Agent result format: { results: [{ agentId, taskId, result: {...} }] }
+            const agentResults = data.results as AgentResultEntry[] | undefined;
+            if (Array.isArray(agentResults)) {
+              const normalized = agentResults.map(normalizeAgentResult);
+              allResults.push(...normalized);
+              console.log(
+                `  Loaded ${normalized.length} agent result(s) from ${fileName}`,
+              );
+            }
+          } else {
+            // LLM result format: array or { results: [...] }
+            const results = Array.isArray(data) ? data : data.results;
+            if (Array.isArray(results)) {
+              allResults.push(...results);
+              console.log(
+                `  Loaded ${results.length} LLM result(s) from ${fileName}`,
+              );
+            }
           }
         } catch (error) {
           console.warn(

@@ -1,0 +1,16 @@
+# Config A Agent - Minimal Guidance
+#
+# Uses test-configs/config-a which has minimal CLAUDE.md and skills.
+# For A/B testing agent configurations.
+
+id: config-a
+name: "Config A (Minimal)"
+description: "Minimal guidance - tests baseline model AL knowledge"
+extends: default
+
+# Use test-configs/config-a as the Claude Code project
+workingDir: test-configs/config-a
+
+tags:
+  - config-test
+  - minimal

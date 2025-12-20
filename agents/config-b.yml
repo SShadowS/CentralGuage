@@ -1,0 +1,16 @@
+# Config B Agent - Detailed Guidance
+#
+# Uses test-configs/config-b which has detailed CLAUDE.md, skills, and rules.
+# For A/B testing agent configurations.
+
+id: config-b
+name: "Config B (Detailed)"
+description: "Detailed guidance with AL reference docs and patterns"
+extends: default
+
+# Use test-configs/config-b as the Claude Code project
+workingDir: test-configs/config-b
+
+tags:
+  - config-test
+  - detailed
