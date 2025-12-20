@@ -432,6 +432,12 @@ export class AgentTaskExecutor {
    * Build the initial task prompt for the agent
    */
   private buildTaskPrompt(task: TaskManifest, workingDir: string): string {
+    // Ensure absolute path
+    const absWorkingDir = workingDir.startsWith("/") ||
+        workingDir.match(/^[A-Z]:/i)
+      ? workingDir
+      : join(Deno.cwd(), workingDir);
+
     const parts: string[] = [
       `# Task: ${task.id}`,
       "",
@@ -453,27 +459,32 @@ export class AgentTaskExecutor {
     }
 
     parts.push("## Workspace");
-    parts.push(`Your workspace directory is: ${workingDir}`);
-    parts.push(
-      "This directory is empty. Create all required files here using absolute paths.",
-    );
+    parts.push(`Your workspace directory is: ${absWorkingDir}`);
+    parts.push("Create all required files here using absolute paths.");
     parts.push("");
 
     parts.push("## Instructions");
     parts.push(
       "1. Write the required AL code to .al files using the Write tool",
     );
-    parts.push(`   Example: Write to ${workingDir}/ProductCategory.al`);
-    parts.push("2. Use Bash to run: al compile");
+    parts.push(`   Example: Write to ${absWorkingDir}/ProductCategory.al`);
     parts.push(
-      "3. If compilation fails, read the errors, fix the code, and recompile",
+      "2. Create an app.json manifest file with your app details (id, name, publisher, version, etc.)",
+    );
+    parts.push(
+      `3. Use the mcp__al-tools__al_compile tool with projectDir: "${absWorkingDir}"`,
+    );
+    parts.push(
+      "4. If compilation fails, read the errors, fix the code, and recompile",
     );
     if (task.expected?.testApp) {
-      parts.push("4. Once compilation succeeds, use Bash to run tests");
+      parts.push(
+        "5. Once compilation succeeds, use mcp__al-tools__al_test to run tests",
+      );
     }
     parts.push("");
     parts.push(
-      "IMPORTANT: Do not explore or search for existing files - just write the code directly.",
+      "IMPORTANT: Use the MCP tool mcp__al-tools__al_compile for compilation, NOT Bash.",
     );
 
     return parts.join("\n");

@@ -22,8 +22,18 @@ allowedTools:
   - Edit # Modify existing AL files
   - Glob # Find files by pattern
   - Grep # Search file contents
-  - Bash # Run shell commands (for al compile)
+  - Bash # Run shell commands
   - Skill # Use skills from .claude/skills/
+
+# MCP servers for AL compilation and testing
+# Note: The path is relative to cwd (CentralGauge root)
+mcpServers:
+  al-tools:
+    command: deno
+    args:
+      - run
+      - --allow-all
+      - U:/Git/CentralGuage/mcp/al-tools-server.ts
 
 # Use Claude Code's system prompt with appended workflow instructions
 systemPrompt:
@@ -35,14 +45,16 @@ systemPrompt:
     Follow this workflow:
 
     1. Read the task description carefully
-    2. Write the required AL code to .al files in the project
-    3. Use Bash to run: al compile
-    4. If compilation fails, read the error output, fix the code, and recompile
-    5. Repeat until compilation succeeds
-    6. If tests are required, run them after successful compilation
+    2. Write the required AL code to .al files in the workspace
+    3. Create an app.json manifest if not present
+    4. Use the mcp__al-tools__al_compile tool to compile your code
+    5. If compilation fails, read the errors, fix the code, and recompile
+    6. Repeat until compilation succeeds
+    7. If tests are required, use mcp__al-tools__al_test after compilation
 
     IMPORTANT:
-    - Always compile after writing code using: al compile
+    - Use mcp__al-tools__al_compile (NOT bash "al compile") to compile
+    - The projectDir parameter must be the absolute path to your workspace
     - Fix all compilation errors before proceeding
     - Follow AL naming conventions (PascalCase, etc.)
 
