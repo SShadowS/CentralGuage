@@ -3,6 +3,7 @@
  * @module cli/commands
  */
 
+export { registerAgentsCommand } from "./agents-command.ts";
 export { registerBenchCommand } from "./bench-command.ts";
 export { registerCompileTestCommands } from "./compile-test-command.ts";
 export { registerConfigCommands } from "./config-command.ts";

@@ -14,6 +14,7 @@ import { SplashScreen } from "../src/utils/splash-screen.ts";
 
 // Command registration functions
 import {
+  registerAgentsCommand,
   registerBenchCommand,
   registerCompileTestCommands,
   registerConfigCommands,
@@ -82,6 +83,7 @@ const cli = new Command()
 // Register all command modules
 // deno-lint-ignore no-explicit-any
 const cliAny = cli as any;
+registerAgentsCommand(cliAny);
 registerBenchCommand(cliAny);
 registerReportCommand(cliAny);
 registerVerifyCommand(cliAny);

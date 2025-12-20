@@ -1,0 +1,55 @@
+# Default AL Agent Configuration
+#
+# This is the baseline agent for AL code generation benchmarks.
+# Uses Claude Code's system prompt with appended workflow instructions.
+
+id: default
+name: "Default AL Agent"
+description: "Baseline autonomous AL code generator with compile/test feedback"
+model: claude-sonnet-4-5-20250929
+maxTurns: 20
+maxTokens: 100000
+
+# Claude Code feature loading
+# - project: Loads CLAUDE.md and skills from workingDir
+settingSources:
+  - project
+
+# SDK built-in tools the agent can use
+allowedTools:
+  - Read # Read AL files
+  - Write # Create new AL files
+  - Edit # Modify existing AL files
+  - Glob # Find files by pattern
+  - Grep # Search file contents
+  - Bash # Run shell commands (for al compile)
+  - Skill # Use skills from .claude/skills/
+
+# Use Claude Code's system prompt with appended workflow instructions
+systemPrompt:
+  preset: claude_code
+  append: |
+    ## AL Code Generation Workflow
+
+    You are generating AL code for Microsoft Dynamics 365 Business Central.
+    Follow this workflow:
+
+    1. Read the task description carefully
+    2. Write the required AL code to .al files in the project
+    3. Use Bash to run: al compile
+    4. If compilation fails, read the error output, fix the code, and recompile
+    5. Repeat until compilation succeeds
+    6. If tests are required, run them after successful compilation
+
+    IMPORTANT:
+    - Always compile after writing code using: al compile
+    - Fix all compilation errors before proceeding
+    - Follow AL naming conventions (PascalCase, etc.)
+
+limits:
+  maxCompileAttempts: 15
+  timeoutMs: 300000
+
+tags:
+  - baseline
+  - al-generation

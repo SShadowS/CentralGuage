@@ -1,0 +1,32 @@
+# Agent with AL Skills and Custom Rules
+#
+# Demonstrates using custom CLAUDE.md and skills for specialized AL generation.
+# The workingDir contains project-specific rules and skill definitions.
+
+id: with-skills
+name: "Agent with AL Skills"
+description: "Uses AL-specific skills and project rules from a custom working directory"
+extends: default
+
+# Custom project directory with CLAUDE.md and skills
+# This directory contains:
+# - CLAUDE.md (AL coding rules)
+# - .claude/skills/al-patterns/SKILL.md (AL design patterns)
+workingDir: agents/al-project
+
+# Load settings from the custom project directory
+settingSources:
+  - project
+
+# Include Skill tool to enable skill invocation
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Skill
+
+tags:
+  - skills
+  - custom-rules
