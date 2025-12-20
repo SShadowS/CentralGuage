@@ -64,3 +64,5 @@ test-streaming.ts
 
 # Local docs
 DEPLOY.md
+# Agent task working directories
+test-configs/*/.tasks/

@@ -114,9 +114,14 @@ export class AgentTaskExecutor {
     const executionId = this.generateExecutionId();
     const tracker = new CostTracker(agentConfig.model);
 
-    // Prepare working directory
-    const workingDir = agentConfig.workingDir || options.projectDir;
-    await ensureDir(workingDir);
+    // Prepare isolated working directory for this task
+    // Each task gets its own subdirectory to prevent file conflicts
+    const baseWorkingDir = agentConfig.workingDir || options.projectDir;
+    const taskWorkingDir = join(baseWorkingDir, ".tasks", `${task.id}-${executionId}`);
+    await ensureDir(taskWorkingDir);
+
+    // Copy CLAUDE.md and .claude directory if they exist in base dir
+    await this.copyAgentContext(baseWorkingDir, taskWorkingDir);
 
     // Resolve system prompt
     const systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
@@ -127,7 +132,7 @@ export class AgentTaskExecutor {
     // Create SDK query options
     const queryOptions = {
       model: agentConfig.model,
-      cwd: workingDir,
+      cwd: taskWorkingDir,
       allowedTools: agentConfig.allowedTools,
       maxTurns: agentConfig.maxTurns,
       ...(mcpServers && { mcpServers }),
@@ -161,7 +166,7 @@ export class AgentTaskExecutor {
       }
 
       // Build the task prompt
-      const prompt = this.buildTaskPrompt(task, workingDir);
+      const prompt = this.buildTaskPrompt(task, taskWorkingDir);
       tracker.startTurn();
 
       // Execute using V1 query() API
@@ -263,7 +268,7 @@ export class AgentTaskExecutor {
                   resultLower.includes("compilation successful") ||
                   resultLower.includes("all tests passed")
                 ) {
-                  finalCode = await this.extractFinalCode(workingDir);
+                  finalCode = await this.extractFinalCode(taskWorkingDir);
                   if (resultLower.includes("all tests passed")) {
                     success = true;
                     terminationReason = "success";
@@ -290,7 +295,7 @@ export class AgentTaskExecutor {
             ) {
               success = true;
               terminationReason = "success";
-              finalCode = await this.extractFinalCode(workingDir);
+              finalCode = await this.extractFinalCode(taskWorkingDir);
             }
           } else if (resultMsg.subtype === "error_max_turns") {
             terminationReason = "max_turns";
@@ -535,5 +540,53 @@ export class AgentTaskExecutor {
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 8);
     return `agent-${timestamp}-${random}`;
+  }
+
+  /**
+   * Copy agent context files (CLAUDE.md, .claude/) from base to task directory
+   * This preserves the agent's configuration while isolating task files
+   */
+  private async copyAgentContext(
+    baseDir: string,
+    taskDir: string,
+  ): Promise<void> {
+    // Copy CLAUDE.md if it exists
+    const claudeMdPath = join(baseDir, "CLAUDE.md");
+    try {
+      const content = await Deno.readTextFile(claudeMdPath);
+      await Deno.writeTextFile(join(taskDir, "CLAUDE.md"), content);
+    } catch {
+      // CLAUDE.md doesn't exist, skip
+    }
+
+    // Copy .claude directory if it exists
+    const claudeDirPath = join(baseDir, ".claude");
+    try {
+      const stat = await Deno.stat(claudeDirPath);
+      if (stat.isDirectory) {
+        await this.copyDirectory(claudeDirPath, join(taskDir, ".claude"));
+      }
+    } catch {
+      // .claude directory doesn't exist, skip
+    }
+  }
+
+  /**
+   * Recursively copy a directory
+   */
+  private async copyDirectory(src: string, dest: string): Promise<void> {
+    await ensureDir(dest);
+
+    for await (const entry of Deno.readDir(src)) {
+      const srcPath = join(src, entry.name);
+      const destPath = join(dest, entry.name);
+
+      if (entry.isDirectory) {
+        await this.copyDirectory(srcPath, destPath);
+      } else if (entry.isFile) {
+        const content = await Deno.readFile(srcPath);
+        await Deno.writeFile(destPath, content);
+      }
+    }
   }
 }
