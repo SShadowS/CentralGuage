@@ -296,3 +296,95 @@ export interface ImportResult {
     error: string;
   }>;
 }
+
+// =============================================================================
+// Comprehensive Task Set Hashing Types
+// =============================================================================
+
+/**
+ * Information about a single file included in a hash
+ */
+export interface HashedFileInfo {
+  /** Relative path from project root */
+  path: string;
+  /** SHA-256 hash of file content (16 hex chars) */
+  hash: string;
+  /** File size in bytes */
+  size: number;
+}
+
+/**
+ * Complete hash information for a single task
+ */
+export interface TaskContentHashInfo {
+  /** Task identifier (e.g., "CG-AL-E008") */
+  taskId: string;
+  /** Hash of YAML manifest content */
+  manifestHash: string;
+  /** Path to the YAML manifest (relative) */
+  manifestPath: string;
+  /** All test .al files for this task */
+  testFiles: HashedFileInfo[];
+  /** Combined hash of manifest + all test files */
+  combinedHash: string;
+}
+
+/**
+ * Complete hash result for a task set
+ */
+export interface TaskSetHashResult {
+  /** Final computed hash (16 hex chars) */
+  hash: string;
+  /** Hash of tests/al/app.json */
+  testAppManifestHash: string;
+  /** When the hash was computed */
+  computedAt: Date;
+  /** Number of tasks */
+  taskCount: number;
+  /** Total files hashed (manifests + test files + app.json) */
+  totalFilesHashed: number;
+  /** Per-task details */
+  tasks: TaskContentHashInfo[];
+  /** Expected files that were missing */
+  missingFiles: string[];
+  /** Warnings encountered during hashing */
+  warnings: string[];
+}
+
+// =============================================================================
+// Task Set Summary and Grouping Types
+// =============================================================================
+
+/**
+ * Summary information for a task set hash
+ * Used for displaying available test sets
+ */
+export interface TaskSetSummary {
+  /** The task set hash */
+  taskSetHash: string;
+  /** Earliest run with this hash */
+  firstRun: Date;
+  /** Most recent run with this hash */
+  lastRun: Date;
+  /** Number of benchmark runs */
+  runCount: number;
+  /** Number of distinct model variants tested */
+  modelCount: number;
+  /** Average pass rate across all runs (0-1) */
+  avgPassRate: number;
+  /** Average score across all runs (0-100) */
+  avgScore: number;
+}
+
+/**
+ * Runs grouped by variant for a specific task set
+ * Used for selecting which run to use per model
+ */
+export interface VariantRunGroup {
+  /** Full variant ID (e.g., "anthropic/claude-sonnet-4" or "agent:config-a") */
+  variantId: string;
+  /** Provider type: "anthropic", "openai", "agent", etc. */
+  provider: string;
+  /** All runs for this variant, ordered by date (newest first) */
+  runs: RunRecord[];
+}

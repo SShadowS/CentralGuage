@@ -21,6 +21,7 @@ import {
   registerContainerCommands,
   registerModelsCommand,
   registerReportCommand,
+  registerReportDbCommand,
   registerStatsCommands,
   registerVerifyCommand,
 } from "./commands/mod.ts";
@@ -86,6 +87,7 @@ const cliAny = cli as any;
 registerAgentsCommand(cliAny);
 registerBenchCommand(cliAny);
 registerReportCommand(cliAny);
+registerReportDbCommand(cliAny);
 registerVerifyCommand(cliAny);
 registerContainerCommands(cliAny);
 registerCompileTestCommands(cliAny);

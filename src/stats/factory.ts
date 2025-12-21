@@ -330,6 +330,109 @@ export class InMemoryStorage implements StatsStorage {
     );
   }
 
+  getTaskSetSummaries(): Promise<import("./types.ts").TaskSetSummary[]> {
+    const summaries = new Map<
+      string,
+      {
+        firstRun: Date;
+        lastRun: Date;
+        runIds: Set<string>;
+        variantIds: Set<string>;
+        passRateSum: number;
+        scoreSum: number;
+      }
+    >();
+
+    for (const run of this.runs.values()) {
+      const hash = run.taskSetHash;
+      const existing = summaries.get(hash) ?? {
+        firstRun: run.executedAt,
+        lastRun: run.executedAt,
+        runIds: new Set<string>(),
+        variantIds: new Set<string>(),
+        passRateSum: 0,
+        scoreSum: 0,
+      };
+
+      if (run.executedAt < existing.firstRun) {
+        existing.firstRun = run.executedAt;
+      }
+      if (run.executedAt > existing.lastRun) {
+        existing.lastRun = run.executedAt;
+      }
+      existing.runIds.add(run.runId);
+      existing.passRateSum += run.overallPassRate;
+      existing.scoreSum += run.averageScore;
+      summaries.set(hash, existing);
+    }
+
+    // Add variant IDs from results
+    for (const r of this.results) {
+      const run = this.runs.get(r.runId);
+      if (run) {
+        const summary = summaries.get(run.taskSetHash);
+        if (summary) {
+          summary.variantIds.add(r.variantId);
+        }
+      }
+    }
+
+    return Promise.resolve(
+      Array.from(summaries.entries())
+        .map(([hash, s]) => ({
+          taskSetHash: hash,
+          firstRun: s.firstRun,
+          lastRun: s.lastRun,
+          runCount: s.runIds.size,
+          modelCount: s.variantIds.size,
+          avgPassRate: s.passRateSum / s.runIds.size,
+          avgScore: s.scoreSum / s.runIds.size,
+        }))
+        .sort((a, b) => b.lastRun.getTime() - a.lastRun.getTime()),
+    );
+  }
+
+  getRunsByVariantForTaskSet(
+    taskSetHash: string,
+  ): Promise<import("./types.ts").VariantRunGroup[]> {
+    // Get all runs with this task set hash
+    const matchingRuns = Array.from(this.runs.values())
+      .filter((r) => r.taskSetHash === taskSetHash)
+      .sort((a, b) => b.executedAt.getTime() - a.executedAt.getTime());
+
+    // Get variants from these runs
+    const runIds = new Set(matchingRuns.map((r) => r.runId));
+    const variantMap = new Map<
+      string,
+      { provider: string; runIds: Set<string> }
+    >();
+
+    for (const r of this.results) {
+      if (!runIds.has(r.runId)) continue;
+
+      const existing = variantMap.get(r.variantId) ?? {
+        provider: r.provider,
+        runIds: new Set<string>(),
+      };
+      existing.runIds.add(r.runId);
+      variantMap.set(r.variantId, existing);
+    }
+
+    // Build groups
+    const groups: import("./types.ts").VariantRunGroup[] = [];
+    for (const [variantId, info] of variantMap) {
+      const runs = matchingRuns.filter((r) => info.runIds.has(r.runId));
+      groups.push({
+        variantId,
+        provider: info.provider,
+        runs,
+      });
+    }
+
+    groups.sort((a, b) => a.variantId.localeCompare(b.variantId));
+    return Promise.resolve(groups);
+  }
+
   /** Clear all data (for testing) */
   clear(): void {
     this.runs.clear();

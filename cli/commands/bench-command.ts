@@ -43,6 +43,7 @@ import {
   parseProviderAndModel,
   statusText,
 } from "../helpers/mod.ts";
+import { loadTaskManifestsWithHashes } from "../helpers/task-loader.ts";
 import type { ExtendedBenchmarkOptions } from "../types/cli-types.ts";
 import { AgentRegistry } from "../../src/agents/registry.ts";
 import { AgentTaskExecutor } from "../../src/agents/executor.ts";
@@ -99,28 +100,17 @@ async function runParallelBenchmark(
   try {
     await Deno.mkdir(options.outputDir, { recursive: true });
 
-    // Load task manifests
-    const taskManifests = [];
-    for (const taskPattern of options.tasks) {
-      for await (const entry of expandGlob(taskPattern)) {
-        if (entry.isFile && entry.name.endsWith(".yml")) {
-          log.task(`Loading: ${entry.path}`);
-          const manifest = await loadTaskManifest(entry.path);
-          taskManifests.push(manifest);
-        }
-      }
-    }
+    // Load task manifests with comprehensive hashing
+    const { manifests: taskManifests, hashResult } =
+      await loadTaskManifestsWithHashes(
+        options.tasks,
+        options.outputDir,
+        !quiet,
+      );
 
     if (taskManifests.length === 0) {
-      log.fail(
-        `No task manifests found matching patterns: ${
-          options.tasks.join(", ")
-        }`,
-      );
       return;
     }
-
-    log.task(`Loaded ${taskManifests.length} task(s)`);
 
     // Load config
     const appConfig = await ConfigManager.loadConfig();
@@ -357,6 +347,18 @@ async function runParallelBenchmark(
             perTask: Object.fromEntries(summary.stats.perTask),
           },
           comparisons: summary.comparisons,
+          // Comprehensive hash info for run comparability
+          hashInfo: {
+            taskSetHash: hashResult.hash,
+            testAppManifestHash: hashResult.testAppManifestHash,
+            totalFilesHashed: hashResult.totalFilesHashed,
+            computedAt: hashResult.computedAt.toISOString(),
+            taskHashes: hashResult.tasks.map((t) => ({
+              id: t.taskId,
+              combined: t.combinedHash,
+              fileCount: t.testFiles.length + 1,
+            })),
+          },
         },
         null,
         2,

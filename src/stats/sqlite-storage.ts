@@ -21,8 +21,10 @@ import type {
   ResultRecord,
   RunRecord,
   TaskComparisonDetail,
+  TaskSetSummary,
   TrendOptions,
   TrendPoint,
+  VariantRunGroup,
 } from "./types.ts";
 
 /**
@@ -740,5 +742,114 @@ export class SqliteStorage implements StatsStorage {
         costPerSuccess: row[5],
       })),
     );
+  }
+
+  // ============ Task Set Queries ============
+
+  getTaskSetSummaries(): Promise<TaskSetSummary[]> {
+    const db = this.getDb();
+
+    const sql = `
+      SELECT
+        runs.task_set_hash,
+        MIN(runs.executed_at) as first_run,
+        MAX(runs.executed_at) as last_run,
+        COUNT(DISTINCT runs.run_id) as run_count,
+        COUNT(DISTINCT r.variant_id) as model_count,
+        AVG(runs.overall_pass_rate) as avg_pass_rate,
+        AVG(runs.average_score) as avg_score
+      FROM runs
+      LEFT JOIN results r ON runs.run_id = r.run_id
+      GROUP BY runs.task_set_hash
+      ORDER BY last_run DESC
+    `;
+
+    const rows = db.prepare(sql).values<
+      [string, string, string, number, number, number, number]
+    >();
+
+    return Promise.resolve(
+      rows.map((row) => ({
+        taskSetHash: row[0],
+        firstRun: new Date(row[1]),
+        lastRun: new Date(row[2]),
+        runCount: row[3],
+        modelCount: row[4],
+        avgPassRate: row[5],
+        avgScore: row[6],
+      })),
+    );
+  }
+
+  getRunsByVariantForTaskSet(taskSetHash: string): Promise<VariantRunGroup[]> {
+    const db = this.getDb();
+
+    // Get all runs for this task set hash
+    const runsSql = `
+      SELECT run_id, executed_at, config_hash, task_set_hash,
+             total_tasks, total_models, total_cost, total_tokens,
+             total_duration_ms, pass_rate_1, pass_rate_2,
+             overall_pass_rate, average_score, metadata_json
+      FROM runs
+      WHERE task_set_hash = ?
+      ORDER BY executed_at DESC
+    `;
+    const runs = db.prepare(runsSql).values<[
+      string,
+      string,
+      string,
+      string,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      string | null,
+    ]>(taskSetHash);
+
+    const runRecords = runs.map((row) => this.rowToRunRecord(row));
+
+    // Get distinct variants from these runs
+    const variantsSql = `
+      SELECT DISTINCT r.variant_id, r.provider
+      FROM results r
+      JOIN runs ON r.run_id = runs.run_id
+      WHERE runs.task_set_hash = ?
+      ORDER BY r.variant_id
+    `;
+    const variants = db.prepare(variantsSql).values<[string, string]>(
+      taskSetHash,
+    );
+
+    // Build groups - for each variant, find which runs have results for it
+    const groups: VariantRunGroup[] = [];
+    for (const [variantId, provider] of variants) {
+      // Get run IDs that have this variant
+      const runIdsSql = `
+        SELECT DISTINCT r.run_id
+        FROM results r
+        JOIN runs ON r.run_id = runs.run_id
+        WHERE runs.task_set_hash = ? AND r.variant_id = ?
+      `;
+      const runIds = new Set(
+        db.prepare(runIdsSql).values<[string]>(taskSetHash, variantId)
+          .map((r) => r[0]),
+      );
+
+      // Filter runRecords to only those that have this variant
+      const variantRuns = runRecords.filter((run) => runIds.has(run.runId));
+
+      groups.push({
+        variantId,
+        provider,
+        runs: variantRuns,
+      });
+    }
+
+    return Promise.resolve(groups);
   }
 }

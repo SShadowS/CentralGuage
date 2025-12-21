@@ -7,7 +7,14 @@
  * - Comparing apples-to-apples across runs
  */
 
-import type { ConfigHashInput } from "./types.ts";
+import { expandGlob } from "@std/fs";
+import { basename, join, relative } from "@std/path";
+import type {
+  ConfigHashInput,
+  HashedFileInfo,
+  TaskContentHashInfo,
+  TaskSetHashResult,
+} from "./types.ts";
 
 /**
  * Generate SHA-256 hash of input data
@@ -130,4 +137,208 @@ function sortObjectKeys<T extends Record<string, unknown>>(
  */
 export function shortenHash(fullHash: string, length = 8): string {
   return fullHash.slice(0, length);
+}
+
+// =============================================================================
+// Comprehensive Task Set Hashing (includes test .al files)
+// =============================================================================
+
+/**
+ * Hash a single file's content
+ * @param filePath Absolute path to file
+ * @returns Hash info or null if file doesn't exist
+ */
+export async function hashFile(filePath: string): Promise<HashedFileInfo | null> {
+  try {
+    const content = await Deno.readTextFile(filePath);
+    const hash = await sha256(content.trim());
+    const stat = await Deno.stat(filePath);
+    return {
+      path: filePath,
+      hash: hash.slice(0, 16),
+      size: stat.size,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract task ID from manifest path
+ * @example "tasks/easy/CG-AL-E008-basic-interface.yml" -> "CG-AL-E008"
+ */
+export function extractTaskId(manifestPath: string): string {
+  const filename = basename(manifestPath);
+  // Match pattern: CG-AL-{letter}{number(s)}
+  const match = filename.match(/^(CG-AL-[A-Z]\d+)/);
+  if (!match || !match[1]) {
+    throw new Error(`Cannot extract task ID from: ${manifestPath}`);
+  }
+  return match[1];
+}
+
+/**
+ * Determine difficulty level from manifest path
+ */
+export function extractDifficulty(
+  manifestPath: string,
+): "easy" | "medium" | "hard" {
+  // Normalize path separators for cross-platform support
+  const normalized = manifestPath.replace(/\\/g, "/");
+  if (normalized.includes("/easy/")) {
+    return "easy";
+  }
+  if (normalized.includes("/medium/")) {
+    return "medium";
+  }
+  if (normalized.includes("/hard/")) {
+    return "hard";
+  }
+  throw new Error(`Cannot determine difficulty from: ${manifestPath}`);
+}
+
+/**
+ * Discover and hash all files for a single task
+ * @param manifestPath Path to the YAML manifest
+ * @param projectRoot Project root directory (default: cwd)
+ * @param testsAlDir Path to tests/al directory relative to project root
+ * @returns Task content hash info with warnings
+ */
+export async function hashTaskContent(
+  manifestPath: string,
+  projectRoot: string = Deno.cwd(),
+  testsAlDir: string = "tests/al",
+): Promise<TaskContentHashInfo & { warnings: string[] }> {
+  const warnings: string[] = [];
+
+  // Extract task info
+  const taskId = extractTaskId(manifestPath);
+  const difficulty = extractDifficulty(manifestPath);
+
+  // Hash manifest
+  const manifestContent = await Deno.readTextFile(manifestPath);
+  const manifestHash = await generateManifestHash(manifestContent);
+
+  // Find and hash test files
+  const testDir = join(projectRoot, testsAlDir, difficulty);
+  const testFilePattern = join(testDir, `${taskId}*.al`);
+  const testFiles: HashedFileInfo[] = [];
+
+  try {
+    for await (const entry of expandGlob(testFilePattern)) {
+      if (entry.isFile) {
+        const hashInfo = await hashFile(entry.path);
+        if (hashInfo) {
+          // Store relative path for portability
+          hashInfo.path = relative(projectRoot, entry.path).replace(/\\/g, "/");
+          testFiles.push(hashInfo);
+        }
+      }
+    }
+  } catch (error) {
+    warnings.push(`Error scanning test files for ${taskId}: ${error}`);
+  }
+
+  // Sort test files by path for determinism
+  testFiles.sort((a, b) => a.path.localeCompare(b.path));
+
+  // Warn if no test files found (might be intentional for some tasks)
+  if (testFiles.length === 0) {
+    warnings.push(`No test files found for ${taskId} in ${testDir}`);
+  }
+
+  // Compute combined hash (deterministic order)
+  const combinedData = {
+    manifest: manifestHash,
+    testFiles: testFiles.map((f) => ({ path: f.path, hash: f.hash })),
+  };
+  const combinedHash = (await sha256(JSON.stringify(combinedData))).slice(0, 16);
+
+  return {
+    taskId,
+    manifestHash,
+    manifestPath: relative(projectRoot, manifestPath).replace(/\\/g, "/"),
+    testFiles,
+    combinedHash,
+    warnings,
+  };
+}
+
+/**
+ * Generate comprehensive task set hash including all test files
+ *
+ * This hashes:
+ * - All YAML manifest files
+ * - All test .al files matching {taskId}*.al pattern
+ * - The tests/al/app.json manifest
+ *
+ * @param manifestPaths Absolute paths to YAML manifest files
+ * @param projectRoot Project root directory
+ * @param testsAlDir Path to tests/al directory relative to project root
+ * @returns Complete hash result with per-task details
+ */
+export async function generateComprehensiveTaskSetHash(
+  manifestPaths: string[],
+  projectRoot: string = Deno.cwd(),
+  testsAlDir: string = "tests/al",
+): Promise<TaskSetHashResult> {
+  const tasks: TaskContentHashInfo[] = [];
+  const allWarnings: string[] = [];
+  const missingFiles: string[] = [];
+
+  // Hash each task
+  for (const manifestPath of manifestPaths) {
+    try {
+      const { warnings, ...taskInfo } = await hashTaskContent(
+        manifestPath,
+        projectRoot,
+        testsAlDir,
+      );
+      tasks.push(taskInfo);
+      allWarnings.push(...warnings);
+    } catch (error) {
+      allWarnings.push(`Failed to hash ${manifestPath}: ${error}`);
+    }
+  }
+
+  // Hash tests/al/app.json
+  const appJsonPath = join(projectRoot, testsAlDir, "app.json");
+  let testAppManifestHash = "missing";
+  try {
+    const appJsonContent = await Deno.readTextFile(appJsonPath);
+    testAppManifestHash = (await sha256(appJsonContent.trim())).slice(0, 16);
+  } catch {
+    allWarnings.push(`Test app manifest not found: ${appJsonPath}`);
+    missingFiles.push(appJsonPath);
+  }
+
+  // Sort tasks by ID for determinism
+  tasks.sort((a, b) => a.taskId.localeCompare(b.taskId));
+
+  // Compute final hash
+  const hashData = {
+    testAppManifest: testAppManifestHash,
+    tasks: tasks.map((t) => ({
+      id: t.taskId,
+      combined: t.combinedHash,
+    })),
+  };
+  const finalHash = (await sha256(JSON.stringify(hashData))).slice(0, 16);
+
+  // Count total files hashed
+  const totalFilesHashed = tasks.reduce(
+    (sum, t) => sum + t.testFiles.length + 1, // +1 for manifest
+    testAppManifestHash !== "missing" ? 1 : 0, // +1 for app.json if exists
+  );
+
+  return {
+    hash: finalHash,
+    testAppManifestHash,
+    computedAt: new Date(),
+    taskCount: tasks.length,
+    totalFilesHashed,
+    tasks,
+    missingFiles,
+    warnings: allWarnings,
+  };
 }

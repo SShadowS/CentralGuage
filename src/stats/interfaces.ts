@@ -18,8 +18,10 @@ import type {
   RegressionOptions,
   ResultRecord,
   RunRecord,
+  TaskSetSummary,
   TrendOptions,
   TrendPoint,
+  VariantRunGroup,
 } from "./types.ts";
 
 /**
@@ -142,6 +144,21 @@ export interface StatsStorage {
    * @returns Cost breakdown entries
    */
   getCostBreakdown(options: CostOptions): Promise<CostBreakdown[]>;
+
+  // ============ Task Set Queries ============
+
+  /**
+   * Get summaries of all distinct task set hashes
+   * @returns Array of task set summaries ordered by last run date
+   */
+  getTaskSetSummaries(): Promise<TaskSetSummary[]>;
+
+  /**
+   * Get runs grouped by variant for a specific task set
+   * @param taskSetHash The task set hash to filter by
+   * @returns Array of variant run groups ordered by variant ID
+   */
+  getRunsByVariantForTaskSet(taskSetHash: string): Promise<VariantRunGroup[]>;
 }
 
 /**

@@ -30,3 +30,9 @@ export { findJsonFiles, loadTaskManifests } from "./task-loader.ts";
 
 // Storage helpers
 export { withStorage } from "./storage.ts";
+
+// Report generation helpers
+export {
+  generateCompleteReport,
+  resultRecordToBenchmarkResult,
+} from "./report-generator.ts";
