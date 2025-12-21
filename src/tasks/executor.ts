@@ -342,7 +342,7 @@ export class DefaultTaskExecutor implements TaskExecutor {
       version: "1.0.0.0",
       platform: "24.0.0.0",
       application: "24.0.0.0",
-      idRanges: [{ from: 70000, to: 80099 }],
+      idRanges: [{ from: 70000, to: 89999 }],
     });
 
     // Check if we need test toolkit dependencies

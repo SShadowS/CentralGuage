@@ -1,4 +1,4 @@
-codeunit 70091 "CG Line Amount Subscriber"
+codeunit 80091 "CG Line Amount Subscriber"
 {
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"CG Line Amount Engine", 'OnAfterCalculateLineAmount', '', false, false)]
     local procedure OnAfterCalculateLineAmount(var Result: Decimal; UnitPrice: Decimal; Quantity: Decimal; DiscountPercent: Decimal; RoundingPrecision: Decimal)

@@ -122,8 +122,8 @@ codeunit 80025 "CG-AL-H023 Test"
 
         // [THEN] RecordRef is populated
         Assert.IsTrue(Success, 'Should return true');
-        Assert.AreEqual('DES001', Introspector.GetFieldValueAsText(RecRef, 1), 'Code should be set');
-        Assert.AreEqual('Deserialized Record', Introspector.GetFieldValueAsText(RecRef, 2), 'Description should be set');
+        Assert.AreEqual('DES001', GetFieldValueAsText(RecRef, 1), 'Code should be set');
+        Assert.AreEqual('Deserialized Record', GetFieldValueAsText(RecRef, 2), 'Description should be set');
 
         RecRef.Close();
     end;
@@ -253,8 +253,8 @@ codeunit 80025 "CG-AL-H023 Test"
 
         // [THEN] Fields are copied
         Assert.IsTrue(Success, 'Should return true');
-        Assert.AreEqual('CLONE1', Introspector.GetFieldValueAsText(DestRecRef, 1), 'Code should be cloned');
-        Assert.AreEqual('Clone Source', Introspector.GetFieldValueAsText(DestRecRef, 2), 'Description should be cloned');
+        Assert.AreEqual('CLONE1', GetFieldValueAsText(DestRecRef, 1), 'Code should be cloned');
+        Assert.AreEqual('Clone Source', GetFieldValueAsText(DestRecRef, 2), 'Description should be cloned');
 
         DestRecRef.Close();
     end;
@@ -280,8 +280,8 @@ codeunit 80025 "CG-AL-H023 Test"
 
         // [THEN] Dest PK preserved, other fields copied
         Assert.IsTrue(Success, 'Should return true');
-        Assert.AreEqual('DST-PK', Introspector.GetFieldValueAsText(DestRecRef, 1), 'PK should be preserved');
-        Assert.AreEqual('Source Data', Introspector.GetFieldValueAsText(DestRecRef, 2), 'Description should be copied');
+        Assert.AreEqual('DST-PK', GetFieldValueAsText(DestRecRef, 1), 'PK should be preserved');
+        Assert.AreEqual('Source Data', GetFieldValueAsText(DestRecRef, 2), 'Description should be copied');
 
         DestRecRef.Close();
     end;
@@ -465,7 +465,7 @@ codeunit 80025 "CG-AL-H023 Test"
 
         // [THEN] Record is found
         Assert.IsTrue(Found, 'Should find the record');
-        Assert.AreEqual('Find Me', Introspector.GetFieldValueAsText(ResultRecRef, 2), 'Should get correct record');
+        Assert.AreEqual('Find Me', GetFieldValueAsText(ResultRecRef, 2), 'Should get correct record');
 
         ResultRecRef.Close();
 
@@ -477,7 +477,7 @@ codeunit 80025 "CG-AL-H023 Test"
     procedure TestGetRecordByPrimaryKey_NotFound()
     var
         ResultRecRef: RecordRef;
-        KeyValues: List of [Variant];
+        KeyValues: List of [Text];
         Found: Boolean;
     begin
         // [SCENARIO] GetRecordByPrimaryKey returns false when not found
@@ -514,8 +514,8 @@ codeunit 80025 "CG-AL-H023 Test"
 
         // [THEN] Text fields are uppercased
         Assert.IsTrue(TransformedCount > 0, 'Should transform at least one field');
-        Assert.AreEqual('TRANS1', Introspector.GetFieldValueAsText(RecRef, 1), 'Code should be uppercase');
-        Assert.AreEqual('LOWERCASE TEXT', Introspector.GetFieldValueAsText(RecRef, 2), 'Description should be uppercase');
+        Assert.AreEqual('TRANS1', GetFieldValueAsText(RecRef, 1), 'Code should be uppercase');
+        Assert.AreEqual('LOWERCASE TEXT', GetFieldValueAsText(RecRef, 2), 'Description should be uppercase');
 
         RecRef.Close();
     end;
@@ -542,7 +542,7 @@ codeunit 80025 "CG-AL-H023 Test"
 
         // [THEN] Amount is multiplied
         Assert.IsTrue(TransformedCount >= 1, 'Should transform at least one field');
-        ResultValue := Introspector.GetFieldValueAsText(RecRef, 3);
+        ResultValue := GetFieldValueAsText(RecRef, 3);
         Assert.IsTrue(ResultValue.Contains('150'), 'Amount should be 150');
 
         RecRef.Close();

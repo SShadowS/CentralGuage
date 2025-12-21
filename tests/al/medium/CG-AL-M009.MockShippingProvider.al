@@ -1,4 +1,4 @@
-codeunit 70094 "CG-AL-M009 Mock Shipping" implements "Shipping Provider"
+codeunit 80094 "CG-AL-M009 Mock Shipping" implements "Shipping Provider"
 {
     // Mock implementation of Shipping Provider interface for testing
     // This validates that the LLM-generated interface has the correct signature

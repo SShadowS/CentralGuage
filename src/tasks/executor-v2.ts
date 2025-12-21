@@ -417,7 +417,7 @@ export class TaskExecutorV2 {
       version: "1.0.0.0",
       platform: "24.0.0.0",
       runtime: "11.0",
-      idRanges: [{ from: 70000, to: 80099 }],
+      idRanges: [{ from: 70000, to: 89999 }],
     };
 
     // Add test toolkit dependencies if testApp is specified

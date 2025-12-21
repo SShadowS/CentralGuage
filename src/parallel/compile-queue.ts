@@ -285,7 +285,7 @@ export class CompileQueue {
       platform: "24.0.0.0",
       runtime: "15.0",
       application: "24.0.0.0",
-      idRanges: [{ from: 70000, to: 80099 }],
+      idRanges: [{ from: 70000, to: 89999 }],
       features: ["NoImplicitWith"],
     };
 

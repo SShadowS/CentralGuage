@@ -3,22 +3,21 @@ prompt_template: code-gen.md
 fix_template: bugfix.md
 max_attempts: 2
 description: >-
-  Create a codeunit named "CG Record Introspector" with ID 70226 demonstrating advanced
-  RecordRef and FieldRef techniques for dynamic record manipulation and introspection.
+  Create a codeunit named "CG Record Introspector" with ID 70226 for dynamic record
+  manipulation and introspection using RecordRef and FieldRef.
 
   1. Procedure "SerializeToJson" that takes Variant parameter SourceRecord and returns JsonObject.
      Convert any record to JSON dynamically:
-     - Use RecordRef.GetTable() to get the record from variant
-     - Iterate all fields using FieldIndex(1..FieldCount)
-     - For each field, add to JsonObject with field name as key
-     - Handle different field types: Text, Code, Integer, Decimal, Boolean, Date, DateTime, Option, Enum
-     - Skip BLOB and Media fields (check FieldRef.Class = FieldClass::FlowField or type)
+     - Accept any record type passed via the variant
+     - Process all fields in the record, adding each to the JsonObject with field name as key
+     - Handle field types: Text, Code, Integer, Decimal, Boolean, Date, DateTime, Option, Enum
+     - Skip BLOB and Media fields
      - Include a "_metadata" object with TableName, TableId, and RecordId as string
 
   2. Procedure "DeserializeFromJson" that takes JsonObject parameter JsonData and
      var RecordRef parameter DestRecRef. Returns Boolean.
      Populate a RecordRef from JSON:
-     - Read "_metadata" to validate TableId matches DestRecRef.Number
+     - Validate that "_metadata".TableId matches the destination table
      - For each key in JsonObject (except _metadata), find matching field by name
      - Set field values handling type conversions (Text to Code, Integer to Decimal, etc.)
      - Return true if at least one field was set, false if table mismatch or no fields set
@@ -27,7 +26,7 @@ description: >-
      returns Dictionary of [Text, Text] containing differences.
      Compare two records of the same table:
      - Verify both are records of same table (return empty if not)
-     - For each field, compare values using Format()
+     - For each field, compare formatted values
      - If different, add to dictionary: key = field name, value = "[old] -> [new]"
      - Skip FlowFields and BLOB fields
 
@@ -43,27 +42,27 @@ description: >-
      Return complete schema for a table:
      - Each element is JsonObject with: FieldNo, FieldName, FieldType (as text), Length,
        FieldClass (Normal/FlowField/FlowFilter), RelatedTable (0 if none), IsPartOfPrimaryKey
-     - Use KeyIndex(1) to determine which fields are in primary key
+     - Determine which fields are part of the primary key
 
   6. Procedure "BuildDynamicFilter" that takes RecordRef parameter RecRef,
      Dictionary of [Text, Text] parameter FilterCriteria. Returns Boolean.
      Apply filters dynamically:
-     - Dictionary keys are field names, values are filter expressions (e.g., "100..200", "A*", "<>''")
-     - For each entry, find field by name, apply SetFilter on the FieldRef
+     - Dictionary keys are field names, values are filter expressions
+     - For each entry, find field by name and apply the filter
      - Return true if all filters applied successfully, false if any field not found
 
   7. Procedure "GetRecordByPrimaryKey" that takes Integer parameter TableId,
-     List of [Variant] parameter KeyValues, var RecordRef parameter ResultRecRef. Returns Boolean.
+     List of [Text] parameter KeyValues, var RecordRef parameter ResultRecRef. Returns Boolean.
      Look up record by dynamic primary key:
-     - Open table, get primary key field count
-     - Apply filters for each key field using the corresponding KeyValues entry
-     - Call FindFirst, return true if found
-     - Handle composite keys (multiple fields)
+     - Open the specified table
+     - Filter by primary key fields using the provided KeyValues in order
+     - Return true if record found, false otherwise
+     - Support composite keys (multiple fields)
 
   8. Procedure "TransformRecord" that takes var RecordRef parameter RecRef,
      Codeunit parameter Transformer implementing interface "IFieldTransformer". Returns Integer.
      Apply transformations to each field:
-     - Iterate all fields
+     - Process all fields in the record
      - For each field, call Transformer.Transform(FieldRef) which returns new Variant value
      - If returned value differs from current, update the field
      - Return count of fields transformed
@@ -72,7 +71,7 @@ description: >-
      Integer parameter RelatedTableId, returns List of [RecordId].
      Find all records in RelatedTable that reference the source record:
      - Open RelatedTable
-     - Find fields with Relation pointing to source table
+     - Find fields with table relation pointing to source table
      - For each such field, filter by source record's primary key value
      - Return RecordIds of all matching records
 
@@ -80,10 +79,10 @@ description: >-
       List of [Integer] parameter RequiredFieldNos. Returns List of [Text].
       Check which required fields are empty:
       - For each field number in list, check if field has a value
-      - Text/Code: check if not empty string
-      - Integer/Decimal: check if not 0 (or accept 0 if explicitly allowed)
+      - Text/Code: empty string is invalid
+      - Integer/Decimal: 0 is invalid
       - Boolean: always valid
-      - Date: check if not 0D
+      - Date: 0D is invalid
       - Return list of field names that are empty/missing
 
   Include Access = Public on the codeunit.

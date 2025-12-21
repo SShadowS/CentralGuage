@@ -1,4 +1,4 @@
-codeunit 70090 "CG Line Amount Spy"
+codeunit 80090 "CG Line Amount Spy"
 {
     SingleInstance = true;
 

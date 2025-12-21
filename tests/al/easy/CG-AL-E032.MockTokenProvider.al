@@ -1,4 +1,4 @@
-codeunit 70092 "CG-AL-E032 Mock Token Provider" implements "CG Token Provider"
+codeunit 80092 "CG-AL-E032 Mock Token Provider" implements "CG Token Provider"
 {
     var
         ClearCacheCallCount: Integer;
