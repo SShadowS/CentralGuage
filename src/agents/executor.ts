@@ -731,6 +731,178 @@ export class AgentTaskExecutor {
   }
 
   /**
+   * Test Toolkit dependencies for BC 27
+   */
+  private static readonly TEST_TOOLKIT_DEPS = [
+    {
+      id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+      name: "Library Assert",
+      publisher: "Microsoft",
+      version: "27.0.0.0",
+    },
+    {
+      id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+      name: "Any",
+      publisher: "Microsoft",
+      version: "27.0.0.0",
+    },
+    {
+      id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+      name: "Tests-TestLibraries",
+      publisher: "Microsoft",
+      version: "27.0.0.0",
+    },
+  ];
+
+  /**
+   * Create an isolated verification directory with absolute path
+   */
+  private async createVerificationDir(projectDir: string): Promise<string> {
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    const relativeVerifyDir = join(
+      projectDir,
+      "..",
+      `verify-${timestamp}-${random}`,
+    );
+
+    // Ensure absolute path for PowerShell compilation
+    const verifyDir =
+      relativeVerifyDir.match(/^[A-Z]:/i) || relativeVerifyDir.startsWith("/")
+        ? relativeVerifyDir
+        : join(Deno.cwd(), relativeVerifyDir);
+
+    await ensureDir(verifyDir);
+    return verifyDir;
+  }
+
+  /**
+   * Prepare app.json with Test Toolkit dependencies for verification
+   */
+  private async prepareAppJsonForTests(
+    projectDir: string,
+    verifyDir: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    const appJsonPath = join(projectDir, "app.json");
+
+    try {
+      const appJsonContent = await Deno.readTextFile(appJsonPath);
+      const appJson = JSON.parse(appJsonContent);
+
+      // Add Test Toolkit dependencies if not present
+      if (!appJson.dependencies) {
+        appJson.dependencies = [];
+      }
+      for (const dep of AgentTaskExecutor.TEST_TOOLKIT_DEPS) {
+        const exists = appJson.dependencies.some(
+          (d: { id: string }) => d.id === dep.id,
+        );
+        if (!exists) {
+          appJson.dependencies.push(dep);
+        }
+      }
+
+      // Extend idRanges to include test codeunit range (80000-89999)
+      if (!appJson.idRanges) {
+        appJson.idRanges = [];
+      }
+      const hasTestRange = appJson.idRanges.some(
+        (r: { from: number; to: number }) => r.from <= 80001 && r.to >= 80001,
+      );
+      if (!hasTestRange) {
+        appJson.idRanges.push({ from: 80000, to: 89999 });
+      }
+
+      await Deno.writeTextFile(
+        join(verifyDir, "app.json"),
+        JSON.stringify(appJson, null, 2),
+      );
+      return { success: true };
+    } catch {
+      return { success: false, error: `No app.json found in ${projectDir}` };
+    }
+  }
+
+  /**
+   * Copy AL source files from project to verification directory
+   */
+  private async copyAlFiles(
+    projectDir: string,
+    verifyDir: string,
+  ): Promise<void> {
+    for await (const entry of Deno.readDir(projectDir)) {
+      if (entry.isFile && entry.name.endsWith(".al")) {
+        const content = await Deno.readTextFile(join(projectDir, entry.name));
+        await Deno.writeTextFile(join(verifyDir, entry.name), content);
+      }
+    }
+  }
+
+  /**
+   * Copy test file to verification directory
+   */
+  private async copyTestFile(
+    testFilePath: string,
+    verifyDir: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const testContent = await Deno.readTextFile(testFilePath);
+      const testFileName = basename(testFilePath);
+      await Deno.writeTextFile(join(verifyDir, testFileName), testContent);
+      return { success: true };
+    } catch {
+      return { success: false, error: `Test file not found: ${testFilePath}` };
+    }
+  }
+
+  /**
+   * Compile and run tests, returning verification result
+   */
+  private async compileAndRunTests(
+    containerName: string,
+    project: ALProject,
+  ): Promise<{ success: boolean; message: string; failures?: string[] }> {
+    const compileResult = await this.containerProvider.compileProject(
+      containerName,
+      project,
+    );
+
+    if (!compileResult.success) {
+      return {
+        success: false,
+        message: "Verification compilation failed",
+        failures: compileResult.errors.map(
+          (e) => `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
+        ),
+      };
+    }
+
+    const testResult = await this.containerProvider.runTests(
+      containerName,
+      project,
+    );
+
+    if (testResult.success) {
+      return {
+        success: true,
+        message:
+          `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
+      };
+    }
+
+    const failures = testResult.results
+      .filter((r) => !r.passed)
+      .map((r) => `${r.name}: ${r.error || "Failed"}`);
+
+    return {
+      success: false,
+      message:
+        `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
+      failures,
+    };
+  }
+
+  /**
    * Verify agent code by running tests in an isolated directory.
    * This prevents the agent from seeing or modifying test files.
    */
@@ -738,175 +910,50 @@ export class AgentTaskExecutor {
     projectDir: string,
     testFilePath: string,
     debug?: boolean,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    failures?: string[];
-  }> {
-    const containerName = "Cronus27"; // Default BC container
+  ): Promise<{ success: boolean; message: string; failures?: string[] }> {
+    const containerName = "Cronus27";
 
     try {
-      // Create isolated verification directory (use absolute path)
-      const timestamp = Date.now().toString(36);
-      const random = Math.random().toString(36).substring(2, 8);
-      const relativeVerifyDir = join(
-        projectDir,
-        "..",
-        `verify-${timestamp}-${random}`,
-      );
-      // Ensure absolute path for PowerShell compilation
-      const verifyDir =
-        relativeVerifyDir.match(/^[A-Z]:/i) || relativeVerifyDir.startsWith("/")
-          ? relativeVerifyDir
-          : join(Deno.cwd(), relativeVerifyDir);
-      await ensureDir(verifyDir);
-
+      // Create isolated verification directory
+      const verifyDir = await this.createVerificationDir(projectDir);
       if (debug) {
         console.log(`[Agent] Verification directory: ${verifyDir}`);
       }
 
-      // Copy app.json and add Test Toolkit dependencies
-      const appJsonPath = join(projectDir, "app.json");
-      try {
-        const appJsonContent = await Deno.readTextFile(appJsonPath);
-        const appJson = JSON.parse(appJsonContent);
-
-        // Add Test Toolkit dependencies if not present
-        // App IDs extracted from actual BC 27 symbol files
-        const testDeps = [
-          {
-            id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-            name: "Library Assert",
-            publisher: "Microsoft",
-            version: "27.0.0.0",
-          },
-          {
-            id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
-            name: "Any",
-            publisher: "Microsoft",
-            version: "27.0.0.0",
-          },
-          {
-            id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
-            name: "Tests-TestLibraries",
-            publisher: "Microsoft",
-            version: "27.0.0.0",
-          },
-        ];
-
-        if (!appJson.dependencies) {
-          appJson.dependencies = [];
-        }
-
-        for (const dep of testDeps) {
-          const exists = appJson.dependencies.some(
-            (d: { id: string }) => d.id === dep.id,
-          );
-          if (!exists) {
-            appJson.dependencies.push(dep);
-          }
-        }
-
-        // Extend idRanges to include test codeunit range (80000-89999)
-        if (!appJson.idRanges) {
-          appJson.idRanges = [];
-        }
-        const hasTestRange = appJson.idRanges.some(
-          (r: { from: number; to: number }) => r.from <= 80001 && r.to >= 80001,
-        );
-        if (!hasTestRange) {
-          appJson.idRanges.push({ from: 80000, to: 89999 });
-        }
-
-        await Deno.writeTextFile(
-          join(verifyDir, "app.json"),
-          JSON.stringify(appJson, null, 2),
-        );
-      } catch {
-        return {
-          success: false,
-          message: `No app.json found in ${projectDir}`,
-        };
+      // Prepare app.json with test dependencies
+      const appResult = await this.prepareAppJsonForTests(
+        projectDir,
+        verifyDir,
+      );
+      if (!appResult.success) {
+        return { success: false, message: appResult.error! };
       }
 
-      // Copy all .al files from agent project
-      for await (const entry of Deno.readDir(projectDir)) {
-        if (entry.isFile && entry.name.endsWith(".al")) {
-          const content = await Deno.readTextFile(join(projectDir, entry.name));
-          await Deno.writeTextFile(join(verifyDir, entry.name), content);
-        }
+      // Copy source files
+      await this.copyAlFiles(projectDir, verifyDir);
+
+      // Copy test file
+      const testResult = await this.copyTestFile(testFilePath, verifyDir);
+      if (!testResult.success) {
+        return { success: false, message: testResult.error! };
+      }
+      if (debug) {
+        console.log(`[Agent] Copied test file: ${basename(testFilePath)}`);
       }
 
-      // Copy the test file
-      try {
-        const testContent = await Deno.readTextFile(testFilePath);
-        const testFileName = basename(testFilePath);
-        await Deno.writeTextFile(join(verifyDir, testFileName), testContent);
-        if (debug) {
-          console.log(`[Agent] Copied test file: ${testFileName}`);
-        }
-      } catch {
-        return {
-          success: false,
-          message: `Test file not found: ${testFilePath}`,
-        };
-      }
-
-      // Build ALProject for verification (include test files)
+      // Build and verify project
       const project = await this.buildALProject(verifyDir);
-
       if (debug) {
         console.log(`[Agent] Source files: ${project.sourceFiles.length}`);
         console.log(`[Agent] Test files: ${project.testFiles.length}`);
       }
 
-      // Compile with test files
-      const compileResult = await this.containerProvider.compileProject(
-        containerName,
-        project,
-      );
-      if (!compileResult.success) {
-        return {
-          success: false,
-          message: "Verification compilation failed",
-          failures: compileResult.errors.map(
-            (e) => `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
-          ),
-        };
-      }
-
-      // Run tests
-      const testResult = await this.containerProvider.runTests(
-        containerName,
-        project,
-      );
-
-      if (testResult.success) {
-        return {
-          success: true,
-          message:
-            `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
-        };
-      } else {
-        const failures = testResult.results
-          .filter((r) => !r.passed)
-          .map((r) => `${r.name}: ${r.error || "Failed"}`);
-
-        return {
-          success: false,
-          message:
-            `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
-          failures,
-        };
-      }
+      return await this.compileAndRunTests(containerName, project);
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message
         : String(error);
-      return {
-        success: false,
-        message: `Verification error: ${errorMessage}`,
-      };
+      return { success: false, message: `Verification error: ${errorMessage}` };
     }
   }
 
