@@ -99,6 +99,37 @@ interface ToolResultBlock {
 // Executor Implementation
 // =============================================================================
 
+/**
+ * Query options for the SDK
+ */
+interface QueryOptions {
+  model: string;
+  cwd: string;
+  allowedTools?: string[];
+  maxTurns: number;
+  mcpServers?: Record<
+    string,
+    { command: string; args?: string[]; env?: Record<string, string> }
+  >;
+  systemPrompt: string | {
+    type: "preset";
+    preset: "claude_code";
+    append?: string;
+  };
+  permissionMode: "bypassPermissions";
+  allowDangerouslySkipPermissions: boolean;
+}
+
+/**
+ * Result of execution preparation
+ */
+interface ExecutionPrepResult {
+  taskWorkingDir: string;
+  queryOptions: QueryOptions;
+  tracker: CostTracker;
+  executionId: string;
+}
+
 export class AgentTaskExecutor {
   private containerProvider: BcContainerProvider;
 
@@ -108,19 +139,17 @@ export class AgentTaskExecutor {
   }
 
   /**
-   * Execute a task with an agent configuration
+   * Prepare execution environment and build query options
    */
-  async execute(
+  private async prepareExecution(
     agentConfig: ResolvedAgentConfig,
     task: TaskManifest,
     options: AgentExecutionOptions,
-  ): Promise<AgentExecutionResult> {
-    const startTime = Date.now();
+  ): Promise<ExecutionPrepResult> {
     const executionId = this.generateExecutionId();
     const tracker = new CostTracker(agentConfig.model);
 
     // Prepare isolated working directory for this task
-    // Each task gets its own subdirectory to prevent file conflicts
     const baseWorkingDir = agentConfig.workingDir || options.projectDir;
     const taskWorkingDir = join(
       baseWorkingDir,
@@ -132,11 +161,6 @@ export class AgentTaskExecutor {
     // Copy CLAUDE.md and .claude directory if they exist in base dir
     await this.copyAgentContext(baseWorkingDir, taskWorkingDir);
 
-    // Note: Test files are NOT copied to the task directory
-    // The BC compiler compiles all .al files in a directory, and test files
-    // require Test Toolkit dependencies that break compilation.
-    // For agent benchmarks, we verify compilation success as the primary metric.
-
     // Resolve system prompt
     const systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
 
@@ -144,7 +168,7 @@ export class AgentTaskExecutor {
     const mcpServers = this.buildMcpServers(agentConfig);
 
     // Create SDK query options
-    const queryOptions = {
+    const queryOptions: QueryOptions = {
       model: agentConfig.model,
       cwd: taskWorkingDir,
       allowedTools: agentConfig.allowedTools,
@@ -155,154 +179,133 @@ export class AgentTaskExecutor {
       allowDangerouslySkipPermissions: true,
     };
 
-    try {
-      // Debug log the query configuration
-      if (options.debug) {
-        console.log("[Agent] Query config:");
-        console.log(`  Model: ${queryOptions.model}`);
-        console.log(`  CWD: ${queryOptions.cwd}`);
-        console.log(`  Max turns: ${queryOptions.maxTurns}`);
-        console.log(
-          `  Allowed tools: ${queryOptions.allowedTools?.join(", ")}`,
-        );
-        console.log(
-          `  MCP servers: ${
-            Object.keys(queryOptions.mcpServers ?? {}).join(", ")
-          }`,
-        );
-        if (queryOptions.mcpServers) {
-          for (const [name, cfg] of Object.entries(queryOptions.mcpServers)) {
-            console.log(
-              `    ${name}: ${cfg.command} ${cfg.args?.join(" ") ?? ""}`,
-            );
-          }
-        }
-      }
+    return { taskWorkingDir, queryOptions, tracker, executionId };
+  }
 
-      // Build the task prompt
+  /**
+   * Log query configuration for debugging
+   */
+  private logQueryConfig(queryOptions: QueryOptions): void {
+    console.log("[Agent] Query config:");
+    console.log(`  Model: ${queryOptions.model}`);
+    console.log(`  CWD: ${queryOptions.cwd}`);
+    console.log(`  Max turns: ${queryOptions.maxTurns}`);
+    console.log(`  Allowed tools: ${queryOptions.allowedTools?.join(", ")}`);
+    console.log(
+      `  MCP servers: ${Object.keys(queryOptions.mcpServers ?? {}).join(", ")}`,
+    );
+    if (queryOptions.mcpServers) {
+      for (const [name, cfg] of Object.entries(queryOptions.mcpServers)) {
+        console.log(`    ${name}: ${cfg.command} ${cfg.args?.join(" ") ?? ""}`);
+      }
+    }
+  }
+
+  /**
+   * Check if termination conditions are met
+   */
+  private checkTerminationConditions(
+    tracker: CostTracker,
+    agentConfig: ResolvedAgentConfig,
+  ): TerminationReason | null {
+    if (tracker.turns >= agentConfig.maxTurns) {
+      return "max_turns";
+    }
+    if (agentConfig.maxTokens && tracker.totalTokens >= agentConfig.maxTokens) {
+      return "max_tokens";
+    }
+    if (
+      agentConfig.limits?.maxCompileAttempts &&
+      tracker.isCompileLimitReached(agentConfig.limits.maxCompileAttempts)
+    ) {
+      return "max_compile_attempts";
+    }
+    return null;
+  }
+
+  /**
+   * Build the execution result object
+   */
+  private buildExecutionResult(
+    task: TaskManifest,
+    agentConfig: ResolvedAgentConfig,
+    executionId: string,
+    success: boolean,
+    tracker: CostTracker,
+    terminationReason: TerminationReason,
+    startTime: number,
+    finalCode?: string,
+  ): AgentExecutionResult {
+    const result: AgentExecutionResult = {
+      taskId: task.id,
+      agentId: agentConfig.id,
+      executionId,
+      success,
+      turns: tracker.getTurns(),
+      metrics: tracker.getMetrics(),
+      terminationReason,
+      duration: Date.now() - startTime,
+      executedAt: new Date(),
+    };
+    if (finalCode !== undefined) {
+      result.finalCode = finalCode;
+    }
+    return result;
+  }
+
+  /**
+   * Execute a task with an agent configuration
+   */
+  async execute(
+    agentConfig: ResolvedAgentConfig,
+    task: TaskManifest,
+    options: AgentExecutionOptions,
+  ): Promise<AgentExecutionResult> {
+    const startTime = Date.now();
+
+    // Phase 1: Setup execution environment
+    const { taskWorkingDir, queryOptions, tracker, executionId } = await this
+      .prepareExecution(agentConfig, task, options);
+
+    if (options.debug) {
+      this.logQueryConfig(queryOptions);
+    }
+
+    try {
       const prompt = this.buildTaskPrompt(task, taskWorkingDir);
       tracker.startTurn();
 
-      // Execute using V1 query() API
-      const q = query({
-        prompt,
-        options: queryOptions,
-      });
+      const q = query({ prompt, options: queryOptions });
 
-      // Process agent responses
       let success = false;
       let finalCode: string | undefined;
       let terminationReason: TerminationReason = "error";
 
+      // Phase 2: Process agent messages
       for await (const msg of q) {
-        // Debug logging
         if (options.debug) {
-          const subtype = (msg as { subtype?: string }).subtype;
-          console.log(
-            `[Agent] Message: ${msg.type}${subtype ? ` (${subtype})` : ""}`,
-          );
-
-          // Log system init details (shows available tools and MCP status)
-          if (msg.type === "system" && subtype === "init") {
-            const sysMsg = msg as {
-              tools?: string[];
-              mcp_servers?: Array<{ name: string; status: string }>;
-            };
-            if (sysMsg.tools) {
-              console.log(`[Agent] Available tools: ${sysMsg.tools.length}`);
-              const mcpTools = sysMsg.tools.filter((t: string) =>
-                t.startsWith("mcp__")
-              );
-              if (mcpTools.length > 0) {
-                console.log(`[Agent] MCP tools: ${mcpTools.join(", ")}`);
-              }
-            }
-            if (sysMsg.mcp_servers) {
-              console.log("[Agent] MCP server status:");
-              for (const srv of sysMsg.mcp_servers) {
-                console.log(`  ${srv.name}: ${srv.status}`);
-              }
-            }
-          }
+          this.logMessage(msg);
         }
 
-        // Process based on message type
-        const msgType = msg.type;
-
-        // Track token usage from assistant messages
-        if (msgType === "assistant") {
-          const assistantMsg = msg as SDKAssistantMessage;
-          if (assistantMsg.message) {
-            // Extract usage from API message if available
-            const usage = (assistantMsg.message as ApiMessageWithUsage).usage;
-            if (usage) {
-              const tokenUsage: {
-                promptTokens?: number;
-                completionTokens?: number;
-              } = {};
-              if (
-                usage.input_tokens !== undefined && usage.input_tokens !== null
-              ) {
-                tokenUsage.promptTokens = usage.input_tokens;
-              }
-              if (
-                usage.output_tokens !== undefined &&
-                usage.output_tokens !== null
-              ) {
-                tokenUsage.completionTokens = usage.output_tokens;
-              }
-              tracker.recordTokenUsage(tokenUsage);
-            }
-
-            // Check for tool use blocks in content
-            for (const block of assistantMsg.message.content) {
-              if (block.type === "tool_use") {
-                const toolBlock = block as ToolUseBlock;
-                if (options.debug) {
-                  console.log(`[Agent] Tool call: ${toolBlock.name}`);
-                }
-                const toolRecord: ToolCallRecord = {
-                  name: toolBlock.name,
-                  input: toolBlock.input as Record<string, unknown>,
-                  duration: 0,
-                  success: true,
-                };
-                tracker.recordToolCall(toolRecord);
-              }
-
-              // Check for tool results indicating success
-              if (block.type === "tool_result") {
-                const resultBlock = block as ToolResultBlock;
-                const resultText = typeof resultBlock.content === "string"
-                  ? resultBlock.content
-                  : JSON.stringify(resultBlock.content);
-                const resultLower = resultText.toLowerCase();
-
-                // For agent benchmarks, compilation success is the primary metric
-                // (test files require Test Toolkit which complicates the flow)
-                if (
-                  resultLower.includes("compilation successful") ||
-                  resultLower.includes("all tests passed")
-                ) {
-                  finalCode = await this.extractFinalCode(taskWorkingDir);
-                  success = true;
-                  terminationReason = "success";
-                }
-              }
-            }
+        if (msg.type === "assistant") {
+          const result = await this.processAssistantMessage(
+            msg as SDKAssistantMessage,
+            tracker,
+            taskWorkingDir,
+            options.debug,
+          );
+          if (result.success) {
+            success = true;
+            finalCode = result.finalCode;
+            terminationReason = "success";
           }
-
-          // End current turn and start a new one
           tracker.endTurn();
           tracker.startTurn();
         }
 
-        // Handle result message (session complete)
-        if (msgType === "result") {
+        if (msg.type === "result") {
           const resultMsg = msg as SDKResultMessage;
           if (resultMsg.subtype === "success") {
-            // SDK reports success - trust it and verify with tests
-            // The agent believes it completed the task successfully
             success = true;
             terminationReason = "success";
             finalCode = await this.extractFinalCode(taskWorkingDir);
@@ -312,40 +315,22 @@ export class AgentTaskExecutor {
           break;
         }
 
-        // Check termination conditions
-        if (tracker.turns >= agentConfig.maxTurns) {
-          terminationReason = "max_turns";
+        const termination = this.checkTerminationConditions(
+          tracker,
+          agentConfig,
+        );
+        if (termination) {
+          terminationReason = termination;
           break;
         }
-        if (
-          agentConfig.maxTokens &&
-          tracker.totalTokens >= agentConfig.maxTokens
-        ) {
-          terminationReason = "max_tokens";
-          break;
-        }
-        if (
-          agentConfig.limits?.maxCompileAttempts &&
-          tracker.isCompileLimitReached(agentConfig.limits.maxCompileAttempts)
-        ) {
-          terminationReason = "max_compile_attempts";
-          break;
-        }
-
-        // Stop if successful
-        if (success) {
-          break;
-        }
+        if (success) break;
       }
 
       tracker.endTurn();
 
-      // Phase 2: Verify with tests if agent compilation succeeded
+      // Phase 3: Verify with tests if compilation succeeded
       if (success && task.expected?.testApp) {
-        if (options.debug) {
-          console.log("[Agent] Verifying with tests...");
-        }
-        const verifyResult = await this.verifyWithTests(
+        const verifyResult = await this.runTestVerification(
           taskWorkingDir,
           task.expected.testApp,
           options.debug,
@@ -353,57 +338,174 @@ export class AgentTaskExecutor {
         if (!verifyResult.success) {
           success = false;
           terminationReason = "test_failure";
-          if (options.debug) {
-            console.log(
-              `[Agent] Test verification failed: ${verifyResult.message}`,
-            );
-            if (verifyResult.failures) {
-              for (const f of verifyResult.failures) {
-                console.log(`  - ${f}`);
-              }
-            }
-          }
-        } else if (options.debug) {
-          console.log(
-            `[Agent] Test verification passed: ${verifyResult.message}`,
-          );
         }
       }
 
-      const result: AgentExecutionResult = {
-        taskId: task.id,
-        agentId: agentConfig.id,
+      return this.buildExecutionResult(
+        task,
+        agentConfig,
         executionId,
         success,
-        turns: tracker.getTurns(),
-        metrics: tracker.getMetrics(),
+        tracker,
         terminationReason,
-        duration: Date.now() - startTime,
-        executedAt: new Date(),
-      };
-      if (finalCode !== undefined) {
-        result.finalCode = finalCode;
-      }
-      return result;
+        startTime,
+        finalCode,
+      );
     } catch (error) {
       tracker.endTurn();
-
       if (options.debug) {
         console.error("[Agent Executor] Error:", error);
       }
-
-      return {
-        taskId: task.id,
-        agentId: agentConfig.id,
+      return this.buildExecutionResult(
+        task,
+        agentConfig,
         executionId,
-        success: false,
-        turns: tracker.getTurns(),
-        metrics: tracker.getMetrics(),
-        terminationReason: "error",
-        duration: Date.now() - startTime,
-        executedAt: new Date(),
-      };
+        false,
+        tracker,
+        "error",
+        startTime,
+      );
     }
+  }
+
+  /**
+   * Log debug message information
+   */
+  private logMessage(msg: { type: string; subtype?: string }): void {
+    const subtype = (msg as { subtype?: string }).subtype;
+    console.log(
+      `[Agent] Message: ${msg.type}${subtype ? ` (${subtype})` : ""}`,
+    );
+
+    if (msg.type === "system" && subtype === "init") {
+      const sysMsg = msg as {
+        tools?: string[];
+        mcp_servers?: Array<{ name: string; status: string }>;
+      };
+      if (sysMsg.tools) {
+        console.log(`[Agent] Available tools: ${sysMsg.tools.length}`);
+        const mcpTools = sysMsg.tools.filter((t: string) =>
+          t.startsWith("mcp__")
+        );
+        if (mcpTools.length > 0) {
+          console.log(`[Agent] MCP tools: ${mcpTools.join(", ")}`);
+        }
+      }
+      if (sysMsg.mcp_servers) {
+        console.log("[Agent] MCP server status:");
+        for (const srv of sysMsg.mcp_servers) {
+          console.log(`  ${srv.name}: ${srv.status}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Process an assistant message and track tokens/tools
+   */
+  private async processAssistantMessage(
+    assistantMsg: SDKAssistantMessage,
+    tracker: CostTracker,
+    taskWorkingDir: string,
+    debug?: boolean,
+  ): Promise<{ success: boolean; finalCode?: string }> {
+    if (!assistantMsg.message) {
+      return { success: false };
+    }
+
+    // Extract usage from API message if available
+    const usage = (assistantMsg.message as ApiMessageWithUsage).usage;
+    if (usage) {
+      const tokenUsage: { promptTokens?: number; completionTokens?: number } =
+        {};
+      if (usage.input_tokens !== undefined && usage.input_tokens !== null) {
+        tokenUsage.promptTokens = usage.input_tokens;
+      }
+      if (usage.output_tokens !== undefined && usage.output_tokens !== null) {
+        tokenUsage.completionTokens = usage.output_tokens;
+      }
+      tracker.recordTokenUsage(tokenUsage);
+    }
+
+    let success = false;
+    let finalCode: string | undefined;
+
+    // Process content blocks
+    for (const block of assistantMsg.message.content) {
+      if (block.type === "tool_use") {
+        const toolBlock = block as ToolUseBlock;
+        if (debug) {
+          console.log(`[Agent] Tool call: ${toolBlock.name}`);
+        }
+        const toolRecord: ToolCallRecord = {
+          name: toolBlock.name,
+          input: toolBlock.input as Record<string, unknown>,
+          duration: 0,
+          success: true,
+        };
+        tracker.recordToolCall(toolRecord);
+      }
+
+      if (block.type === "tool_result") {
+        const resultBlock = block as ToolResultBlock;
+        const resultText = typeof resultBlock.content === "string"
+          ? resultBlock.content
+          : JSON.stringify(resultBlock.content);
+        const resultLower = resultText.toLowerCase();
+
+        if (
+          resultLower.includes("compilation successful") ||
+          resultLower.includes("all tests passed")
+        ) {
+          finalCode = await this.extractFinalCode(taskWorkingDir);
+          success = true;
+        }
+      }
+    }
+
+    const result: { success: boolean; finalCode?: string } = { success };
+    if (finalCode !== undefined) {
+      result.finalCode = finalCode;
+    }
+    return result;
+  }
+
+  /**
+   * Run test verification and log results
+   */
+  private async runTestVerification(
+    taskWorkingDir: string,
+    testFilePath: string,
+    debug?: boolean,
+  ): Promise<{ success: boolean }> {
+    if (debug) {
+      console.log("[Agent] Verifying with tests...");
+    }
+
+    const verifyResult = await this.verifyWithTests(
+      taskWorkingDir,
+      testFilePath,
+      debug,
+    );
+
+    if (!verifyResult.success) {
+      if (debug) {
+        console.log(
+          `[Agent] Test verification failed: ${verifyResult.message}`,
+        );
+        if (verifyResult.failures) {
+          for (const f of verifyResult.failures) {
+            console.log(`  - ${f}`);
+          }
+        }
+      }
+      return { success: false };
+    }
+
+    if (debug) {
+      console.log(`[Agent] Test verification passed: ${verifyResult.message}`);
+    }
+    return { success: true };
   }
 
   /**
@@ -647,11 +749,16 @@ export class AgentTaskExecutor {
       // Create isolated verification directory (use absolute path)
       const timestamp = Date.now().toString(36);
       const random = Math.random().toString(36).substring(2, 8);
-      const relativeVerifyDir = join(projectDir, "..", `verify-${timestamp}-${random}`);
+      const relativeVerifyDir = join(
+        projectDir,
+        "..",
+        `verify-${timestamp}-${random}`,
+      );
       // Ensure absolute path for PowerShell compilation
-      const verifyDir = relativeVerifyDir.match(/^[A-Z]:/i) || relativeVerifyDir.startsWith("/")
-        ? relativeVerifyDir
-        : join(Deno.cwd(), relativeVerifyDir);
+      const verifyDir =
+        relativeVerifyDir.match(/^[A-Z]:/i) || relativeVerifyDir.startsWith("/")
+          ? relativeVerifyDir
+          : join(Deno.cwd(), relativeVerifyDir);
       await ensureDir(verifyDir);
 
       if (debug) {
