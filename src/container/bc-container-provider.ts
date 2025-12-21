@@ -52,7 +52,7 @@ export class BcContainerProvider implements ContainerProvider {
    */
   private getCredentials(containerName: string): ContainerCredentials {
     return this.credentialsCache.get(containerName) ||
-      { username: "admin", password: "admin" };
+      { username: "sshadows", password: "1234" };
   }
 
   private isWindows(): boolean {
@@ -305,7 +305,7 @@ export class BcContainerProvider implements ContainerProvider {
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
       $artifactUrl = Get-BcContainerArtifactUrl -containerName "${containerName}"
       Write-Output "ARTIFACT_URL:$artifactUrl"
-      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl
+      $compilerFolder = New-BcCompilerFolder -artifactUrl $artifactUrl -includeTestToolkit
       Write-Output "COMPILER_FOLDER:$compilerFolder"
     `;
 
@@ -465,11 +465,16 @@ export class BcContainerProvider implements ContainerProvider {
       return appFileResult.failureResult!;
     }
 
+    // Extract extensionId from app.json for test filtering
+    const appJson = project.appJson as { id?: string };
+    const extensionId = appJson.id || "";
+
     // Build and execute the test script
     const script = this.buildTestScript(
       containerName,
       credentials,
       appFileResult.appFilePath!,
+      extensionId,
     );
     const result = await this.executePowerShell(script);
     const duration = Date.now() - startTime;
@@ -592,6 +597,7 @@ export class BcContainerProvider implements ContainerProvider {
     containerName: string,
     credentials: ContainerCredentials,
     appFilePath: string,
+    extensionId: string,
   ): string {
     const escapedAppFile = appFilePath.replace(/\\/g, "\\\\");
 
@@ -601,32 +607,37 @@ export class BcContainerProvider implements ContainerProvider {
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)
 
-      ${this.buildPreCleanupScript(containerName)}
+      ${this.buildPreCleanupScript(containerName, extensionId)}
       ${this.buildPublishScript(containerName, escapedAppFile)}
-      ${this.buildRunTestsScript(containerName)}
+      ${this.buildRunTestsScript(containerName, extensionId)}
       ${this.buildPostCleanupScript(containerName)}
     `;
   }
 
   /** Build the pre-publish cleanup script block */
-  private buildPreCleanupScript(containerName: string): string {
+  private buildPreCleanupScript(
+    containerName: string,
+    extensionId: string,
+  ): string {
     return `
-      # PRE-PUBLISH CLEANUP: Remove any existing CentralGauge apps
+      # PRE-PUBLISH CLEANUP: Remove any existing version of this app
       Write-Output "PRECLEAN_START"
       try {
         Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
-          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.Publisher -eq "CentralGauge" }
+          param($targetAppId)
+          # Clean up apps matching our extension ID
+          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.AppId -eq $targetAppId }
           if ($apps) {
-            Write-Host "Found $($apps.Count) existing CentralGauge app(s) to clean up"
+            Write-Host "Found $($apps.Count) existing app(s) with AppId=$targetAppId to clean up"
             foreach ($app in $apps) {
               $appId = $app.AppId.ToString()
               $version = $app.Version.ToString()
-              Write-Host "  Removing: $($app.Name) (AppId=$appId)"
+              Write-Host "  Removing: $($app.Name) (AppId=$appId, Version=$version)"
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
               try { Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue } catch {}
             }
           }
-        }
+        } -argumentList "${extensionId}"
         Write-Output "PRECLEAN_SUCCESS"
       } catch {
         Write-Output "PRECLEAN_WARNING:$($_.Exception.Message)"
@@ -653,12 +664,18 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /** Build the run tests script block */
-  private buildRunTestsScript(containerName: string): string {
+  private buildRunTestsScript(
+    containerName: string,
+    extensionId: string,
+  ): string {
+    // Build extensionId parameter if provided
+    const extensionIdParam = extensionId ? `-extensionId "${extensionId}"` : "";
+
     return `
       # Run tests
       Write-Output "TEST_START"
       try {
-        $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential -detailed -returnTrueIfAllPassed -ErrorAction Stop 2>&1
+        $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential ${extensionIdParam} -testCodeunit "*" -detailed -returnTrueIfAllPassed -ErrorAction Stop 2>&1
 
         if ($results -eq $true) {
           Write-Output "ALL_TESTS_PASSED"

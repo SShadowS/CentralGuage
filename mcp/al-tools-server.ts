@@ -11,7 +11,8 @@
  * - al_container_status: Check container health
  */
 
-import { join } from "@std/path";
+import { basename, join } from "@std/path";
+import { ensureDir } from "@std/fs";
 import { BcContainerProvider } from "../src/container/bc-container-provider.ts";
 import type { ALProject } from "../src/container/types.ts";
 
@@ -70,7 +71,8 @@ const TOOLS: Tool[] = [
         },
         containerName: {
           type: "string",
-          description: `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
+          description:
+            `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
         },
       },
       required: ["projectDir"],
@@ -90,7 +92,8 @@ const TOOLS: Tool[] = [
         },
         containerName: {
           type: "string",
-          description: `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
+          description:
+            `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
         },
       },
       required: ["projectDir"],
@@ -104,9 +107,37 @@ const TOOLS: Tool[] = [
       properties: {
         containerName: {
           type: "string",
-          description: `Name of the BC container to check. Default: ${DEFAULT_CONTAINER}`,
+          description:
+            `Name of the BC container to check. Default: ${DEFAULT_CONTAINER}`,
         },
       },
+    },
+  },
+  {
+    name: "al_verify",
+    description:
+      "Internal tool for test verification. Copies agent code to isolated directory, " +
+      "adds test file, compiles with Test Toolkit dependencies, and runs tests.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectDir: {
+          type: "string",
+          description:
+            "Agent's compiled project directory containing AL files and app.json.",
+        },
+        testFile: {
+          type: "string",
+          description:
+            "Absolute path to the test file to copy into the project.",
+        },
+        containerName: {
+          type: "string",
+          description:
+            `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
+        },
+      },
+      required: ["projectDir", "testFile"],
     },
   },
 ];
@@ -117,8 +148,12 @@ const TOOLS: Tool[] = [
 
 /**
  * Build ALProject from a directory path
+ * @param includeTestFiles - Whether to include test files (default: true)
  */
-async function buildALProject(projectDir: string): Promise<ALProject> {
+async function buildALProject(
+  projectDir: string,
+  includeTestFiles = true,
+): Promise<ALProject> {
   const appJsonPath = join(projectDir, "app.json");
   const appJsonContent = await Deno.readTextFile(appJsonPath);
   const appJson = JSON.parse(appJsonContent);
@@ -131,11 +166,15 @@ async function buildALProject(projectDir: string): Promise<ALProject> {
     if (entry.isFile && entry.name.endsWith(".al")) {
       const filePath = join(projectDir, entry.name);
       // Test files typically have "Test" in the name
-      if (
-        entry.name.toLowerCase().includes("test") ||
-        entry.name.toLowerCase().includes(".test.")
-      ) {
-        testFiles.push(filePath);
+      const isTestFile = entry.name.toLowerCase().includes("test") ||
+        entry.name.toLowerCase().includes(".test.");
+
+      if (isTestFile) {
+        if (includeTestFiles) {
+          testFiles.push(filePath);
+        }
+        // Skip test files from sourceFiles to avoid compilation errors
+        // (test files require Test Toolkit dependencies)
       } else {
         sourceFiles.push(filePath);
       }
@@ -174,12 +213,14 @@ async function handleAlCompile(params: {
     } catch {
       return {
         success: false,
-        message: `No app.json found in ${params.projectDir}. Create an app.json manifest first.`,
+        message:
+          `No app.json found in ${params.projectDir}. Create an app.json manifest first.`,
       };
     }
 
-    // Build ALProject
-    const project = await buildALProject(params.projectDir);
+    // Build ALProject (exclude test files from compilation)
+    // Test files require Test Toolkit dependencies that the app may not have
+    const project = await buildALProject(params.projectDir, false);
 
     // Compile
     const result = await containerProvider.compileProject(
@@ -247,7 +288,8 @@ async function handleAlTest(params: {
     } catch {
       return {
         success: false,
-        message: `No app.json found in ${params.projectDir}. Create an app.json manifest first.`,
+        message:
+          `No app.json found in ${params.projectDir}. Create an app.json manifest first.`,
       };
     }
 
@@ -260,7 +302,8 @@ async function handleAlTest(params: {
     if (result.success) {
       return {
         success: true,
-        message: `All tests passed! (${result.passedTests}/${result.totalTests})`,
+        message:
+          `All tests passed! (${result.passedTests}/${result.totalTests})`,
         totalTests: result.totalTests,
         passed: result.passedTests,
         failed: result.failedTests,
@@ -272,7 +315,8 @@ async function handleAlTest(params: {
 
       return {
         success: false,
-        message: `Tests failed: ${result.failedTests} of ${result.totalTests} tests failed`,
+        message:
+          `Tests failed: ${result.failedTests} of ${result.totalTests} tests failed`,
         totalTests: result.totalTests,
         passed: result.passedTests,
         failed: result.failedTests,
@@ -309,6 +353,176 @@ async function handleContainerStatus(params: {
       status: "error",
       healthy: false,
       message: `Failed to get container status: ${errorMessage}`,
+    };
+  }
+}
+
+/**
+ * Verify agent code by running tests in an isolated directory.
+ * This prevents the agent from seeing or modifying test files.
+ */
+async function handleAlVerify(params: {
+  projectDir: string;
+  testFile: string;
+  containerName?: string;
+}): Promise<{
+  success: boolean;
+  message: string;
+  totalTests?: number;
+  passed?: number;
+  failed?: number;
+  failures?: string[];
+  compileErrors?: string[];
+}> {
+  const containerName = params.containerName || DEFAULT_CONTAINER;
+
+  try {
+    // Create isolated verification directory
+    const timestamp = Date.now().toString(36);
+    const random = Math.random().toString(36).substring(2, 8);
+    const verifyDir = join(
+      params.projectDir,
+      "..",
+      `verify-${timestamp}-${random}`,
+    );
+    await ensureDir(verifyDir);
+
+    // Copy app.json
+    const appJsonPath = join(params.projectDir, "app.json");
+    try {
+      const appJsonContent = await Deno.readTextFile(appJsonPath);
+      const appJson = JSON.parse(appJsonContent);
+
+      // Add Test Toolkit dependencies if not present
+      // App IDs extracted from actual BC 27 symbol files
+      const testDeps = [
+        {
+          id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+          name: "Library Assert",
+          publisher: "Microsoft",
+          version: "27.0.0.0",
+        },
+        {
+          id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+          name: "Any",
+          publisher: "Microsoft",
+          version: "27.0.0.0",
+        },
+        {
+          id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+          name: "Tests-TestLibraries",
+          publisher: "Microsoft",
+          version: "27.0.0.0",
+        },
+      ];
+
+      if (!appJson.dependencies) {
+        appJson.dependencies = [];
+      }
+
+      for (const dep of testDeps) {
+        const exists = appJson.dependencies.some(
+          (d: { id: string }) => d.id === dep.id,
+        );
+        if (!exists) {
+          appJson.dependencies.push(dep);
+        }
+      }
+
+      // Extend idRanges to include test codeunit range (80000-89999)
+      if (!appJson.idRanges) {
+        appJson.idRanges = [];
+      }
+      const hasTestRange = appJson.idRanges.some(
+        (r: { from: number; to: number }) => r.from <= 80001 && r.to >= 80001,
+      );
+      if (!hasTestRange) {
+        appJson.idRanges.push({ from: 80000, to: 89999 });
+      }
+
+      await Deno.writeTextFile(
+        join(verifyDir, "app.json"),
+        JSON.stringify(appJson, null, 2),
+      );
+    } catch {
+      return {
+        success: false,
+        message: `No app.json found in ${params.projectDir}`,
+      };
+    }
+
+    // Copy all .al files from agent project (excluding test files)
+    for await (const entry of Deno.readDir(params.projectDir)) {
+      if (entry.isFile && entry.name.endsWith(".al")) {
+        const content = await Deno.readTextFile(
+          join(params.projectDir, entry.name),
+        );
+        await Deno.writeTextFile(join(verifyDir, entry.name), content);
+      }
+    }
+
+    // Copy the test file
+    try {
+      const testContent = await Deno.readTextFile(params.testFile);
+      const testFileName = basename(params.testFile);
+      await Deno.writeTextFile(join(verifyDir, testFileName), testContent);
+    } catch {
+      return {
+        success: false,
+        message: `Test file not found: ${params.testFile}`,
+      };
+    }
+
+    // Build ALProject for verification (include test files this time)
+    const project = await buildALProject(verifyDir, true);
+
+    // Compile with test files
+    const compileResult = await containerProvider.compileProject(
+      containerName,
+      project,
+    );
+    if (!compileResult.success) {
+      return {
+        success: false,
+        message: "Verification compilation failed",
+        compileErrors: compileResult.errors.map(
+          (e) => `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
+        ),
+      };
+    }
+
+    // Run tests
+    const testResult = await containerProvider.runTests(containerName, project);
+
+    if (testResult.success) {
+      return {
+        success: true,
+        message:
+          `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
+        totalTests: testResult.totalTests,
+        passed: testResult.passedTests,
+        failed: testResult.failedTests,
+      };
+    } else {
+      const failures = testResult.results
+        .filter((r) => !r.passed)
+        .map((r) => `${r.name}: ${r.error || "Failed"}`);
+
+      return {
+        success: false,
+        message:
+          `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
+        totalTests: testResult.totalTests,
+        passed: testResult.passedTests,
+        failed: testResult.failedTests,
+        failures,
+      };
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      success: false,
+      message: `Verification error: ${errorMessage}`,
     };
   }
 }
@@ -371,6 +585,15 @@ async function handleRequest(
           case "al_container_status":
             result = await handleContainerStatus(
               toolArgs as { containerName?: string },
+            );
+            break;
+          case "al_verify":
+            result = await handleAlVerify(
+              toolArgs as {
+                projectDir: string;
+                testFile: string;
+                containerName?: string;
+              },
             );
             break;
           default:

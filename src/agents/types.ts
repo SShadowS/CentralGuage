@@ -152,6 +152,7 @@ export type TerminationReason =
   | "max_turns" // Reached maximum turns limit
   | "max_tokens" // Reached token budget limit
   | "max_compile_attempts" // Reached compilation attempt limit
+  | "test_failure" // Tests failed during verification
   | "timeout" // Execution timed out
   | "error"; // Unrecoverable error occurred
 
