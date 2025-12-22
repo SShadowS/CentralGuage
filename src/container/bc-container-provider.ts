@@ -48,11 +48,11 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   /**
-   * Get credentials for a container (falls back to defaults)
+   * Get credentials for a container (falls back to config defaults)
    */
   private getCredentials(containerName: string): ContainerCredentials {
     return this.credentialsCache.get(containerName) ||
-      { username: "sshadows", password: "1234" };
+      { username: "admin", password: "admin" };
   }
 
   private isWindows(): boolean {

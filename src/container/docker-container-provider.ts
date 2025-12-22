@@ -91,6 +91,10 @@ export class DockerContainerProvider implements ContainerProvider {
       throw new Error(`Failed to pull BC image: ${pullResult.output}`);
     }
 
+    // Get credentials from config or use defaults
+    const username = config.credentials?.username ?? "admin";
+    const password = config.credentials?.password ?? "admin";
+
     // Create and start container
     const dockerArgs = [
       "run",
@@ -106,9 +110,9 @@ export class DockerContainerProvider implements ContainerProvider {
       "-e",
       "auth=NavUserPassword",
       "-e",
-      "username=admin",
+      `username=${username}`,
       "-e",
-      "password=admin",
+      `password=${password}`,
       "-p",
       "8080:8080", // Web client
       "-p",
