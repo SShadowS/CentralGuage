@@ -519,6 +519,10 @@ benchmark:
       const originalCwd = Deno.cwd();
       Deno.chdir(tempDir);
 
+      // Clear env vars that could override defaults
+      mockEnv.delete("CENTRALGAUGE_MAX_TOKENS");
+      mockEnv.delete("CENTRALGAUGE_TIMEOUT");
+
       try {
         const cliOverrides = {
           llm: {

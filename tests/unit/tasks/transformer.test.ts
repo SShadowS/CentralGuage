@@ -6,14 +6,21 @@ import { TaskTransformer } from "../../../src/tasks/transformer.ts";
 import { ConfigManager } from "../../../src/config/config.ts";
 import type { TaskManifest } from "../../../types/index.ts";
 import type { TaskExecutionRequest } from "../../../src/tasks/interfaces.ts";
+import { MockEnv } from "../../utils/test-helpers.ts";
 
 describe("TaskTransformer", () => {
   let tempDir: string;
   let originalCwd: string;
+  let mockEnv: MockEnv;
 
   beforeEach(async () => {
     // Reset config manager state
     ConfigManager.reset();
+
+    // Setup mock environment and clear env vars that could override defaults
+    mockEnv = new MockEnv();
+    mockEnv.delete("CENTRALGAUGE_MAX_TOKENS");
+    mockEnv.delete("CENTRALGAUGE_TIMEOUT");
 
     // Create temp directory for templates
     tempDir = await Deno.makeTempDir({ prefix: "transformer-test-" });
@@ -41,6 +48,7 @@ describe("TaskTransformer", () => {
     // Restore original working directory before cleanup
     Deno.chdir(originalCwd);
     ConfigManager.reset();
+    mockEnv.restore();
     try {
       await Deno.remove(tempDir, { recursive: true });
     } catch {
