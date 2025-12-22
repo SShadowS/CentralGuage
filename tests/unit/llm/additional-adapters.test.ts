@@ -149,6 +149,77 @@ Deno.test("AzureOpenAIAdapter - estimateCost", async (t) => {
   });
 });
 
+Deno.test("AzureOpenAIAdapter - streaming interface", async (t) => {
+  await t.step("supportsStreaming property is true", () => {
+    const adapter = new AzureOpenAIAdapter();
+    assertEquals(adapter.supportsStreaming, true);
+  });
+
+  await t.step("has generateCodeStream method", () => {
+    const adapter = new AzureOpenAIAdapter();
+    assertEquals(typeof adapter.generateCodeStream, "function");
+  });
+
+  await t.step("has generateFixStream method", () => {
+    const adapter = new AzureOpenAIAdapter();
+    assertEquals(typeof adapter.generateFixStream, "function");
+  });
+});
+
+Deno.test("AzureOpenAIAdapter - isHealthy", async (t) => {
+  await t.step("returns false when API call fails", async () => {
+    const adapter = new AzureOpenAIAdapter();
+    adapter.configure({
+      provider: "azure-openai",
+      model: "gpt-4o",
+      apiKey: "invalid-api-key",
+      baseUrl: "https://test.openai.azure.com",
+    });
+
+    const healthy = await adapter.isHealthy();
+    assertEquals(healthy, false);
+  });
+});
+
+Deno.test("AzureOpenAIAdapter - configure", async (t) => {
+  await t.step("accepts configuration without throwing", () => {
+    const adapter = new AzureOpenAIAdapter();
+    adapter.configure({
+      provider: "azure-openai",
+      model: "gpt-4o",
+      apiKey: "test-key",
+      baseUrl: "https://test.openai.azure.com",
+      deploymentName: "my-deployment",
+      apiVersion: "2024-02-15-preview",
+    });
+  });
+
+  await t.step("multiple instances are independent", () => {
+    const adapter1 = new AzureOpenAIAdapter();
+    const adapter2 = new AzureOpenAIAdapter();
+
+    adapter1.configure({
+      provider: "azure-openai",
+      model: "gpt-4o",
+      apiKey: "key1",
+      baseUrl: "https://test1.openai.azure.com",
+    });
+
+    adapter2.configure({
+      provider: "azure-openai",
+      model: "gpt-4o-mini",
+      apiKey: "key2",
+      baseUrl: "https://test2.openai.azure.com",
+    });
+
+    // Different cost calculations prove independence
+    const cost1 = adapter1.estimateCost(1000, 1000);
+    const cost2 = adapter2.estimateCost(1000, 1000);
+
+    assertEquals(cost1 !== cost2, true);
+  });
+});
+
 // =============================================================================
 // Local LLM Adapter Tests
 // =============================================================================

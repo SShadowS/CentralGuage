@@ -459,3 +459,42 @@ Deno.test("OpenAIAdapter - constructor", async (t) => {
     assertEquals(cost1 !== cost2, true);
   });
 });
+
+// =============================================================================
+// Streaming Interface Tests
+// =============================================================================
+
+Deno.test("OpenAIAdapter - streaming interface", async (t) => {
+  await t.step("supportsStreaming property is true", () => {
+    const adapter = new OpenAIAdapter();
+    assertEquals(adapter.supportsStreaming, true);
+  });
+
+  await t.step("has generateCodeStream method", () => {
+    const adapter = new OpenAIAdapter();
+    assertEquals(typeof adapter.generateCodeStream, "function");
+  });
+
+  await t.step("has generateFixStream method", () => {
+    const adapter = new OpenAIAdapter();
+    assertEquals(typeof adapter.generateFixStream, "function");
+  });
+});
+
+// =============================================================================
+// Health Check Tests
+// =============================================================================
+
+Deno.test("OpenAIAdapter - isHealthy", async (t) => {
+  await t.step("returns false when API call fails", async () => {
+    const adapter = new OpenAIAdapter();
+    adapter.configure({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: "invalid-api-key",
+    });
+
+    const healthy = await adapter.isHealthy();
+    assertEquals(healthy, false);
+  });
+});

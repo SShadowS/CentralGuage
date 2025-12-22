@@ -589,3 +589,96 @@ Deno.test("AnthropicAdapter - all supported models", async (t) => {
     ]);
   });
 });
+
+// =============================================================================
+// Streaming Interface Tests
+// =============================================================================
+
+Deno.test("AnthropicAdapter - streaming interface", async (t) => {
+  await t.step("supportsStreaming property is true", () => {
+    const adapter = new AnthropicAdapter();
+    assertEquals(adapter.supportsStreaming, true);
+  });
+
+  await t.step("has generateCodeStream method", () => {
+    const adapter = new AnthropicAdapter();
+    assertEquals(typeof adapter.generateCodeStream, "function");
+  });
+
+  await t.step("has generateFixStream method", () => {
+    const adapter = new AnthropicAdapter();
+    assertEquals(typeof adapter.generateFixStream, "function");
+  });
+});
+
+// =============================================================================
+// Error Handling Tests
+// =============================================================================
+
+Deno.test("AnthropicAdapter - error handling", async (t) => {
+  await t.step(
+    "isHealthy returns false when API call fails",
+    async () => {
+      const adapter = new AnthropicAdapter();
+      // Configure with invalid API key - isHealthy should return false
+      // because the actual API call will fail
+      adapter.configure({
+        provider: "anthropic",
+        model: "claude-sonnet-4-5",
+        apiKey: "invalid-api-key",
+      });
+
+      const healthy = await adapter.isHealthy();
+      assertEquals(healthy, false);
+    },
+  );
+
+  await t.step("validateConfig catches missing API key", () => {
+    const adapter = new AnthropicAdapter();
+    const errors = adapter.validateConfig({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      // No apiKey
+    });
+
+    assertEquals(errors.length > 0, true);
+    assertEquals(
+      errors.some((e) => e.toLowerCase().includes("api key")),
+      true,
+    );
+  });
+});
+
+// =============================================================================
+// Thinking Budget Configuration Tests
+// =============================================================================
+
+Deno.test("AnthropicAdapter - thinking budget configuration", async (t) => {
+  await t.step("accepts thinkingBudget in configuration", () => {
+    const adapter = new AnthropicAdapter();
+    // Should not throw when configuring with thinkingBudget
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+      thinkingBudget: 10000,
+    });
+
+    // Verify adapter was configured (cost estimation works)
+    const cost = adapter.estimateCost(1000, 1000);
+    assertEquals(cost > 0, true);
+  });
+
+  await t.step("accepts undefined thinkingBudget", () => {
+    const adapter = new AnthropicAdapter();
+    adapter.configure({
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+      apiKey: "test-key",
+      thinkingBudget: undefined,
+    });
+
+    const cost = adapter.estimateCost(1000, 1000);
+    assertEquals(cost > 0, true);
+  });
+});
