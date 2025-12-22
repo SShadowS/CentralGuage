@@ -1,12 +1,12 @@
 import { describe, it } from "@std/testing/bdd";
-import { assertEquals, assertThrows, assertExists } from "@std/assert";
+import { assertEquals, assertExists, assertThrows } from "@std/assert";
 import {
-  extractTaskId,
   extractDifficulty,
-  hashFile,
-  hashTaskContent,
+  extractTaskId,
   generateComprehensiveTaskSetHash,
   generateManifestHash,
+  hashFile,
+  hashTaskContent,
 } from "../../../src/stats/hasher.ts";
 
 describe("hasher", () => {
@@ -122,7 +122,8 @@ describe("hasher", () => {
     const projectRoot = Deno.cwd();
 
     it("should hash a real easy task with test files", async () => {
-      const manifestPath = `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`;
+      const manifestPath =
+        `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`;
       const result = await hashTaskContent(manifestPath, projectRoot);
 
       assertEquals(result.taskId, "CG-AL-E008");
@@ -136,7 +137,8 @@ describe("hasher", () => {
     });
 
     it("should include relative paths for test files", async () => {
-      const manifestPath = `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`;
+      const manifestPath =
+        `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`;
       const result = await hashTaskContent(manifestPath, projectRoot);
 
       // All paths should be relative (not absolute)
@@ -148,7 +150,8 @@ describe("hasher", () => {
     });
 
     it("should be deterministic", async () => {
-      const manifestPath = `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`;
+      const manifestPath =
+        `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`;
       const result1 = await hashTaskContent(manifestPath, projectRoot);
       const result2 = await hashTaskContent(manifestPath, projectRoot);
 
@@ -166,7 +169,10 @@ describe("hasher", () => {
         `${projectRoot}/tasks/easy/CG-AL-E008-basic-interface.yml`,
       ];
 
-      const result = await generateComprehensiveTaskSetHash(manifests, projectRoot);
+      const result = await generateComprehensiveTaskSetHash(
+        manifests,
+        projectRoot,
+      );
 
       assertEquals(result.taskCount, 2);
       assertEquals(result.hash.length, 16);
@@ -185,8 +191,14 @@ describe("hasher", () => {
         `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`,
       ];
 
-      const result1 = await generateComprehensiveTaskSetHash(manifests1, projectRoot);
-      const result2 = await generateComprehensiveTaskSetHash(manifests2, projectRoot);
+      const result1 = await generateComprehensiveTaskSetHash(
+        manifests1,
+        projectRoot,
+      );
+      const result2 = await generateComprehensiveTaskSetHash(
+        manifests2,
+        projectRoot,
+      );
 
       assertEquals(result1.hash, result2.hash);
     });
@@ -196,7 +208,10 @@ describe("hasher", () => {
         `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`,
       ];
 
-      const result = await generateComprehensiveTaskSetHash(manifests, projectRoot);
+      const result = await generateComprehensiveTaskSetHash(
+        manifests,
+        projectRoot,
+      );
 
       // Should count: 1 manifest + test files + app.json
       assertEquals(result.totalFilesHashed >= 2, true);
@@ -207,7 +222,10 @@ describe("hasher", () => {
         `${projectRoot}/tasks/easy/CG-AL-E001-basic-table.yml`,
       ];
 
-      const result = await generateComprehensiveTaskSetHash(manifests, projectRoot);
+      const result = await generateComprehensiveTaskSetHash(
+        manifests,
+        projectRoot,
+      );
 
       assertEquals(result.testAppManifestHash !== "missing", true);
       assertEquals(result.testAppManifestHash.length, 16);

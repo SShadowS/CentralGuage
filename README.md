@@ -275,7 +275,7 @@ Agent configurations define how the Claude Agent SDK runs tasks. Each agent can 
 id: config-b
 name: "Config B (Detailed)"
 extends: default
-workingDir: test-configs/config-b  # Points to Claude Code config directory
+workingDir: test-configs/config-b # Points to Claude Code config directory
 ```
 
 ### Running Agent Benchmarks

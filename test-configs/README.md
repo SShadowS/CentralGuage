@@ -69,13 +69,13 @@ test-configs/
 
 ## File Types
 
-| File | Loading | Purpose |
-|------|---------|---------|
-| `CLAUDE.md` | Always | System prompt context |
-| `.claude/skills/*.md` | Auto (context-based) | Reference docs |
-| `.claude/rules/*.md` | Always | Coding guidelines |
-| `.claude/settings.local.json` | Always | Permissions |
-| `.mcp.json` | On startup | External tools |
+| File                          | Loading              | Purpose               |
+| ----------------------------- | -------------------- | --------------------- |
+| `CLAUDE.md`                   | Always               | System prompt context |
+| `.claude/skills/*.md`         | Auto (context-based) | Reference docs        |
+| `.claude/rules/*.md`          | Always               | Coding guidelines     |
+| `.claude/settings.local.json` | Always               | Permissions           |
+| `.mcp.json`                   | On startup           | External tools        |
 
 ## Compare Script Options
 
@@ -99,13 +99,13 @@ The benchmark uses agent YAML files in `agents/` that reference these config dir
 id: config-a
 name: "Config A (Minimal)"
 extends: default
-workingDir: test-configs/config-a  # Points to Claude Code config
+workingDir: test-configs/config-a # Points to Claude Code config
 
 # agents/config-b.yml
 id: config-b
 name: "Config B (Detailed)"
 extends: default
-workingDir: test-configs/config-b  # Points to Claude Code config
+workingDir: test-configs/config-b # Points to Claude Code config
 ```
 
 The `workingDir` tells the agent SDK to load CLAUDE.md, skills, and rules from that directory.

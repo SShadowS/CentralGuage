@@ -148,7 +148,9 @@ export function shortenHash(fullHash: string, length = 8): string {
  * @param filePath Absolute path to file
  * @returns Hash info or null if file doesn't exist
  */
-export async function hashFile(filePath: string): Promise<HashedFileInfo | null> {
+export async function hashFile(
+  filePath: string,
+): Promise<HashedFileInfo | null> {
   try {
     const content = await Deno.readTextFile(filePath);
     const hash = await sha256(content.trim());
@@ -252,7 +254,10 @@ export async function hashTaskContent(
     manifest: manifestHash,
     testFiles: testFiles.map((f) => ({ path: f.path, hash: f.hash })),
   };
-  const combinedHash = (await sha256(JSON.stringify(combinedData))).slice(0, 16);
+  const combinedHash = (await sha256(JSON.stringify(combinedData))).slice(
+    0,
+    16,
+  );
 
   return {
     taskId,
