@@ -181,19 +181,88 @@ export class TaskExecutorV2 {
       previousAttempts,
     );
 
+    // Call LLM and extract code
+    const { codeResult, extractedCode, codeLanguage } = await this
+      .callLLMAndExtractCode(
+        context,
+        attemptNumber,
+        previousAttempts,
+        llmAdapter,
+        prompt,
+        systemPrompt,
+      );
+
+    // Compile and run tests
+    const { compilationResult, testResult } = await this.compileAndTest(
+      context,
+      extractedCode,
+      attemptNumber,
+    );
+
+    // Evaluate success
+    const evaluation = this.evaluateAttempt(
+      context,
+      extractedCode,
+      compilationResult,
+      testResult,
+    );
+
+    // Build and return attempt result
+    return this.buildAttemptResult(
+      attemptNumber,
+      attemptStart,
+      prompt,
+      codeResult,
+      extractedCode,
+      codeLanguage,
+      compilationResult,
+      testResult,
+      evaluation,
+      llmAdapter,
+    );
+  }
+
+  /**
+   * Build generation context from previous attempts
+   */
+  private buildGenerationContext(
+    context: TaskExecutionContext,
+    attemptNumber: number,
+    previousAttempts: ExecutionAttempt[],
+  ): GenerationContext {
     const lastAttempt = previousAttempts[previousAttempts.length - 1];
     const previousCode = lastAttempt?.extractedCode;
     const previousErrors = lastAttempt?.compilationResult?.errors.map(
       (e) => `${e.file}:${e.line} - ${e.message}`,
     );
 
-    const generationContext: GenerationContext = {
+    return {
       taskId: context.manifest.id,
       attempt: attemptNumber,
       description: context.instructions,
       ...(previousCode !== undefined && { previousCode }),
       ...(previousErrors !== undefined && { errors: previousErrors }),
     };
+  }
+
+  /**
+   * Call LLM and extract code from response
+   */
+  private async callLLMAndExtractCode(
+    context: TaskExecutionContext,
+    attemptNumber: number,
+    previousAttempts: ExecutionAttempt[],
+    llmAdapter: LLMAdapter,
+    prompt: string,
+    systemPrompt?: string,
+    generationContext?: GenerationContext,
+  ): Promise<{
+    codeResult: Awaited<ReturnType<LLMAdapter["generateCode"]>>;
+    extractedCode: string;
+    codeLanguage: "al" | "diff";
+  }> {
+    const genContext = generationContext ??
+      this.buildGenerationContext(context, attemptNumber, previousAttempts);
 
     // Build LLM request with optional system prompt
     const llmRequest: { prompt: string; systemPrompt?: string } = { prompt };
@@ -205,12 +274,12 @@ export class TaskExecutorV2 {
     const codeResult = await this.callLLMWithRetry(
       async () => {
         return attemptNumber === 1
-          ? await llmAdapter.generateCode(llmRequest, generationContext)
+          ? await llmAdapter.generateCode(llmRequest, genContext)
           : await llmAdapter.generateFix(
             previousAttempts[previousAttempts.length - 1]!.extractedCode,
-            generationContext.errors || [],
+            genContext.errors || [],
             llmRequest,
-            generationContext,
+            genContext,
           );
       },
       context.llmProvider,
@@ -231,74 +300,24 @@ export class TaskExecutorV2 {
       codeLanguage,
     );
 
-    // Create temporary project and compile
-    const projectDir = await this.createTempProject(
-      context,
-      extractedCode,
-      attemptNumber,
-    );
-    const project = await ALProjectManager.loadProject(projectDir);
+    return { codeResult, extractedCode, codeLanguage };
+  }
 
-    const containerProvider = ContainerProviderRegistry.create(
-      context.containerProvider,
-    );
-    const compilationResult = await containerProvider.compileProject(
-      context.containerName,
-      project,
-    );
-
-    // Log compilation result if debug is enabled
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logCompilation(
-        context.manifest.id,
-        context.llmModel,
-        attemptNumber,
-        context.containerName,
-        compilationResult,
-      );
-    }
-
-    // Run tests if required and compilation succeeded
-    let testResult;
-    if (compilationResult.success && context.manifest.expected.testApp) {
-      testResult = await containerProvider.runTests(
-        context.containerName,
-        project,
-      );
-
-      // Log test result if debug is enabled
-      if (debugLogger && testResult) {
-        await debugLogger.logTestResult(
-          context.manifest.id,
-          context.llmModel,
-          attemptNumber,
-          context.containerName,
-          testResult,
-        );
-      }
-    }
-
-    // Save verbose artifacts (AL files and .app) if debug is enabled
-    if (debugLogger) {
-      await debugLogger.saveVerboseArtifacts(
-        context.manifest.id,
-        context.variantId || context.llmModel,
-        attemptNumber,
-        projectDir,
-        compilationResult.artifactPath,
-      );
-    }
-
-    // Evaluate success
-    const { success, score, reasons } = this.evaluateAttempt(
-      context,
-      extractedCode,
-      compilationResult,
-      testResult,
-    );
-
-    // Build attempt result
+  /**
+   * Build the attempt result object
+   */
+  private buildAttemptResult(
+    attemptNumber: number,
+    attemptStart: number,
+    prompt: string,
+    codeResult: Awaited<ReturnType<LLMAdapter["generateCode"]>>,
+    extractedCode: string,
+    codeLanguage: "al" | "diff",
+    compilationResult: CompilationResult,
+    testResult: TestResult | undefined,
+    evaluation: { success: boolean; score: number; reasons: string[] },
+    llmAdapter: LLMAdapter,
+  ): ExecutionAttempt {
     const attempt: ExecutionAttempt = {
       attemptNumber,
       startTime: new Date(attemptStart),
@@ -309,9 +328,9 @@ export class TaskExecutorV2 {
       codeLanguage,
       compilationResult,
       ...(testResult !== undefined && { testResult }),
-      success,
-      score,
-      failureReasons: reasons,
+      success: evaluation.success,
+      score: evaluation.score,
+      failureReasons: evaluation.reasons,
       tokensUsed: codeResult.response.usage.totalTokens,
       cost: llmAdapter.estimateCost(
         codeResult.response.usage.promptTokens,
