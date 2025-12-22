@@ -174,6 +174,13 @@ export class EnvLoader {
   }
 
   /**
+   * Get the load result (source, found vars, errors)
+   */
+  static getLoadResult(): EnvLoadResult | null {
+    return this.loadResult;
+  }
+
+  /**
    * Check if an API key is available
    */
   static hasApiKey(
