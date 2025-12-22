@@ -23,6 +23,7 @@ import {
   createStreamState,
   finalizeStream,
   handleStreamError,
+  type StreamState,
 } from "./stream-handler.ts";
 import * as colors from "@std/fmt/colors";
 
@@ -284,6 +285,7 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
   private buildOllamaRequest(
     endpoint: string,
     request: LLMRequest,
+    stream = false,
   ): {
     url: string;
     payload: Record<string, unknown>;
@@ -297,7 +299,7 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         num_predict: request.maxTokens ?? this.config.maxTokens ?? 4000,
         stop: request.stop,
       },
-      stream: false,
+      stream,
     };
     if (request.systemPrompt) {
       payload["system"] = request.systemPrompt;
@@ -312,6 +314,7 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
   private buildOpenAIRequest(
     endpoint: string,
     request: LLMRequest,
+    stream = false,
   ): {
     url: string;
     payload: Record<string, unknown>;
@@ -330,15 +333,21 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
       headers["Authorization"] = `Bearer ${this.config.apiKey}`;
     }
 
+    const payload: Record<string, unknown> = {
+      model: this.config.model,
+      messages,
+      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+      stop: request.stop,
+    };
+
+    if (stream) {
+      payload["stream"] = true;
+    }
+
     return {
       url: `${endpoint}/v1/chat/completions`,
-      payload: {
-        model: this.config.model,
-        messages,
-        temperature: request.temperature ?? this.config.temperature ?? 0.1,
-        max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
-        stop: request.stop,
-      },
+      payload,
       headers,
     };
   }
@@ -405,6 +414,94 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         estimatedCost: 0,
       },
     };
+  }
+
+  /**
+   * Creates an AbortController with optional signal forwarding.
+   */
+  private createAbortController(options?: StreamOptions): AbortController {
+    const controller = new AbortController();
+    if (options?.abortSignal) {
+      options.abortSignal.addEventListener("abort", () => {
+        controller.abort();
+      });
+    }
+    return controller;
+  }
+
+  /**
+   * Processes Ollama NDJSON stream events and yields text chunks.
+   * Returns token counts from the final chunk.
+   */
+  private async *processOllamaStream(
+    response: Response,
+    state: StreamState,
+    options?: StreamOptions,
+  ): AsyncGenerator<
+    StreamChunk,
+    { promptTokens: number; completionTokens: number },
+    undefined
+  > {
+    const reader = getStreamReader(response);
+    let promptTokens = 0;
+    let completionTokens = 0;
+
+    for await (const data of parseNDJSONStream(reader)) {
+      const content = (data["response"] as string) || "";
+
+      if (content) {
+        yield createChunk(content, state, options);
+      }
+
+      // Capture token counts from final chunk
+      if (data["done"] === true) {
+        promptTokens = (data["prompt_eval_count"] as number) || 0;
+        completionTokens = (data["eval_count"] as number) || 0;
+        break;
+      }
+    }
+
+    return { promptTokens, completionTokens };
+  }
+
+  /**
+   * Processes OpenAI-compatible SSE stream events and yields text chunks.
+   * Returns the last finish reason.
+   */
+  private async *processOpenAIStream(
+    response: Response,
+    state: StreamState,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, string | undefined, undefined> {
+    const reader = getStreamReader(response);
+    let lastFinishReason: string | undefined;
+
+    for await (const event of parseSSEStream(reader)) {
+      if (event.done) break;
+
+      try {
+        const data = JSON.parse(event.data) as {
+          choices?: Array<{
+            delta?: { content?: string };
+            finish_reason?: string;
+          }>;
+        };
+
+        const content = data.choices?.[0]?.delta?.content || "";
+        if (content) {
+          yield createChunk(content, state, options);
+        }
+
+        if (data.choices?.[0]?.finish_reason) {
+          lastFinishReason = data.choices[0].finish_reason;
+        }
+      } catch {
+        // Skip malformed JSON chunks
+        continue;
+      }
+    }
+
+    return lastFinishReason;
   }
 
   // ============================================================================
@@ -512,40 +609,18 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState(startTime);
-
-    const payload: Record<string, unknown> = {
-      model: this.config.model,
-      prompt: request.prompt,
-      options: {
-        temperature: request.temperature ?? this.config.temperature ?? 0.1,
-        num_predict: request.maxTokens ?? this.config.maxTokens ?? 4000,
-        stop: request.stop,
-      },
-      // Ollama streams by default, but we explicitly set it for clarity
-      stream: true,
-    };
-    if (request.systemPrompt) {
-      payload["system"] = request.systemPrompt;
-    }
-
-    const url = `${endpoint}/api/generate`;
-
-    let promptTokens = 0;
-    let completionTokens = 0;
+    const { url, payload, headers } = this.buildOllamaRequest(
+      endpoint,
+      request,
+      true,
+    );
 
     try {
-      const controller = new AbortController();
-
-      // Handle abort signal
-      if (options?.abortSignal) {
-        options.abortSignal.addEventListener("abort", () => {
-          controller.abort();
-        });
-      }
+      const controller = this.createAbortController(options);
 
       const apiResponse = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(payload),
         signal: controller.signal,
       });
@@ -557,27 +632,16 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         );
       }
 
-      const reader = getStreamReader(apiResponse);
-
-      for await (const data of parseNDJSONStream(reader)) {
-        const content = (data["response"] as string) || "";
-
-        if (content) {
-          yield createChunk(content, state, options);
-        }
-
-        // Capture token counts from final chunk
-        if (data["done"] === true) {
-          promptTokens = (data["prompt_eval_count"] as number) || 0;
-          completionTokens = (data["eval_count"] as number) || 0;
-          break;
-        }
-      }
+      const tokenCounts = yield* this.processOllamaStream(
+        apiResponse,
+        state,
+        options,
+      );
 
       const usage: TokenUsage = {
-        promptTokens,
-        completionTokens,
-        totalTokens: promptTokens + completionTokens,
+        promptTokens: tokenCounts.promptTokens,
+        completionTokens: tokenCounts.completionTokens,
+        totalTokens: tokenCounts.promptTokens + tokenCounts.completionTokens,
         estimatedCost: 0, // Local models are free
       };
 
@@ -603,41 +667,14 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState(startTime);
-
-    const messages: Array<{ role: string; content: string }> = [];
-    if (request.systemPrompt) {
-      messages.push({ role: "system", content: request.systemPrompt });
-    }
-    messages.push({ role: "user", content: request.prompt });
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (this.config.apiKey) {
-      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
-    }
-
-    const url = `${endpoint}/v1/chat/completions`;
-    const payload = {
-      model: this.config.model,
-      messages,
-      temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
-      stop: request.stop,
-      stream: true,
-    };
-
-    let lastFinishReason: string | undefined;
+    const { url, payload, headers } = this.buildOpenAIRequest(
+      endpoint,
+      request,
+      true,
+    );
 
     try {
-      const controller = new AbortController();
-
-      // Handle abort signal
-      if (options?.abortSignal) {
-        options.abortSignal.addEventListener("abort", () => {
-          controller.abort();
-        });
-      }
+      const controller = this.createAbortController(options);
 
       const apiResponse = await fetch(url, {
         method: "POST",
@@ -653,34 +690,11 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
         );
       }
 
-      const reader = getStreamReader(apiResponse);
-
-      for await (const event of parseSSEStream(reader)) {
-        if (event.done) break;
-
-        try {
-          const data = JSON.parse(event.data) as {
-            choices?: Array<{
-              delta?: { content?: string };
-              finish_reason?: string;
-            }>;
-          };
-
-          const content = data.choices?.[0]?.delta?.content || "";
-
-          if (content) {
-            yield createChunk(content, state, options);
-          }
-
-          // Capture finish reason
-          if (data.choices?.[0]?.finish_reason) {
-            lastFinishReason = data.choices[0].finish_reason;
-          }
-        } catch {
-          // Skip malformed JSON chunks
-          continue;
-        }
-      }
+      const lastFinishReason = yield* this.processOpenAIStream(
+        apiResponse,
+        state,
+        options,
+      );
 
       // Local models don't typically provide usage in streaming, estimate tokens
       const usage: TokenUsage = {

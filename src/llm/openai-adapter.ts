@@ -19,6 +19,7 @@ import {
   createStreamState,
   finalizeStream,
   handleStreamError,
+  type StreamState,
 } from "./stream-handler.ts";
 
 export class OpenAIAdapter implements StreamingLLMAdapter {
@@ -307,67 +308,16 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     includeRaw = false,
   ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
+    const client = this.ensureClient();
+    const params = this.buildRequestParams(request);
 
-    if (!this.client) {
-      if (!this.config.apiKey) {
-        throw new Error(
-          "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
-        );
-      }
-      this.client = new OpenAI({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl,
-        timeout: this.config.timeout,
-      });
-    }
-
-    // Build messages array with optional system prompt
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-    if (request.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: request.systemPrompt,
-      });
-    }
-    messages.push({
-      role: "user",
-      content: request.prompt,
-    });
-
-    // Newer OpenAI models (GPT-5, o1, o3) use max_completion_tokens instead of max_tokens
-    const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
-    const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
-    const isReasoningOnly = this.isReasoningOnlyModel(this.config.model);
-
-    // Get reasoning effort for o1/o3/GPT-5 models (must be "low", "medium", or "high")
-    const reasoningEffort = this.getReasoningEffort();
-
-    const completion = await this.client.chat.completions.create({
-      model: this.config.model,
-      messages,
-      // Reasoning models (o1, o3) don't support temperature
-      ...(isReasoningOnly ? {} : {
-        temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      }),
-      ...(usesNewTokenParam
-        ? { max_completion_tokens: maxTokensValue }
-        : { max_tokens: maxTokensValue }),
-      ...(request.stop ? { stop: request.stop } : {}),
-      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
-    } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming);
+    const completion = await client.chat.completions.create(
+      params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
+    );
 
     const duration = Date.now() - startTime;
     const choice = completion.choices[0];
-
-    const usage: TokenUsage = {
-      promptTokens: completion.usage?.prompt_tokens ?? 0,
-      completionTokens: completion.usage?.completion_tokens ?? 0,
-      totalTokens: completion.usage?.total_tokens ?? 0,
-      estimatedCost: this.estimateCost(
-        completion.usage?.prompt_tokens ?? 0,
-        completion.usage?.completion_tokens ?? 0,
-      ),
-    };
+    const usage = this.buildUsageFromCompletion(completion.usage);
 
     const llmResponse: LLMResponse = {
       content: choice?.message?.content ?? "",
@@ -396,6 +346,106 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
       default:
         return "error";
     }
+  }
+
+  /**
+   * Ensures the OpenAI client is initialized.
+   * @throws Error if API key is not configured.
+   */
+  private ensureClient(): OpenAI {
+    if (this.client) {
+      return this.client;
+    }
+
+    if (!this.config.apiKey) {
+      throw new Error(
+        "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
+      );
+    }
+
+    this.client = new OpenAI({
+      apiKey: this.config.apiKey,
+      baseURL: this.config.baseUrl,
+      timeout: this.config.timeout,
+    });
+
+    return this.client;
+  }
+
+  /**
+   * Builds the messages array for the API request.
+   */
+  private buildMessages(
+    request: LLMRequest,
+  ): OpenAI.Chat.ChatCompletionMessageParam[] {
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (request.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: request.systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: request.prompt,
+    });
+    return messages;
+  }
+
+  /**
+   * Builds request parameters for OpenAI API calls.
+   * Handles model-specific parameters (reasoning models, GPT-5, etc.)
+   */
+  private buildRequestParams(
+    request: LLMRequest,
+    stream = false,
+  ): OpenAI.Chat.ChatCompletionCreateParams {
+    const messages = this.buildMessages(request);
+    const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
+    const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
+    const isReasoningOnly = this.isReasoningOnlyModel(this.config.model);
+    const reasoningEffort = this.getReasoningEffort();
+
+    const params = {
+      model: this.config.model,
+      messages,
+      // Reasoning models (o1, o3) don't support temperature
+      ...(isReasoningOnly ? {} : {
+        temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      }),
+      ...(usesNewTokenParam
+        ? { max_completion_tokens: maxTokensValue }
+        : { max_tokens: maxTokensValue }),
+      ...(request.stop ? { stop: request.stop } : {}),
+      ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    };
+
+    if (stream) {
+      return {
+        ...params,
+        stream: true,
+        stream_options: { include_usage: true },
+      } as OpenAI.Chat.ChatCompletionCreateParamsStreaming;
+    }
+
+    return params as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming;
+  }
+
+  /**
+   * Builds token usage from completion response.
+   */
+  private buildUsageFromCompletion(
+    usage: OpenAI.Completions.CompletionUsage | undefined,
+  ): TokenUsage {
+    return {
+      promptTokens: usage?.prompt_tokens ?? 0,
+      completionTokens: usage?.completion_tokens ?? 0,
+      totalTokens: usage?.total_tokens ?? 0,
+      estimatedCost: this.estimateCost(
+        usage?.prompt_tokens ?? 0,
+        usage?.completion_tokens ?? 0,
+      ),
+    };
   }
 
   // ============================================================================
@@ -475,89 +525,22 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
-
-    if (!this.client) {
-      if (!this.config.apiKey) {
-        throw new Error(
-          "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
-        );
-      }
-      this.client = new OpenAI({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl,
-        timeout: this.config.timeout,
-      });
-    }
-
-    // Build messages array with optional system prompt
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-    if (request.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: request.systemPrompt,
-      });
-    }
-    messages.push({
-      role: "user",
-      content: request.prompt,
-    });
-
-    // Newer OpenAI models (GPT-5, o1, o3) use max_completion_tokens instead of max_tokens
-    const maxTokensValue = request.maxTokens ?? this.config.maxTokens ?? 4000;
-    const usesNewTokenParam = this.usesMaxCompletionTokens(this.config.model);
-    const isReasoningOnly = this.isReasoningOnlyModel(this.config.model);
-
-    // Get reasoning effort for o1/o3/GPT-5 models
-    const reasoningEffort = this.getReasoningEffort();
-
-    let finalUsage: TokenUsage | undefined;
+    const client = this.ensureClient();
+    const params = this.buildRequestParams(request, true);
 
     try {
-      const stream = await this.client.chat.completions.create({
-        model: this.config.model,
-        messages,
-        // Reasoning models (o1, o3) don't support temperature
-        ...(isReasoningOnly ? {} : {
-          temperature: request.temperature ?? this.config.temperature ?? 0.1,
-        }),
-        ...(usesNewTokenParam
-          ? { max_completion_tokens: maxTokensValue }
-          : { max_tokens: maxTokensValue }),
-        ...(request.stop ? { stop: request.stop } : {}),
-        ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
-        stream: true,
-        stream_options: { include_usage: true },
-      } as OpenAI.Chat.ChatCompletionCreateParamsStreaming);
+      const stream = await client.chat.completions.create(
+        params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+      );
 
-      // Handle abort signal
-      if (options?.abortSignal) {
-        options.abortSignal.addEventListener("abort", () => {
-          stream.controller.abort();
-        });
-      }
+      this.setupStreamAbortHandler(stream, options);
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
+      const finalUsage = yield* this.processStreamChunks(
+        stream,
+        state,
+        options,
+      );
 
-        if (content) {
-          yield createChunk(content, state, options);
-        }
-
-        // Capture usage from final chunk (when stream_options.include_usage is true)
-        if (chunk.usage) {
-          finalUsage = {
-            promptTokens: chunk.usage.prompt_tokens,
-            completionTokens: chunk.usage.completion_tokens,
-            totalTokens: chunk.usage.total_tokens,
-            estimatedCost: this.estimateCost(
-              chunk.usage.prompt_tokens,
-              chunk.usage.completion_tokens,
-            ),
-          };
-        }
-      }
-
-      // Fallback usage estimation if not provided
       const usage: TokenUsage = finalUsage ??
         createFallbackUsage(request.prompt, state.accumulatedText);
 
@@ -574,5 +557,49 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     } catch (error) {
       handleStreamError(error, options);
     }
+  }
+
+  /**
+   * Sets up abort signal handling for a stream.
+   */
+  private setupStreamAbortHandler(
+    stream: ReturnType<OpenAI["chat"]["completions"]["create"]> extends Promise<
+      infer T
+    > ? T
+      : never,
+    options?: StreamOptions,
+  ): void {
+    if (options?.abortSignal && "controller" in stream) {
+      options.abortSignal.addEventListener("abort", () => {
+        (stream as { controller: AbortController }).controller.abort();
+      });
+    }
+  }
+
+  /**
+   * Processes stream chunks and yields text content.
+   * Returns the final usage if provided by the API.
+   */
+  private async *processStreamChunks(
+    stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>,
+    state: StreamState,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, TokenUsage | undefined, undefined> {
+    let finalUsage: TokenUsage | undefined;
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content || "";
+
+      if (content) {
+        yield createChunk(content, state, options);
+      }
+
+      // Capture usage from final chunk (when stream_options.include_usage is true)
+      if (chunk.usage) {
+        finalUsage = this.buildUsageFromCompletion(chunk.usage);
+      }
+    }
+
+    return finalUsage;
   }
 }

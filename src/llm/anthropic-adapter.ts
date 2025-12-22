@@ -18,6 +18,7 @@ import {
   createStreamState,
   finalizeStream,
   handleStreamError,
+  type StreamState,
 } from "./stream-handler.ts";
 
 export class AnthropicAdapter implements StreamingLLMAdapter {
@@ -282,60 +283,10 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     includeRaw = false,
   ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
+    const client = this.ensureClient();
+    const params = this.buildRequestParams(request);
 
-    if (!this.client) {
-      if (!this.config.apiKey) {
-        throw new Error(
-          "Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable.",
-        );
-      }
-      this.client = new Anthropic({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl,
-        timeout: this.config.timeout,
-      });
-    }
-
-    // Check if extended thinking is enabled
-    const thinkingBudget = typeof this.config.thinkingBudget === "number"
-      ? this.config.thinkingBudget
-      : undefined;
-
-    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
-    const temperature = thinkingBudget !== undefined
-      ? 1
-      : (request.temperature ?? this.config.temperature ?? 0.1);
-
-    // When thinking is enabled, max_tokens should accommodate both thinking and output
-    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
-
-    // Build the request parameters
-    // deno-lint-ignore no-explicit-any
-    const params: any = {
-      model: this.config.model,
-      max_tokens: maxTokens,
-      messages: [
-        {
-          role: "user",
-          content: request.prompt,
-        },
-      ],
-      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
-      ...(request.stop ? { stop_sequences: request.stop } : {}),
-    };
-
-    // Add thinking configuration if budget is set
-    if (thinkingBudget !== undefined) {
-      params.thinking = {
-        type: "enabled",
-        budget_tokens: thinkingBudget,
-      };
-      // Temperature cannot be set when thinking is enabled - omit it entirely
-    } else {
-      params.temperature = temperature;
-    }
-
-    const message = await this.client.messages.create(params);
+    const message = await client.messages.create(params);
 
     const duration = Date.now() - startTime;
 
@@ -381,6 +332,75 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       default:
         return "error";
     }
+  }
+
+  /**
+   * Ensures the Anthropic client is initialized.
+   * @throws Error if API key is not configured.
+   */
+  private ensureClient(): Anthropic {
+    if (this.client) {
+      return this.client;
+    }
+
+    if (!this.config.apiKey) {
+      throw new Error(
+        "Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable.",
+      );
+    }
+
+    this.client = new Anthropic({
+      apiKey: this.config.apiKey,
+      baseURL: this.config.baseUrl,
+      timeout: this.config.timeout,
+    });
+
+    return this.client;
+  }
+
+  /**
+   * Builds request parameters for Anthropic API calls.
+   * Handles extended thinking configuration and temperature settings.
+   */
+  // deno-lint-ignore no-explicit-any
+  private buildRequestParams(request: LLMRequest): any {
+    const thinkingBudget = typeof this.config.thinkingBudget === "number"
+      ? this.config.thinkingBudget
+      : undefined;
+
+    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
+    const temperature = thinkingBudget !== undefined
+      ? 1
+      : (request.temperature ?? this.config.temperature ?? 0.1);
+
+    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    // deno-lint-ignore no-explicit-any
+    const params: any = {
+      model: this.config.model,
+      max_tokens: maxTokens,
+      messages: [
+        {
+          role: "user",
+          content: request.prompt,
+        },
+      ],
+      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
+      ...(request.stop ? { stop_sequences: request.stop } : {}),
+    };
+
+    // Add thinking configuration if budget is set
+    if (thinkingBudget !== undefined) {
+      params.thinking = {
+        type: "enabled",
+        budget_tokens: thinkingBudget,
+      };
+      // Temperature cannot be set when thinking is enabled
+    } else {
+      params.temperature = temperature;
+    }
+
+    return params;
   }
 
   // ============================================================================
@@ -460,93 +480,17 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
-
-    if (!this.client) {
-      if (!this.config.apiKey) {
-        throw new Error(
-          "Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable.",
-        );
-      }
-      this.client = new Anthropic({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl,
-        timeout: this.config.timeout,
-      });
-    }
-
-    // Check if extended thinking is enabled
-    const thinkingBudget = typeof this.config.thinkingBudget === "number"
-      ? this.config.thinkingBudget
-      : undefined;
-
-    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
-    const temperature = thinkingBudget !== undefined
-      ? 1
-      : (request.temperature ?? this.config.temperature ?? 0.1);
-
-    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
-
-    // Build the request parameters
-    // deno-lint-ignore no-explicit-any
-    const params: any = {
-      model: this.config.model,
-      max_tokens: maxTokens,
-      messages: [
-        {
-          role: "user",
-          content: request.prompt,
-        },
-      ],
-      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
-      ...(request.stop ? { stop_sequences: request.stop } : {}),
-    };
-
-    // Add thinking configuration if budget is set
-    if (thinkingBudget !== undefined) {
-      params.thinking = {
-        type: "enabled",
-        budget_tokens: thinkingBudget,
-      };
-      // Temperature cannot be set when thinking is enabled
-    } else {
-      params.temperature = temperature;
-    }
+    const client = this.ensureClient();
+    const params = this.buildRequestParams(request);
 
     try {
-      const stream = this.client.messages.stream(params);
+      const stream = client.messages.stream(params);
+      this.setupAbortHandler(stream, options);
 
-      // Handle abort signal
-      if (options?.abortSignal) {
-        options.abortSignal.addEventListener("abort", () => {
-          stream.abort();
-        });
-      }
+      yield* this.processStreamEvents(stream, state, options);
 
-      for await (const event of stream) {
-        // Handle text delta events - the main content chunks
-        if (event.type === "content_block_delta") {
-          const delta = event.delta;
-          if (delta.type === "text_delta") {
-            yield createChunk(delta.text, state, options);
-          }
-        }
-        // Note: message_start and message_delta events contain token counts,
-        // but we get accurate final counts from stream.finalMessage()
-      }
-
-      // Get final message for complete usage data
       const finalMessage = await stream.finalMessage();
-
-      const usage: TokenUsage = {
-        promptTokens: finalMessage.usage.input_tokens,
-        completionTokens: finalMessage.usage.output_tokens,
-        totalTokens: finalMessage.usage.input_tokens +
-          finalMessage.usage.output_tokens,
-        estimatedCost: this.estimateCost(
-          finalMessage.usage.input_tokens,
-          finalMessage.usage.output_tokens,
-        ),
-      };
+      const usage = this.buildUsageFromMessage(finalMessage);
 
       const { finalChunk, result } = finalizeStream({
         state,
@@ -561,5 +505,53 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     } catch (error) {
       handleStreamError(error, options);
     }
+  }
+
+  /**
+   * Sets up abort signal handling for a stream.
+   */
+  // deno-lint-ignore no-explicit-any
+  private setupAbortHandler(stream: any, options?: StreamOptions): void {
+    if (options?.abortSignal) {
+      options.abortSignal.addEventListener("abort", () => {
+        stream.abort();
+      });
+    }
+  }
+
+  /**
+   * Processes stream events and yields text chunks.
+   */
+  private async *processStreamEvents(
+    // deno-lint-ignore no-explicit-any
+    stream: any,
+    state: StreamState,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, void, undefined> {
+    for await (const event of stream) {
+      if (
+        event.type === "content_block_delta" &&
+        event.delta.type === "text_delta"
+      ) {
+        yield createChunk(event.delta.text, state, options);
+      }
+    }
+  }
+
+  /**
+   * Builds token usage from final message.
+   */
+  private buildUsageFromMessage(
+    message: Anthropic.Message,
+  ): TokenUsage {
+    return {
+      promptTokens: message.usage.input_tokens,
+      completionTokens: message.usage.output_tokens,
+      totalTokens: message.usage.input_tokens + message.usage.output_tokens,
+      estimatedCost: this.estimateCost(
+        message.usage.input_tokens,
+        message.usage.output_tokens,
+      ),
+    };
   }
 }

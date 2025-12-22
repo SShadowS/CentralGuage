@@ -19,6 +19,7 @@ import {
   createStreamState,
   finalizeStream,
   handleStreamError,
+  type StreamState,
 } from "./stream-handler.ts";
 import * as colors from "@std/fmt/colors";
 
@@ -236,51 +237,15 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
     includeRaw = false,
   ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
     const startTime = Date.now();
-
-    if (!this.config.apiKey) {
-      throw new Error(
-        "Azure OpenAI API key not configured. Set AZURE_OPENAI_API_KEY environment variable.",
-      );
-    }
-
-    // Construct Azure OpenAI endpoint URL
-    const endpoint = this.config.baseUrl ||
-      Deno.env.get("AZURE_OPENAI_ENDPOINT");
-    if (!endpoint) {
-      throw new Error("Azure OpenAI endpoint not configured");
-    }
-
-    const deploymentName = this.config.deploymentName || this.config.model;
-    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
-
-    const url =
-      `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
-
-    // Build messages array with optional system prompt
-    const messages: Array<{ role: string; content: string }> = [];
-    if (request.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: request.systemPrompt,
-      });
-    }
-    messages.push({
-      role: "user",
-      content: request.prompt,
-    });
-
-    const payload = {
-      messages,
-      temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
-      stop: request.stop,
-    };
+    const apiKey = this.ensureApiKey();
+    const url = this.getEndpointUrl();
+    const payload = this.buildRequestPayload(request);
 
     const apiResponse = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-key": this.config.apiKey,
+        "api-key": apiKey,
       },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(this.config.timeout || 30000),
@@ -301,19 +266,11 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
     }
 
     const choice = data.choices[0];
-    const usage: TokenUsage = {
-      promptTokens: data.usage?.prompt_tokens || 0,
-      completionTokens: data.usage?.completion_tokens || 0,
-      totalTokens: data.usage?.total_tokens || 0,
-      estimatedCost: this.estimateCost(
-        data.usage?.prompt_tokens || 0,
-        data.usage?.completion_tokens || 0,
-      ),
-    };
+    const usage = this.buildUsageFromResponse(data);
 
     const llmResponse: LLMResponse = {
       content: choice.message?.content || "",
-      model: deploymentName,
+      model: this.getDeploymentName(),
       usage,
       duration,
       finishReason: this.mapFinishReason(choice.finish_reason),
@@ -338,6 +295,107 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
       default:
         return "error";
     }
+  }
+
+  /**
+   * Ensures the API key is configured.
+   * @throws Error if API key is not configured.
+   */
+  private ensureApiKey(): string {
+    if (!this.config.apiKey) {
+      throw new Error(
+        "Azure OpenAI API key not configured. Set AZURE_OPENAI_API_KEY environment variable.",
+      );
+    }
+    return this.config.apiKey;
+  }
+
+  /**
+   * Gets the Azure OpenAI endpoint URL.
+   * @throws Error if endpoint is not configured.
+   */
+  private getEndpointUrl(): string {
+    const endpoint = this.config.baseUrl ||
+      Deno.env.get("AZURE_OPENAI_ENDPOINT");
+    if (!endpoint) {
+      throw new Error("Azure OpenAI endpoint not configured");
+    }
+
+    const deploymentName = this.getDeploymentName();
+    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
+
+    return `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
+  }
+
+  /**
+   * Gets the deployment name from config.
+   */
+  private getDeploymentName(): string {
+    return this.config.deploymentName || this.config.model;
+  }
+
+  /**
+   * Builds the messages array for the API request.
+   */
+  private buildMessages(
+    request: LLMRequest,
+  ): Array<{ role: string; content: string }> {
+    const messages: Array<{ role: string; content: string }> = [];
+    if (request.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: request.systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: request.prompt,
+    });
+    return messages;
+  }
+
+  /**
+   * Builds the request payload for the API.
+   */
+  private buildRequestPayload(
+    request: LLMRequest,
+    stream = false,
+  ): Record<string, unknown> {
+    const payload: Record<string, unknown> = {
+      messages: this.buildMessages(request),
+      temperature: request.temperature ?? this.config.temperature ?? 0.1,
+      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
+      stop: request.stop,
+    };
+
+    if (stream) {
+      payload["stream"] = true;
+    }
+
+    return payload;
+  }
+
+  /**
+   * Builds token usage from API response.
+   */
+  private buildUsageFromResponse(
+    data: {
+      usage?: {
+        prompt_tokens?: number;
+        completion_tokens?: number;
+        total_tokens?: number;
+      };
+    },
+  ): TokenUsage {
+    return {
+      promptTokens: data.usage?.prompt_tokens || 0,
+      completionTokens: data.usage?.completion_tokens || 0,
+      totalTokens: data.usage?.total_tokens || 0,
+      estimatedCost: this.estimateCost(
+        data.usage?.prompt_tokens || 0,
+        data.usage?.completion_tokens || 0,
+      ),
+    };
   }
 
   // ============================================================================
@@ -421,64 +479,18 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
-
-    if (!this.config.apiKey) {
-      throw new Error(
-        "Azure OpenAI API key not configured. Set AZURE_OPENAI_API_KEY environment variable.",
-      );
-    }
-
-    // Construct Azure OpenAI endpoint URL
-    const endpoint = this.config.baseUrl ||
-      Deno.env.get("AZURE_OPENAI_ENDPOINT");
-    if (!endpoint) {
-      throw new Error("Azure OpenAI endpoint not configured");
-    }
-
-    const deploymentName = this.config.deploymentName || this.config.model;
-    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
-
-    const url =
-      `${endpoint}/openai/deployments/${deploymentName}/chat/completions?api-version=${apiVersion}`;
-
-    // Build messages array with optional system prompt
-    const messages: Array<{ role: string; content: string }> = [];
-    if (request.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: request.systemPrompt,
-      });
-    }
-    messages.push({
-      role: "user",
-      content: request.prompt,
-    });
-
-    const payload = {
-      messages,
-      temperature: request.temperature ?? this.config.temperature ?? 0.1,
-      max_tokens: request.maxTokens ?? this.config.maxTokens ?? 4000,
-      stop: request.stop,
-      stream: true,
-    };
-
-    let lastFinishReason: string | undefined;
+    const apiKey = this.ensureApiKey();
+    const url = this.getEndpointUrl();
+    const payload = this.buildRequestPayload(request, true);
 
     try {
-      const controller = new AbortController();
-
-      // Handle abort signal
-      if (options?.abortSignal) {
-        options.abortSignal.addEventListener("abort", () => {
-          controller.abort();
-        });
-      }
+      const controller = this.createAbortController(options);
 
       const apiResponse = await fetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "api-key": this.config.apiKey,
+          "api-key": apiKey,
         },
         body: JSON.stringify(payload),
         signal: controller.signal,
@@ -491,51 +503,20 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
         );
       }
 
-      const reader = getStreamReader(apiResponse);
+      const lastFinishReason = yield* this.processStreamEvents(
+        apiResponse,
+        state,
+        options,
+      );
 
-      for await (const event of parseSSEStream(reader)) {
-        if (event.done) break;
-
-        try {
-          const data = JSON.parse(event.data) as {
-            choices?: Array<{
-              delta?: { content?: string };
-              finish_reason?: string;
-            }>;
-          };
-
-          const content = data.choices?.[0]?.delta?.content || "";
-
-          if (content) {
-            yield createChunk(content, state, options);
-          }
-
-          // Capture finish reason
-          if (data.choices?.[0]?.finish_reason) {
-            lastFinishReason = data.choices[0].finish_reason;
-          }
-        } catch {
-          // Skip malformed JSON chunks
-          continue;
-        }
-      }
-
-      // Azure OpenAI doesn't provide usage in streaming mode, estimate tokens
-      const fallbackUsage = createFallbackUsage(
+      const usage = this.buildStreamUsage(
         request.prompt,
         state.accumulatedText,
       );
-      const usage: TokenUsage = {
-        ...fallbackUsage,
-        estimatedCost: this.estimateCost(
-          fallbackUsage.promptTokens,
-          fallbackUsage.completionTokens,
-        ),
-      };
 
       const { finalChunk, result } = finalizeStream({
         state,
-        model: deploymentName,
+        model: this.getDeploymentName(),
         usage,
         finishReason: this.mapFinishReason(lastFinishReason),
         options,
@@ -546,5 +527,72 @@ export class AzureOpenAIAdapter implements StreamingLLMAdapter {
     } catch (error) {
       handleStreamError(error, options);
     }
+  }
+
+  /**
+   * Creates an AbortController with optional signal forwarding.
+   */
+  private createAbortController(options?: StreamOptions): AbortController {
+    const controller = new AbortController();
+    if (options?.abortSignal) {
+      options.abortSignal.addEventListener("abort", () => {
+        controller.abort();
+      });
+    }
+    return controller;
+  }
+
+  /**
+   * Processes stream events and yields text chunks.
+   * Returns the last finish reason.
+   */
+  private async *processStreamEvents(
+    response: Response,
+    state: StreamState,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, string | undefined, undefined> {
+    const reader = getStreamReader(response);
+    let lastFinishReason: string | undefined;
+
+    for await (const event of parseSSEStream(reader)) {
+      if (event.done) break;
+
+      try {
+        const data = JSON.parse(event.data) as {
+          choices?: Array<{
+            delta?: { content?: string };
+            finish_reason?: string;
+          }>;
+        };
+
+        const content = data.choices?.[0]?.delta?.content || "";
+        if (content) {
+          yield createChunk(content, state, options);
+        }
+
+        if (data.choices?.[0]?.finish_reason) {
+          lastFinishReason = data.choices[0].finish_reason;
+        }
+      } catch {
+        // Skip malformed JSON chunks
+        continue;
+      }
+    }
+
+    return lastFinishReason;
+  }
+
+  /**
+   * Builds token usage for streaming (estimated, not from API).
+   */
+  private buildStreamUsage(prompt: string, completion: string): TokenUsage {
+    const fallbackUsage = createFallbackUsage(prompt, completion);
+    return {
+      ...fallbackUsage,
+      estimatedCost: this.estimateCost(
+        fallbackUsage.promptTokens,
+        fallbackUsage.completionTokens,
+      ),
+    };
   }
 }
