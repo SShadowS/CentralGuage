@@ -69,6 +69,72 @@ async function handleAgentsList(): Promise<void> {
   console.log(colors.dim("  centralgauge agents validate default"));
 }
 
+// =============================================================================
+// Agent Display Helpers
+// =============================================================================
+
+type SystemPrompt = string | { preset: string; append?: string };
+
+function formatSystemPrompt(prompt: SystemPrompt): string[] {
+  if (typeof prompt === "string") {
+    const preview = prompt.slice(0, 200);
+    return [`  ${colors.dim(preview)}${prompt.length > 200 ? "..." : ""}`];
+  }
+
+  const lines = [`  Preset: ${prompt.preset}`];
+  if (prompt.append) {
+    const preview = prompt.append.slice(0, 200);
+    lines.push(
+      `  Append: ${colors.dim(preview)}${
+        prompt.append.length > 200 ? "..." : ""
+      }`,
+    );
+  }
+  return lines;
+}
+
+interface AgentLimits {
+  maxCompileAttempts?: number;
+  timeoutMs?: number;
+}
+
+function displayOptionalSection<T>(
+  header: string,
+  value: T | undefined | null,
+  formatter: (v: T) => string[],
+): void {
+  if (!value) return;
+  if (Array.isArray(value) && value.length === 0) return;
+  if (typeof value === "object" && Object.keys(value).length === 0) return;
+
+  console.log(colors.cyan(`\n${header}:`));
+  formatter(value).forEach((line) => console.log(line));
+}
+
+function formatList(items: string[]): string[] {
+  return items.map((item) => `  - ${item}`);
+}
+
+function formatMcpServers(
+  servers: Record<string, { command: string; args?: string[] }>,
+): string[] {
+  return Object.entries(servers).map(
+    ([name, server]) =>
+      `  ${name}: ${server.command} ${server.args?.join(" ") ?? ""}`,
+  );
+}
+
+function formatLimits(limits: AgentLimits): string[] {
+  const lines: string[] = [];
+  if (limits.maxCompileAttempts) {
+    lines.push(`  Max Compile Attempts: ${limits.maxCompileAttempts}`);
+  }
+  if (limits.timeoutMs) {
+    lines.push(`  Timeout: ${limits.timeoutMs / 1000}s`);
+  }
+  return lines;
+}
+
 /**
  * Show detailed agent configuration
  */
@@ -97,83 +163,33 @@ async function handleAgentsShow(agentId: string): Promise<void> {
   if (config.description) {
     console.log(`  Description: ${config.description}`);
   }
-
-  // Inheritance
   if (config._inheritanceChain && config._inheritanceChain.length > 1) {
     console.log(
       `  Extends:     ${config._inheritanceChain.slice(0, -1).join(" -> ")}`,
     );
   }
 
-  // Tools
+  // Tools (always present)
   console.log(colors.cyan("\nAllowed Tools:"));
-  for (const tool of config.allowedTools) {
-    console.log(`  - ${tool}`);
-  }
+  config.allowedTools.forEach((tool) => console.log(`  - ${tool}`));
 
-  // Claude Code features
-  if (config.settingSources) {
-    console.log(colors.cyan("\nSetting Sources:"));
-    for (const source of config.settingSources) {
-      console.log(`  - ${source}`);
-    }
-  }
+  // Optional sections
+  displayOptionalSection("Setting Sources", config.settingSources, formatList);
   if (config.workingDir) {
     console.log(`  Working Dir: ${config.workingDir}`);
   }
-
-  // MCP Servers
-  if (config.mcpServers && Object.keys(config.mcpServers).length > 0) {
-    console.log(colors.cyan("\nMCP Servers:"));
-    for (const [name, server] of Object.entries(config.mcpServers)) {
-      console.log(
-        `  ${name}: ${server.command} ${server.args?.join(" ") ?? ""}`,
-      );
-    }
-  }
-
-  // System prompt
-  if (config.systemPrompt) {
-    console.log(colors.cyan("\nSystem Prompt:"));
-    if (typeof config.systemPrompt === "string") {
-      // Show first 200 chars of custom prompt
-      const preview = config.systemPrompt.slice(0, 200);
-      console.log(
-        `  ${colors.dim(preview)}${
-          config.systemPrompt.length > 200 ? "..." : ""
-        }`,
-      );
-    } else {
-      console.log(`  Preset: ${config.systemPrompt.preset}`);
-      if (config.systemPrompt.append) {
-        const preview = config.systemPrompt.append.slice(0, 200);
-        console.log(
-          `  Append: ${colors.dim(preview)}${
-            config.systemPrompt.append.length > 200 ? "..." : ""
-          }`,
-        );
-      }
-    }
-  }
-
-  // Limits
-  if (config.limits) {
-    console.log(colors.cyan("\nLimits:"));
-    if (config.limits.maxCompileAttempts) {
-      console.log(
-        `  Max Compile Attempts: ${config.limits.maxCompileAttempts}`,
-      );
-    }
-    if (config.limits.timeoutMs) {
-      console.log(`  Timeout: ${config.limits.timeoutMs / 1000}s`);
-    }
-  }
-
-  // Tags
-  if (config.tags && config.tags.length > 0) {
-    console.log(colors.cyan("\nTags:"));
-    console.log(`  ${config.tags.join(", ")}`);
-  }
+  displayOptionalSection("MCP Servers", config.mcpServers, formatMcpServers);
+  displayOptionalSection(
+    "System Prompt",
+    config.systemPrompt,
+    formatSystemPrompt,
+  );
+  displayOptionalSection("Limits", config.limits, formatLimits);
+  displayOptionalSection(
+    "Tags",
+    config.tags,
+    (tags) => [`  ${tags.join(", ")}`],
+  );
 }
 
 /**

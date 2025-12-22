@@ -6,66 +6,49 @@
 import { Command } from "@cliffy/command";
 import {
   MODEL_PRESETS,
+  type ModelPreset,
   ModelPresetRegistry,
 } from "../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../src/llm/registry.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
 
-function handleModelsList(testSpecs?: string[]): void {
-  console.log("CentralGauge Model Support\n");
+/** Category display configuration */
+const CATEGORY_CONFIG: Array<{
+  key: string;
+  label: string;
+  format: (p: ModelPreset) => string;
+}> = [
+  {
+    key: "flagship",
+    label: "Flagship Models",
+    format: (p) => `${p.alias.padEnd(12)} -> ${p.displayName} (${p.costTier})`,
+  },
+  {
+    key: "budget",
+    label: "Budget Models",
+    format: (p) => `${p.alias.padEnd(12)} -> ${p.displayName} (${p.costTier})`,
+  },
+  {
+    key: "coding",
+    label: "Coding Models",
+    format: (p) =>
+      `${p.alias.padEnd(12)} -> ${p.displayName} (${p.category.join(", ")})`,
+  },
+];
 
-  // Show model presets (aliases)
-  console.log("Model Aliases (Short Names):");
-  const presetsByCategory = ModelPresetRegistry.getPresetsByCategory();
+function displayModelsByCategory(
+  presetsByCategory: Record<string, ModelPreset[]>,
+): void {
+  CATEGORY_CONFIG.forEach(({ key, label, format }, index) => {
+    const presets = presetsByCategory[key];
+    if (presets) {
+      console.log(`${index > 0 ? "\n" : ""}   ${label}:`);
+      presets.forEach((p) => console.log(`   ${format(p)}`));
+    }
+  });
+}
 
-  // Show flagship models first
-  if (presetsByCategory["flagship"]) {
-    console.log("   Flagship Models:");
-    presetsByCategory["flagship"].forEach((preset) => {
-      console.log(
-        `   ${
-          preset.alias.padEnd(12)
-        } -> ${preset.displayName} (${preset.costTier})`,
-      );
-    });
-  }
-
-  // Show budget models
-  if (presetsByCategory["budget"]) {
-    console.log("\n   Budget Models:");
-    presetsByCategory["budget"].forEach((preset) => {
-      console.log(
-        `   ${
-          preset.alias.padEnd(12)
-        } -> ${preset.displayName} (${preset.costTier})`,
-      );
-    });
-  }
-
-  // Show coding-specific models
-  if (presetsByCategory["coding"]) {
-    console.log("\n   Coding Models:");
-    presetsByCategory["coding"].forEach((preset) => {
-      console.log(
-        `   ${preset.alias.padEnd(12)} -> ${preset.displayName} (${
-          preset.category.join(", ")
-        })`,
-      );
-    });
-  }
-
-  // Show model groups
-  console.log("\nModel Groups:");
-  console.log("   flagship     -> Top-tier models for best quality");
-  console.log("   budget       -> Cost-effective models for development");
-  console.log("   coding       -> Optimized for code generation tasks");
-  console.log("   reasoning    -> Advanced reasoning capabilities");
-  console.log("   fast         -> Optimized for speed");
-  console.log("   quality      -> Optimized for output quality");
-  console.log("   comparison   -> Recommended set for model comparison");
-  console.log("   all          -> Every available model");
-
-  // Show cost tiers
+function displayCostTiers(): void {
   console.log("\nCost Tiers:");
   const costTiers = ModelPresetRegistry.getPresetsByCostTier();
   Object.entries(costTiers).forEach(([tier, presets]) => {
@@ -74,8 +57,9 @@ function handleModelsList(testSpecs?: string[]): void {
       console.log(`   ${tier.padEnd(8)} -> ${aliases}`);
     }
   });
+}
 
-  // Show providers for reference
+function displayProviders(): void {
   console.log("\nAvailable Providers:");
   const providers = LLMAdapterRegistry.list();
   providers.forEach((provider) => {
@@ -86,8 +70,60 @@ function handleModelsList(testSpecs?: string[]): void {
       }`,
     );
   });
+}
 
-  // Show usage examples
+function testModelSpecParsing(testSpecs: string[]): void {
+  console.log("\nTesting Model Spec Parsing:");
+  testSpecs.forEach((spec) => {
+    try {
+      const resolved = ModelPresetRegistry.resolve(spec);
+      console.log(`   "${spec}" -> resolves to:`);
+
+      resolved.forEach((resolvedSpec) => {
+        const { provider, model } = parseProviderAndModel(resolvedSpec);
+        console.log(`      ${provider}/${model}`);
+
+        const preset = Object.values(MODEL_PRESETS).find(
+          (p) => `${p.provider}/${p.model}` === resolvedSpec,
+        );
+        if (preset) {
+          console.log(
+            `        (${preset.displayName} - ${preset.description})`,
+          );
+        }
+      });
+    } catch (error) {
+      console.log(
+        `   "${spec}" -> [ERROR] ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  });
+}
+
+function handleModelsList(testSpecs?: string[]): void {
+  console.log("CentralGauge Model Support\n");
+
+  // Model aliases by category
+  console.log("Model Aliases (Short Names):");
+  displayModelsByCategory(ModelPresetRegistry.getPresetsByCategory());
+
+  // Model groups
+  console.log("\nModel Groups:");
+  console.log("   flagship     -> Top-tier models for best quality");
+  console.log("   budget       -> Cost-effective models for development");
+  console.log("   coding       -> Optimized for code generation tasks");
+  console.log("   reasoning    -> Advanced reasoning capabilities");
+  console.log("   fast         -> Optimized for speed");
+  console.log("   quality      -> Optimized for output quality");
+  console.log("   comparison   -> Recommended set for model comparison");
+  console.log("   all          -> Every available model");
+
+  displayCostTiers();
+  displayProviders();
+
+  // Usage examples
   console.log("\nUsage Examples:");
   console.log("   # Use aliases (recommended)");
   console.log("   centralgauge bench --llms sonnet,gpt-4o");
@@ -100,36 +136,8 @@ function handleModelsList(testSpecs?: string[]): void {
     "   centralgauge bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022",
   );
 
-  // Test parsing if specs provided
   if (testSpecs && testSpecs.length > 0) {
-    console.log("\nTesting Model Spec Parsing:");
-    testSpecs.forEach((spec) => {
-      try {
-        const resolved = ModelPresetRegistry.resolve(spec);
-        console.log(`   "${spec}" -> resolves to:`);
-
-        resolved.forEach((resolvedSpec) => {
-          const { provider, model } = parseProviderAndModel(resolvedSpec);
-          console.log(`      ${provider}/${model}`);
-
-          // Check if it's a known preset
-          const preset = Object.values(MODEL_PRESETS).find((p) =>
-            `${p.provider}/${p.model}` === resolvedSpec
-          );
-          if (preset) {
-            console.log(
-              `        (${preset.displayName} - ${preset.description})`,
-            );
-          }
-        });
-      } catch (error) {
-        console.log(
-          `   "${spec}" -> [ERROR] ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    });
+    testModelSpecParsing(testSpecs);
   }
 
   console.log("\nPro Tips:");

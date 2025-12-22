@@ -190,6 +190,128 @@ async function buildALProject(
 }
 
 // =============================================================================
+// App.json Helpers for Test Verification
+// =============================================================================
+
+interface AppJson {
+  dependencies?: Array<
+    { id: string; name: string; publisher: string; version: string }
+  >;
+  idRanges?: Array<{ from: number; to: number }>;
+  [key: string]: unknown;
+}
+
+/** Test Toolkit dependencies required for running AL tests */
+const TEST_TOOLKIT_DEPS = [
+  {
+    id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
+    name: "Library Assert",
+    publisher: "Microsoft",
+    version: "27.0.0.0",
+  },
+  {
+    id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
+    name: "Any",
+    publisher: "Microsoft",
+    version: "27.0.0.0",
+  },
+  {
+    id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
+    name: "Tests-TestLibraries",
+    publisher: "Microsoft",
+    version: "27.0.0.0",
+  },
+];
+
+/**
+ * Add Test Toolkit dependencies to app.json if not already present.
+ */
+function ensureTestDependencies(appJson: AppJson): void {
+  if (!appJson.dependencies) {
+    appJson.dependencies = [];
+  }
+
+  for (const dep of TEST_TOOLKIT_DEPS) {
+    const exists = appJson.dependencies.some((d) => d.id === dep.id);
+    if (!exists) {
+      appJson.dependencies.push(dep);
+    }
+  }
+}
+
+/**
+ * Extend idRanges to include test codeunit range (80000-89999) if not present.
+ */
+function ensureTestCodeunitRange(appJson: AppJson): void {
+  if (!appJson.idRanges) {
+    appJson.idRanges = [];
+  }
+  const hasTestRange = appJson.idRanges.some(
+    (r) => r.from <= 80001 && r.to >= 80001,
+  );
+  if (!hasTestRange) {
+    appJson.idRanges.push({ from: 80000, to: 89999 });
+  }
+}
+
+/**
+ * Prepare app.json for test verification by adding dependencies and ID ranges.
+ */
+async function prepareAppJsonForTesting(
+  sourceDir: string,
+  targetDir: string,
+): Promise<{ success: true } | { success: false; message: string }> {
+  const appJsonPath = join(sourceDir, "app.json");
+  try {
+    const appJsonContent = await Deno.readTextFile(appJsonPath);
+    const appJson = JSON.parse(appJsonContent) as AppJson;
+
+    ensureTestDependencies(appJson);
+    ensureTestCodeunitRange(appJson);
+
+    await Deno.writeTextFile(
+      join(targetDir, "app.json"),
+      JSON.stringify(appJson, null, 2),
+    );
+    return { success: true };
+  } catch {
+    return { success: false, message: `No app.json found in ${sourceDir}` };
+  }
+}
+
+/**
+ * Copy all .al files from source to target directory (excluding test files).
+ */
+async function copyAlFilesToDir(
+  sourceDir: string,
+  targetDir: string,
+): Promise<void> {
+  for await (const entry of Deno.readDir(sourceDir)) {
+    if (entry.isFile && entry.name.endsWith(".al")) {
+      const content = await Deno.readTextFile(join(sourceDir, entry.name));
+      await Deno.writeTextFile(join(targetDir, entry.name), content);
+    }
+  }
+}
+
+/**
+ * Copy test file to target directory.
+ */
+async function copyTestFile(
+  testFilePath: string,
+  targetDir: string,
+): Promise<{ success: true } | { success: false; message: string }> {
+  try {
+    const testContent = await Deno.readTextFile(testFilePath);
+    const testFileName = basename(testFilePath);
+    await Deno.writeTextFile(join(targetDir, testFileName), testContent);
+    return { success: true };
+  } catch {
+    return { success: false, message: `Test file not found: ${testFilePath}` };
+  }
+}
+
+// =============================================================================
 // Tool Handlers
 // =============================================================================
 
@@ -357,6 +479,16 @@ async function handleContainerStatus(params: {
   }
 }
 
+interface VerifyResult {
+  success: boolean;
+  message: string;
+  totalTests?: number;
+  passed?: number;
+  failed?: number;
+  failures?: string[];
+  compileErrors?: string[];
+}
+
 /**
  * Verify agent code by running tests in an isolated directory.
  * This prevents the agent from seeing or modifying test files.
@@ -365,15 +497,7 @@ async function handleAlVerify(params: {
   projectDir: string;
   testFile: string;
   containerName?: string;
-}): Promise<{
-  success: boolean;
-  message: string;
-  totalTests?: number;
-  passed?: number;
-  failed?: number;
-  failures?: string[];
-  compileErrors?: string[];
-}> {
+}): Promise<VerifyResult> {
   const containerName = params.containerName || DEFAULT_CONTAINER;
 
   try {
@@ -387,96 +511,24 @@ async function handleAlVerify(params: {
     );
     await ensureDir(verifyDir);
 
-    // Copy app.json
-    const appJsonPath = join(params.projectDir, "app.json");
-    try {
-      const appJsonContent = await Deno.readTextFile(appJsonPath);
-      const appJson = JSON.parse(appJsonContent);
-
-      // Add Test Toolkit dependencies if not present
-      // App IDs extracted from actual BC 27 symbol files
-      const testDeps = [
-        {
-          id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-          name: "Library Assert",
-          publisher: "Microsoft",
-          version: "27.0.0.0",
-        },
-        {
-          id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
-          name: "Any",
-          publisher: "Microsoft",
-          version: "27.0.0.0",
-        },
-        {
-          id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
-          name: "Tests-TestLibraries",
-          publisher: "Microsoft",
-          version: "27.0.0.0",
-        },
-      ];
-
-      if (!appJson.dependencies) {
-        appJson.dependencies = [];
-      }
-
-      for (const dep of testDeps) {
-        const exists = appJson.dependencies.some(
-          (d: { id: string }) => d.id === dep.id,
-        );
-        if (!exists) {
-          appJson.dependencies.push(dep);
-        }
-      }
-
-      // Extend idRanges to include test codeunit range (80000-89999)
-      if (!appJson.idRanges) {
-        appJson.idRanges = [];
-      }
-      const hasTestRange = appJson.idRanges.some(
-        (r: { from: number; to: number }) => r.from <= 80001 && r.to >= 80001,
-      );
-      if (!hasTestRange) {
-        appJson.idRanges.push({ from: 80000, to: 89999 });
-      }
-
-      await Deno.writeTextFile(
-        join(verifyDir, "app.json"),
-        JSON.stringify(appJson, null, 2),
-      );
-    } catch {
-      return {
-        success: false,
-        message: `No app.json found in ${params.projectDir}`,
-      };
+    // Prepare app.json with test dependencies
+    const appJsonResult = await prepareAppJsonForTesting(
+      params.projectDir,
+      verifyDir,
+    );
+    if (!appJsonResult.success) {
+      return { success: false, message: appJsonResult.message };
     }
 
-    // Copy all .al files from agent project (excluding test files)
-    for await (const entry of Deno.readDir(params.projectDir)) {
-      if (entry.isFile && entry.name.endsWith(".al")) {
-        const content = await Deno.readTextFile(
-          join(params.projectDir, entry.name),
-        );
-        await Deno.writeTextFile(join(verifyDir, entry.name), content);
-      }
+    // Copy source files and test file
+    await copyAlFilesToDir(params.projectDir, verifyDir);
+    const testFileResult = await copyTestFile(params.testFile, verifyDir);
+    if (!testFileResult.success) {
+      return { success: false, message: testFileResult.message };
     }
 
-    // Copy the test file
-    try {
-      const testContent = await Deno.readTextFile(params.testFile);
-      const testFileName = basename(params.testFile);
-      await Deno.writeTextFile(join(verifyDir, testFileName), testContent);
-    } catch {
-      return {
-        success: false,
-        message: `Test file not found: ${params.testFile}`,
-      };
-    }
-
-    // Build ALProject for verification (include test files this time)
+    // Build and compile
     const project = await buildALProject(verifyDir, true);
-
-    // Compile with test files
     const compileResult = await containerProvider.compileProject(
       containerName,
       project,
@@ -491,9 +543,8 @@ async function handleAlVerify(params: {
       };
     }
 
-    // Run tests
+    // Run tests and return result
     const testResult = await containerProvider.runTests(containerName, project);
-
     if (testResult.success) {
       return {
         success: true,
@@ -503,28 +554,80 @@ async function handleAlVerify(params: {
         passed: testResult.passedTests,
         failed: testResult.failedTests,
       };
-    } else {
-      const failures = testResult.results
-        .filter((r) => !r.passed)
-        .map((r) => `${r.name}: ${r.error || "Failed"}`);
-
-      return {
-        success: false,
-        message:
-          `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
-        totalTests: testResult.totalTests,
-        passed: testResult.passedTests,
-        failed: testResult.failedTests,
-        failures,
-      };
     }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+
     return {
       success: false,
-      message: `Verification error: ${errorMessage}`,
+      message:
+        `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
+      totalTests: testResult.totalTests,
+      passed: testResult.passedTests,
+      failed: testResult.failedTests,
+      failures: testResult.results
+        .filter((r) => !r.passed)
+        .map((r) => `${r.name}: ${r.error || "Failed"}`),
     };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return { success: false, message: `Verification error: ${errorMessage}` };
   }
+}
+
+// =============================================================================
+// MCP Protocol Helpers
+// =============================================================================
+
+function buildErrorResponse(
+  id: string | number,
+  code: number,
+  message: string,
+): JsonRpcResponse {
+  return { jsonrpc: "2.0", id, error: { code, message } };
+}
+
+function wrapToolResult(id: string | number, result: unknown): JsonRpcResponse {
+  return {
+    jsonrpc: "2.0",
+    id,
+    result: {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    },
+  };
+}
+
+/** Map of tool names to their handlers */
+const TOOL_HANDLERS: Record<
+  string,
+  (args: Record<string, unknown>) => Promise<unknown>
+> = {
+  al_compile: (args) =>
+    handleAlCompile(args as { projectDir: string; containerName?: string }),
+  al_test: (args) =>
+    handleAlTest(args as { projectDir: string; containerName?: string }),
+  al_container_status: (args) =>
+    handleContainerStatus(args as { containerName?: string }),
+  al_verify: (args) =>
+    handleAlVerify(
+      args as { projectDir: string; testFile: string; containerName?: string },
+    ),
+};
+
+async function dispatchToolCall(
+  id: string | number,
+  params: unknown,
+): Promise<JsonRpcResponse> {
+  const { name: toolName, arguments: toolArgs } = params as {
+    name: string;
+    arguments: Record<string, unknown>;
+  };
+
+  const handler = TOOL_HANDLERS[toolName];
+  if (!handler) {
+    return buildErrorResponse(id, -32601, `Unknown tool: ${toolName}`);
+  }
+
+  const result = await handler(toolArgs);
+  return wrapToolResult(id, result);
 }
 
 // =============================================================================
@@ -544,103 +647,26 @@ async function handleRequest(
           id,
           result: {
             protocolVersion: "2024-11-05",
-            capabilities: {
-              tools: {},
-            },
-            serverInfo: {
-              name: "al-tools-server",
-              version: "1.0.0",
-            },
+            capabilities: { tools: {} },
+            serverInfo: { name: "al-tools-server", version: "1.0.0" },
           },
         };
 
       case "notifications/initialized":
-        // Client acknowledged initialization - no response needed for notifications
         return null;
 
       case "tools/list":
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: { tools: TOOLS },
-        };
+        return { jsonrpc: "2.0", id, result: { tools: TOOLS } };
 
-      case "tools/call": {
-        const callParams = params as { name: string; arguments: unknown };
-        const toolName = callParams.name;
-        const toolArgs = callParams.arguments as Record<string, unknown>;
-
-        let result: unknown;
-        switch (toolName) {
-          case "al_compile":
-            result = await handleAlCompile(
-              toolArgs as { projectDir: string; containerName?: string },
-            );
-            break;
-          case "al_test":
-            result = await handleAlTest(
-              toolArgs as { projectDir: string; containerName?: string },
-            );
-            break;
-          case "al_container_status":
-            result = await handleContainerStatus(
-              toolArgs as { containerName?: string },
-            );
-            break;
-          case "al_verify":
-            result = await handleAlVerify(
-              toolArgs as {
-                projectDir: string;
-                testFile: string;
-                containerName?: string;
-              },
-            );
-            break;
-          default:
-            return {
-              jsonrpc: "2.0",
-              id,
-              error: {
-                code: -32601,
-                message: `Unknown tool: ${toolName}`,
-              },
-            };
-        }
-
-        return {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(result, null, 2),
-              },
-            ],
-          },
-        };
-      }
+      case "tools/call":
+        return await dispatchToolCall(id, params);
 
       default:
-        return {
-          jsonrpc: "2.0",
-          id,
-          error: {
-            code: -32601,
-            message: `Method not found: ${method}`,
-          },
-        };
+        return buildErrorResponse(id, -32601, `Method not found: ${method}`);
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      jsonrpc: "2.0",
-      id,
-      error: {
-        code: -32603,
-        message: `Internal error: ${errorMessage}`,
-      },
-    };
+    return buildErrorResponse(id, -32603, `Internal error: ${errorMessage}`);
   }
 }
 

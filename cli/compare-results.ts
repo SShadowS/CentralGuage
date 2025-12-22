@@ -103,25 +103,29 @@ async function loadAgentResults(pattern: string): Promise<NormalizedResult[]> {
   return results;
 }
 
-function printComparison(results: NormalizedResult[]): void {
-  // Group by source
+// =============================================================================
+// Comparison Helpers
+// =============================================================================
+
+interface SourceStats {
+  passed: number;
+  failed: number;
+  totalCost: number;
+  totalTokens: number;
+  totalDuration: number;
+}
+
+function calculateStats(results: NormalizedResult[]): {
+  bySource: Map<string, NormalizedResult[]>;
+  stats: Map<string, SourceStats>;
+} {
   const bySource = new Map<string, NormalizedResult[]>();
   for (const r of results) {
-    if (!bySource.has(r.source)) {
-      bySource.set(r.source, []);
-    }
+    if (!bySource.has(r.source)) bySource.set(r.source, []);
     bySource.get(r.source)!.push(r);
   }
 
-  // Calculate stats per source
-  const stats = new Map<string, {
-    passed: number;
-    failed: number;
-    totalCost: number;
-    totalTokens: number;
-    totalDuration: number;
-  }>();
-
+  const stats = new Map<string, SourceStats>();
   for (const [source, items] of bySource) {
     stats.set(source, {
       passed: items.filter((r) => r.success).length,
@@ -132,12 +136,10 @@ function printComparison(results: NormalizedResult[]): void {
     });
   }
 
-  // Print header
-  console.log(colors.bold("\n" + "=".repeat(70)));
-  console.log(colors.bold("LLM vs AGENT COMPARISON"));
-  console.log("=".repeat(70));
+  return { bySource, stats };
+}
 
-  // Summary table
+function printSummaryTable(stats: Map<string, SourceStats>): void {
   console.log("\n" + colors.bold("Summary:"));
   console.log("-".repeat(70));
   console.log(
@@ -153,8 +155,9 @@ function printComparison(results: NormalizedResult[]): void {
       ? ((s.passed / total) * 100).toFixed(0) + "%"
       : "N/A";
     const rateColor = s.passed > s.failed ? colors.green : colors.red;
-    const isAgent = source.startsWith("agent:");
-    const sourceColor = isAgent ? colors.cyan : colors.yellow;
+    const sourceColor = source.startsWith("agent:")
+      ? colors.cyan
+      : colors.yellow;
 
     console.log(
       `${sourceColor(source.padEnd(25))} | ${
@@ -167,64 +170,92 @@ function printComparison(results: NormalizedResult[]): void {
     );
   }
   console.log("-".repeat(70));
+}
 
-  // Per-task comparison (if same tasks)
-  const allTasks = new Set(results.map((r) => r.taskId));
+function printPerTaskComparison(
+  bySource: Map<string, NormalizedResult[]>,
+  tasks: Set<string>,
+  src1: string,
+  src2: string,
+): void {
+  console.log("\n" + colors.bold("Per-Task Comparison:"));
+  console.log("-".repeat(70));
+  console.log(`${"Task".padEnd(25)} | ${src1.padEnd(20)} | ${src2}`);
+  console.log("-".repeat(70));
+
+  for (const taskId of tasks) {
+    const r1 = bySource.get(src1)?.find((r) => r.taskId === taskId);
+    const r2 = bySource.get(src2)?.find((r) => r.taskId === taskId);
+
+    const s1 = r1
+      ? (r1.success ? colors.green("pass") : colors.red("fail"))
+      : colors.dim("n/a");
+    const s2 = r2
+      ? (r2.success ? colors.green("pass") : colors.red("fail"))
+      : colors.dim("n/a");
+
+    console.log(`${taskId.padEnd(25)} | ${s1.padEnd(29)} | ${s2}`);
+  }
+  console.log("-".repeat(70));
+}
+
+function printWinnerAnalysis(
+  src1: string,
+  src2: string,
+  stats1: SourceStats,
+  stats2: SourceStats,
+): void {
+  const rate1 = stats1.passed / (stats1.passed + stats1.failed) || 0;
+  const rate2 = stats2.passed / (stats2.passed + stats2.failed) || 0;
+
+  console.log("\n" + colors.bold("Winner:"));
+  if (rate1 > rate2) {
+    console.log(
+      `  ${colors.green(src1)} wins (${(rate1 * 100).toFixed(0)}% vs ${
+        (rate2 * 100).toFixed(0)
+      }%)`,
+    );
+  } else if (rate2 > rate1) {
+    console.log(
+      `  ${colors.green(src2)} wins (${(rate2 * 100).toFixed(0)}% vs ${
+        (rate1 * 100).toFixed(0)
+      }%)`,
+    );
+  } else {
+    console.log(`  ${colors.yellow("TIE")} (${(rate1 * 100).toFixed(0)}%)`);
+  }
+
+  const costDiff = stats2.totalCost - stats1.totalCost;
+  console.log(
+    `  Cost: ${src2} is ${costDiff >= 0 ? "+" : ""}$${
+      costDiff.toFixed(4)
+    } vs ${src1}`,
+  );
+}
+
+// =============================================================================
+// Main Comparison Function
+// =============================================================================
+
+function printComparison(results: NormalizedResult[]): void {
+  const { bySource, stats } = calculateStats(results);
+
+  // Header
+  console.log(colors.bold("\n" + "=".repeat(70)));
+  console.log(colors.bold("LLM vs AGENT COMPARISON"));
+  console.log("=".repeat(70));
+
+  // Summary table
+  printSummaryTable(stats);
+
+  // Per-task comparison (only for 2-source comparison)
   const sources = Array.from(bySource.keys());
+  const allTasks = new Set(results.map((r) => r.taskId));
 
   if (sources.length === 2 && allTasks.size > 0) {
-    console.log("\n" + colors.bold("Per-Task Comparison:"));
-    console.log("-".repeat(70));
-
     const [src1, src2] = sources;
-    console.log(`${"Task".padEnd(25)} | ${src1!.padEnd(20)} | ${src2}`);
-    console.log("-".repeat(70));
-
-    for (const taskId of allTasks) {
-      const r1 = bySource.get(src1!)?.find((r) => r.taskId === taskId);
-      const r2 = bySource.get(src2!)?.find((r) => r.taskId === taskId);
-
-      const s1 = r1
-        ? (r1.success ? colors.green("pass") : colors.red("fail"))
-        : colors.dim("n/a");
-      const s2 = r2
-        ? (r2.success ? colors.green("pass") : colors.red("fail"))
-        : colors.dim("n/a");
-
-      console.log(`${taskId.padEnd(25)} | ${s1.padEnd(29)} | ${s2}`);
-    }
-    console.log("-".repeat(70));
-
-    // Winner
-    const stats1 = stats.get(src1!)!;
-    const stats2 = stats.get(src2!)!;
-    const rate1 = stats1.passed / (stats1.passed + stats1.failed) || 0;
-    const rate2 = stats2.passed / (stats2.passed + stats2.failed) || 0;
-
-    console.log("\n" + colors.bold("Winner:"));
-    if (rate1 > rate2) {
-      console.log(
-        `  ${colors.green(src1!)} wins (${(rate1 * 100).toFixed(0)}% vs ${
-          (rate2 * 100).toFixed(0)
-        }%)`,
-      );
-    } else if (rate2 > rate1) {
-      console.log(
-        `  ${colors.green(src2!)} wins (${(rate2 * 100).toFixed(0)}% vs ${
-          (rate1 * 100).toFixed(0)
-        }%)`,
-      );
-    } else {
-      console.log(`  ${colors.yellow("TIE")} (${(rate1 * 100).toFixed(0)}%)`);
-    }
-
-    // Cost comparison
-    const costDiff = stats2.totalCost - stats1.totalCost;
-    console.log(
-      `  Cost: ${src2} is ${costDiff >= 0 ? "+" : ""}$${
-        costDiff.toFixed(4)
-      } vs ${src1}`,
-    );
+    printPerTaskComparison(bySource, allTasks, src1!, src2!);
+    printWinnerAnalysis(src1!, src2!, stats.get(src1!)!, stats.get(src2!)!);
   }
 }
 

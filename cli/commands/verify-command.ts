@@ -4,15 +4,18 @@
  */
 
 import { Command } from "@cliffy/command";
-import { Select } from "@cliffy/prompt";
 import * as colors from "@std/fmt/colors";
 import {
   createVerifyOrchestrator,
-  findSessions,
-  isFixableResult,
   parseDebugDir,
   type VerifyOptions,
 } from "../../src/verify/mod.ts";
+import {
+  determineModeFromOptions,
+  formatEventForConsole,
+  selectSession,
+  validateTaskFilterOptions,
+} from "../helpers/session-selection.ts";
 
 async function handleVerify(
   options: {
@@ -30,56 +33,12 @@ async function handleVerify(
 ): Promise<void> {
   const dir = debugDir || "debug";
 
-  // Validate mutually exclusive options
-  if (options.shortcomingsOnly && options.fixesOnly) {
-    console.error(
-      colors.red(
-        "[ERROR] --shortcomings-only and --fixes-only are mutually exclusive",
-      ),
-    );
-    Deno.exit(1);
-  }
-
-  // Determine mode
-  const mode = options.shortcomingsOnly
-    ? "shortcomings-only"
-    : options.fixesOnly
-    ? "fixes-only"
-    : "all";
+  validateTaskFilterOptions(options);
+  const mode = determineModeFromOptions(options);
 
   console.log(colors.gray(`[INFO] Analyzing debug output in: ${dir}`));
 
-  // Find session
-  let sessionId = options.session;
-  if (!sessionId) {
-    const sessions = await findSessions(dir);
-    if (sessions.length === 0) {
-      console.error(colors.red("[ERROR] No sessions found in debug directory"));
-      Deno.exit(1);
-    } else if (sessions.length === 1) {
-      sessionId = sessions[0]!.sessionId;
-    } else {
-      // Sort by session ID (timestamp) descending - most recent first
-      sessions.sort((a, b) => parseInt(b.sessionId) - parseInt(a.sessionId));
-
-      const choices = sessions.map((s) => {
-        const date = new Date(parseInt(s.sessionId));
-        const hasCompilation = s.compilationLogPath ? "compile" : "";
-        const hasTests = s.testLogPath ? "test" : "";
-        const logs = [hasCompilation, hasTests].filter(Boolean).join(", ");
-        return {
-          name: `${s.sessionId} (${date.toLocaleString()}) [${logs}]`,
-          value: s.sessionId,
-        };
-      });
-
-      sessionId = await Select.prompt({
-        message: "Select session to analyze:",
-        options: choices,
-      });
-    }
-  }
-
+  const sessionId = await selectSession(dir, options.session);
   console.log(colors.gray(`[INFO] Using session: ${sessionId}`));
 
   // Parse debug directory for failing tasks
@@ -132,63 +91,7 @@ async function handleVerify(
 
   // Subscribe to events
   orchestrator.on((event) => {
-    switch (event.type) {
-      case "tasks_filtered":
-        console.log(
-          colors.gray(
-            `[FILTER] Skipped ${event.skipped} tasks: ${event.reason}`,
-          ),
-        );
-        console.log(
-          colors.gray(`[FILTER] Analyzing ${event.kept} task(s)`),
-        );
-        break;
-      case "analyzing":
-        console.log(
-          colors.cyan(`[ANALYZE] ${event.taskId} (${event.model})`),
-        );
-        break;
-      case "analysis_complete":
-        if (isFixableResult(event.result)) {
-          console.log(
-            colors.yellow(
-              `[FIXABLE] ${event.result.category} in ${event.result.fix.filePath}`,
-            ),
-          );
-          console.log(`  ${event.result.description}`);
-        } else {
-          // Show model gap info (same format regardless of mode)
-          console.log(
-            colors.blue(
-              `[MODEL GAP] ${event.result.concept}`,
-            ),
-          );
-          console.log(`  ${event.result.description.slice(0, 100)}...`);
-        }
-        break;
-      case "fix_applied":
-        if (event.success) {
-          console.log(colors.green(`[OK] Applied fix to ${event.taskId}`));
-        } else {
-          console.log(
-            colors.red(`[FAIL] Could not apply fix to ${event.taskId}`),
-          );
-        }
-        break;
-      case "fix_skipped":
-        console.log(colors.gray(`[SKIP] Skipped fix for ${event.taskId}`));
-        break;
-      case "shortcoming_logged":
-        console.log(
-          colors.gray(
-            `  Logged to: ${options.shortcomingsDir}/${event.model}.json`,
-          ),
-        );
-        break;
-      case "error":
-        console.error(colors.red(`[ERROR] ${event.taskId}: ${event.error}`));
-        break;
-    }
+    formatEventForConsole(event, options.shortcomingsDir);
   });
 
   // Run verification

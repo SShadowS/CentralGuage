@@ -19,6 +19,96 @@ export const VALID_PROVIDERS = [
 
 export type ValidProvider = typeof VALID_PROVIDERS[number];
 
+// =============================================================================
+// Provider Detection Helpers
+// =============================================================================
+
+/** Providers allowed in provider/model format (excludes openrouter which has special handling) */
+const CORE_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "gemini",
+  "azure-openai",
+  "local",
+  "mock",
+];
+
+/**
+ * Check if a provider is valid for direct use.
+ */
+function isValidProvider(provider: string): boolean {
+  return CORE_PROVIDERS.includes(provider);
+}
+
+/**
+ * Parse provider/model format string.
+ * Returns null if the provider is not recognized.
+ */
+function parseProviderModelFormat(
+  spec: string,
+): { provider: string; model: string } | null {
+  if (!spec.includes("/")) return null;
+
+  const parts = spec.split("/");
+  const provider = parts[0] || "";
+  const model = parts.slice(1).join("/"); // Handle models with slashes like "models/gemini-pro"
+
+  if (isValidProvider(provider)) {
+    return { provider, model };
+  }
+  return null;
+}
+
+/**
+ * Detect provider from model name patterns (legacy fallback).
+ */
+function detectProviderByPattern(modelSpec: string): string {
+  // OpenAI models
+  if (
+    modelSpec.startsWith("gpt-") ||
+    modelSpec.startsWith("o1-") ||
+    modelSpec.startsWith("o3-")
+  ) {
+    return "openai";
+  }
+
+  // Anthropic Claude models
+  if (modelSpec.startsWith("claude-")) {
+    return "anthropic";
+  }
+
+  // Google Gemini models
+  if (
+    modelSpec.startsWith("gemini-") || modelSpec.startsWith("models/gemini-")
+  ) {
+    return "gemini";
+  }
+
+  // Azure OpenAI (usually with deployment name)
+  if (modelSpec.includes("azure") || Deno.env.get("AZURE_OPENAI_ENDPOINT")) {
+    return "azure-openai";
+  }
+
+  // Local models (Ollama, etc.)
+  if (
+    modelSpec.startsWith("llama") ||
+    modelSpec.startsWith("codellama") ||
+    modelSpec.startsWith("mistral") ||
+    modelSpec.startsWith("qwen") ||
+    Deno.env.get("OLLAMA_HOST") ||
+    Deno.env.get("LOCAL_LLM_ENDPOINT")
+  ) {
+    return "local";
+  }
+
+  // Unknown - will use mock
+  return "";
+}
+
+// =============================================================================
+// Exported Functions
+// =============================================================================
+
 /**
  * Extract model name from variantId for shortcomings lookup.
  * e.g., "anthropic/claude-opus-4-5-20251101@thinking=50000" -> "claude-opus-4-5-20251101"
@@ -51,93 +141,36 @@ export function extractModelName(variantId: string): string {
 export function parseProviderAndModel(
   modelSpec: string,
 ): { provider: string; model: string } {
-  // First try to resolve through preset system (handles aliases, groups, and provider/model)
+  // Try preset resolution first (handles aliases, groups, provider/model)
   const resolved = ModelPresetRegistry.resolve(modelSpec);
-
   const resolvedSpec = resolved[0];
+
   if (resolved.length === 1 && resolvedSpec && resolvedSpec !== modelSpec) {
-    // Successfully resolved to a different spec, parse the resolved spec
-    if (resolvedSpec.includes("/")) {
-      const parts = resolvedSpec.split("/");
-      const provider = parts[0] || "";
-      const model = parts.slice(1).join("/");
-
-      // Validate provider
-      const validProviders = [
-        "openai",
-        "anthropic",
-        "gemini",
-        "azure-openai",
-        "local",
-        "mock",
-      ];
-      if (validProviders.includes(provider)) {
-        return { provider, model };
-      }
-    }
+    const parsed = parseProviderModelFormat(resolvedSpec);
+    if (parsed) return parsed;
   }
 
-  // If not resolved or is already provider/model format, handle directly
+  // Try direct provider/model format
   if (modelSpec.includes("/")) {
-    const parts = modelSpec.split("/");
-    const provider = parts[0] || "";
-    const model = parts.slice(1).join("/"); // Handle models with slashes like "models/gemini-pro"
+    const parsed = parseProviderModelFormat(modelSpec);
+    if (parsed) return parsed;
 
-    // Validate provider
-    const validProviders = [
-      "openai",
-      "anthropic",
-      "gemini",
-      "azure-openai",
-      "local",
-      "mock",
-    ];
-    if (validProviders.includes(provider)) {
-      return { provider, model };
-    } else {
-      log.warn(`Unknown provider: ${provider}, using mock adapter`);
-      return { provider: "mock", model: modelSpec };
-    }
+    log.warn(
+      `Unknown provider: ${modelSpec.split("/")[0]}, using mock adapter`,
+    );
+    return { provider: "mock", model: modelSpec };
   }
 
-  // Backwards compatibility: detect provider from model name patterns
+  // Legacy fallback: detect provider from model name patterns
   log.warn(
     `Using pattern detection for model: ${modelSpec}. Consider using aliases or provider/model format.`,
   );
 
-  let provider: string;
-
-  // OpenAI models
-  if (
-    modelSpec.startsWith("gpt-") || modelSpec.startsWith("o1-") ||
-    modelSpec.startsWith("o3-")
-  ) {
-    provider = "openai";
-  } // Anthropic Claude models
-  else if (modelSpec.startsWith("claude-")) {
-    provider = "anthropic";
-  } // Google Gemini models
-  else if (
-    modelSpec.startsWith("gemini-") || modelSpec.startsWith("models/gemini-")
-  ) {
-    provider = "gemini";
-  } // Azure OpenAI (usually with deployment name)
-  else if (
-    modelSpec.includes("azure") || Deno.env.get("AZURE_OPENAI_ENDPOINT")
-  ) {
-    provider = "azure-openai";
-  } // Local models (Ollama, etc.)
-  else if (
-    modelSpec.startsWith("llama") || modelSpec.startsWith("codellama") ||
-    modelSpec.startsWith("mistral") || modelSpec.startsWith("qwen") ||
-    Deno.env.get("OLLAMA_HOST") || Deno.env.get("LOCAL_LLM_ENDPOINT")
-  ) {
-    provider = "local";
-  } // Default to mock for unknown models
-  else {
-    log.warn(`Unknown model format: ${modelSpec}, using mock adapter`);
-    provider = "mock";
+  const detectedProvider = detectProviderByPattern(modelSpec);
+  if (detectedProvider) {
+    return { provider: detectedProvider, model: modelSpec };
   }
 
-  return { provider, model: modelSpec };
+  log.warn(`Unknown model format: ${modelSpec}, using mock adapter`);
+  return { provider: "mock", model: modelSpec };
 }
