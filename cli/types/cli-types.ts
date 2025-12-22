@@ -21,6 +21,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   noContinuation?: boolean;
   // Streaming mode
   stream?: boolean;
+  // JSON events mode (for TUI/machine parsing)
+  jsonEvents?: boolean;
 }
 
 /**

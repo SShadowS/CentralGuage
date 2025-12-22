@@ -12,4 +12,5 @@ export { registerModelsCommand } from "./models-command.ts";
 export { registerReportCommand } from "./report-command.ts";
 export { registerReportDbCommand } from "./report-db-command.ts";
 export { registerStatsCommands } from "./stats-command.ts";
+export { registerTuiCommand } from "./tui-command.ts";
 export { registerVerifyCommand } from "./verify-command.ts";

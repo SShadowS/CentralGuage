@@ -51,6 +51,108 @@ import type { AgentExecutionResult } from "../../src/agents/types.ts";
 import { join } from "@std/path";
 
 /**
+ * Output a benchmark event as a JSON line (for TUI/machine parsing)
+ */
+function outputJsonEvent(
+  event: ParallelExecutionEvent,
+  modelPassRates: Map<
+    string,
+    { total: number; attempt1: number; attempt2: number }
+  >,
+): void {
+  // Build a simplified JSON event for TUI consumption
+  let jsonEvent: Record<string, unknown>;
+
+  switch (event.type) {
+    case "task_started":
+      jsonEvent = {
+        type: "task_started",
+        taskId: event.taskId,
+        modelCount: event.models.length,
+      };
+      break;
+    case "llm_started":
+      jsonEvent = {
+        type: "llm_started",
+        taskId: event.taskId,
+        model: event.model,
+        attempt: event.attempt,
+      };
+      break;
+    case "llm_completed":
+      jsonEvent = {
+        type: "llm_completed",
+        taskId: event.taskId,
+        model: event.model,
+        attempt: event.attempt,
+        success: event.success,
+      };
+      break;
+    case "compile_completed":
+      jsonEvent = {
+        type: "compile_completed",
+        taskId: event.taskId,
+        model: event.model,
+        success: event.success,
+      };
+      break;
+    case "result": {
+      const variantId = event.result.context.variantId ||
+        event.result.context.llmModel;
+      // Update pass rates
+      if (!modelPassRates.has(variantId)) {
+        modelPassRates.set(variantId, { total: 0, attempt1: 0, attempt2: 0 });
+      }
+      const stats = modelPassRates.get(variantId)!;
+      stats.total++;
+      if (event.result.passedAttemptNumber === 1) stats.attempt1++;
+      else if (event.result.passedAttemptNumber === 2) stats.attempt2++;
+
+      jsonEvent = {
+        type: "result",
+        taskId: event.result.taskId,
+        model: variantId,
+        success: event.result.success,
+        score: event.result.finalScore,
+        passedAttempt: event.result.passedAttemptNumber,
+      };
+      break;
+    }
+    case "task_completed":
+      jsonEvent = {
+        type: "task_completed",
+        taskId: event.taskId,
+        winner: event.result.comparison.winner,
+        bestScore: event.result.comparison.bestScore,
+      };
+      break;
+    case "progress":
+      jsonEvent = {
+        type: "progress",
+        completed: event.progress.completedTasks,
+        total: event.progress.totalTasks,
+        errors: event.progress.errors.length,
+        estimatedRemaining: event.progress.estimatedTimeRemaining,
+      };
+      break;
+    case "error":
+      jsonEvent = {
+        type: "error",
+        taskId: event.taskId,
+        model: event.model,
+        message: event.error.message,
+      };
+      break;
+    default:
+      // Skip llm_chunk and compile_queued for TUI (too noisy)
+      return;
+  }
+
+  // Output as a single JSON line
+  console.log(JSON.stringify(jsonEvent));
+}
+
+/**
  * Run benchmark in parallel mode (default)
  */
 async function runParallelBenchmark(
@@ -58,6 +160,7 @@ async function runParallelBenchmark(
   quiet = false,
   containerProviderName?: string,
   outputFormat: OutputFormat = "verbose",
+  jsonEvents = false,
 ): Promise<void> {
   if (!quiet) {
     await EnvLoader.loadEnvironment();
@@ -205,6 +308,13 @@ async function runParallelBenchmark(
 
     // Subscribe to events
     orchestrator.on((event: ParallelExecutionEvent) => {
+      // JSON events mode: output machine-readable JSON lines
+      if (jsonEvents) {
+        outputJsonEvent(event, modelPassRates);
+        return;
+      }
+
+      // Human-readable output mode
       switch (event.type) {
         case "task_started":
           console.log("");
@@ -1016,6 +1126,11 @@ export function registerBenchCommand(cli: Command): void {
       "Enable streaming mode (show real-time progress)",
       { default: false },
     )
+    .option(
+      "--json-events",
+      "Output progress as JSON lines (for TUI/machine parsing)",
+      { default: false },
+    )
     .action(async (options) => {
       // Validate that at least one of --llms or --agents is provided
       if (
@@ -1129,9 +1244,10 @@ export function registerBenchCommand(cli: Command): void {
         const outputFormat = (options.format || "verbose") as OutputFormat;
         await runParallelBenchmark(
           benchOptions,
-          options.quiet,
+          options.quiet || options.jsonEvents, // Quiet mode for JSON output
           options.containerProvider,
           outputFormat,
+          options.jsonEvents ?? false,
         );
       }
       // Explicitly exit to close any lingering connections
