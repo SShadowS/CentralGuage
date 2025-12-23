@@ -634,14 +634,13 @@ export class BcContainerProvider implements ContainerProvider {
       try {
         Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
           param($targetAppId)
-          # Clean up apps matching our extension ID
-          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.AppId -eq $targetAppId }
+          # Clean up apps matching our extension ID (compare as strings)
+          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.AppId.ToString() -eq $targetAppId }
           if ($apps) {
-            Write-Host "Found $($apps.Count) existing app(s) with AppId=$targetAppId to clean up"
+            Write-Host "Cleaning up $($apps.Count) existing app(s) with AppId=$targetAppId"
             foreach ($app in $apps) {
-              $appId = $app.AppId.ToString()
               $version = $app.Version.ToString()
-              Write-Host "  Removing: $($app.Name) (AppId=$appId, Version=$version)"
+              Write-Host "  Removing: $($app.Name) v$version"
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
               try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -ErrorAction SilentlyContinue } catch {}
             }
