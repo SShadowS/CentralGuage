@@ -232,24 +232,33 @@ export class BcContainerProvider implements ContainerProvider {
   async status(containerName: string): Promise<ContainerStatus> {
     const script = `
       Import-Module bccontainerhelper
-      
-      $container = Get-BcContainer -containerName "${containerName}" -ErrorAction SilentlyContinue
-      if ($container) {
-        $isRunning = docker ps --filter "name=${containerName}" --format "{{.Names}}" | Select-String "${containerName}"
-        $uptime = if ($isRunning) {
-          (docker inspect "${containerName}" --format "{{.State.StartedAt}}" | ForEach-Object {
-            $startTime = [DateTime]::Parse($_)
+
+      # Check if container exists using Get-BcContainers (plural)
+      $containers = Get-BcContainers
+      if ($containers -contains "${containerName}") {
+        # Get container info via docker inspect
+        $inspectJson = docker inspect "${containerName}" 2>$null | ConvertFrom-Json
+        if ($inspectJson) {
+          $state = $inspectJson.State
+          $isRunning = $state.Running
+          $health = if ($state.Health) { $state.Health.Status } else { if ($isRunning) { "running" } else { "stopped" } }
+          $uptime = if ($isRunning -and $state.StartedAt) {
+            $startTime = [DateTime]::Parse($state.StartedAt)
             [int]((Get-Date) - $startTime).TotalSeconds
-          })
-        } else { 0 }
-        
-        Write-Output "STATUS_START"
-        Write-Output "NAME:${containerName}"
-        Write-Output "RUNNING:$($null -ne $isRunning)"
-        Write-Output "HEALTH:$($container.State)"
-        Write-Output "BCVERSION:$($container.BcVersion)"
-        Write-Output "UPTIME:$uptime"
-        Write-Output "STATUS_END"
+          } else { 0 }
+          # Try to get BC version from container labels
+          $bcVersion = $inspectJson.Config.Labels.'nav.version'
+
+          Write-Output "STATUS_START"
+          Write-Output "NAME:${containerName}"
+          Write-Output "RUNNING:$isRunning"
+          Write-Output "HEALTH:$health"
+          if ($bcVersion) { Write-Output "BCVERSION:$bcVersion" }
+          Write-Output "UPTIME:$uptime"
+          Write-Output "STATUS_END"
+        } else {
+          Write-Output "CONTAINER_NOT_FOUND"
+        }
       } else {
         Write-Output "CONTAINER_NOT_FOUND"
       }
