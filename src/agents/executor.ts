@@ -136,6 +136,16 @@ export class AgentTaskExecutor {
   constructor() {
     // No configuration needed - MCP servers come from agent config
     this.containerProvider = new BcContainerProvider();
+
+    // Configure container credentials from environment
+    const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME") ||
+      "Cronus27";
+    const username = Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME") || "admin";
+    const password = Deno.env.get("CENTRALGAUGE_CONTAINER_PASSWORD") || "admin";
+    this.containerProvider.setCredentials(containerName, {
+      username,
+      password,
+    });
   }
 
   /**

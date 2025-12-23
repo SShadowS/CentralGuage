@@ -643,7 +643,7 @@ export class BcContainerProvider implements ContainerProvider {
               $version = $app.Version.ToString()
               Write-Host "  Removing: $($app.Name) (AppId=$appId, Version=$version)"
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
-              try { Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue } catch {}
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -ErrorAction SilentlyContinue } catch {}
             }
           }
         } -argumentList "${extensionId}"
@@ -711,11 +711,10 @@ export class BcContainerProvider implements ContainerProvider {
           $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.Publisher -eq "CentralGauge" }
           if ($apps) {
             foreach ($app in $apps) {
-              $appId = $app.AppId.ToString()
               $version = $app.Version.ToString()
-              Write-Host "CLEANUP:Removing app $($app.Name) (AppId=$appId)"
+              Write-Host "CLEANUP:Removing app $($app.Name) (Publisher=$($app.Publisher))"
               try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
-              try { Unpublish-NAVApp -ServerInstance BC -AppId $appId -Version $version -ErrorAction SilentlyContinue } catch {}
+              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -ErrorAction SilentlyContinue } catch {}
             }
           }
         }
