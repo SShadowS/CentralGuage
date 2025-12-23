@@ -6,9 +6,9 @@
 id: default
 name: "Default AL Agent"
 description: "Baseline autonomous AL code generator with compile/test feedback"
-model: claude-sonnet-4-5-20250929
-maxTurns: 50
-maxTokens: 100000
+model: claude-opus-4-5-20251101
+maxTurns: 100
+maxTokens: 1000000
 
 # Claude Code feature loading
 # - project: Loads CLAUDE.md and skills from workingDir
