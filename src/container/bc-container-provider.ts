@@ -662,7 +662,7 @@ export class BcContainerProvider implements ContainerProvider {
       # Publish the app (will sync and install)
       try {
         Write-Output "PUBLISH_START"
-        Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -install -ErrorAction Stop
+        Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
         Write-Output "PUBLISH_SUCCESS"
       } catch {
         Write-Output "PUBLISH_FAILED:$($_.Exception.Message)"

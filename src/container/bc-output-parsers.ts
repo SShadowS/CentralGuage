@@ -233,11 +233,37 @@ function parseTestResultLine(testInfo: string): TestCaseResult | undefined {
 }
 
 /**
+ * Parse a BC test output line (detailed format from Run-TestsInBcContainer)
+ *
+ * Handles lines like:
+ * - "Testfunction TestName Success (0.033 seconds)"
+ * - "Testfunction TestName Failure (0.016 seconds)"
+ *
+ * @param line - Raw line from test output
+ * @returns Parsed test case result, or undefined if not a test result line
+ */
+function parseBcTestLine(line: string): TestCaseResult | undefined {
+  // Match: Testfunction <Name> Success/Failure (<duration> seconds)
+  const match = line.match(
+    /Testfunction\s+(\S+)\s+(Success|Failure)\s+\(([0-9.]+)\s+seconds?\)/i,
+  );
+  if (match) {
+    return {
+      name: match[1] || "unknown",
+      passed: match[2]?.toLowerCase() === "success",
+      duration: parseFloat(match[3] || "0") * 1000, // Convert to ms
+    };
+  }
+  return undefined;
+}
+
+/**
  * Parse test result output from Run-TestsInBcContainer
  *
  * Handles various AL test result formats including:
  * - "ALL_TESTS_PASSED" marker
  * - "TESTRESULT:" prefixed lines with pass/fail info
+ * - Direct "Testfunction <name> Success/Failure" lines from -detailed output
  *
  * @param output - Raw test execution output
  * @returns Object containing parsed results and status flags
@@ -276,10 +302,20 @@ export function parseTestResults(output: string): {
     }
 
     // Parse test results within TEST_START/TEST_END block
-    if (inTest && trimmedLine.startsWith("TESTRESULT:")) {
-      const testResult = parseTestResultLine(trimmedLine.substring(11));
-      if (testResult) {
-        results.push(testResult);
+    if (inTest) {
+      // Try TESTRESULT: prefixed format
+      if (trimmedLine.startsWith("TESTRESULT:")) {
+        const testResult = parseTestResultLine(trimmedLine.substring(11));
+        if (testResult) {
+          results.push(testResult);
+        }
+        continue;
+      }
+
+      // Try BC detailed output format: "Testfunction <name> Success/Failure"
+      const bcTestResult = parseBcTestLine(trimmedLine);
+      if (bcTestResult) {
+        results.push(bcTestResult);
       }
     }
   }
