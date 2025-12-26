@@ -113,6 +113,7 @@ function createMockFormatterInput(
 
   const comparisons: TaskComparison[] = [
     {
+      taskId: "mock-task-1",
       winner: "mock/mock-claude",
       bestScore: 100,
       avgScore: 90,
@@ -320,6 +321,15 @@ function createMockTaskExecutionResult(
     llmProvider?: string;
     llmModel?: string;
     failureReasons?: string[];
+    testResult?: {
+      success: boolean;
+      passedTests: number;
+      totalTests: number;
+      failedTests: number;
+      duration: number;
+      results: Array<{ name: string; passed: boolean; duration: number }>;
+      output: string;
+    };
   },
 ): import("../../../src/tasks/interfaces.ts").TaskExecutionResult {
   const now = new Date();
@@ -337,27 +347,51 @@ function createMockTaskExecutionResult(
     executedAt: now,
     executedBy: "test-runner",
     environment: { NODE_ENV: "test" },
-    attempts: overrides.success ? [] : [{
-      attemptNumber: 1,
-      startTime: now,
-      endTime: now,
-      prompt: "Test prompt",
-      llmResponse: {
-        content: "Test response",
-        usage: { promptTokens: 100, completionTokens: 100, totalTokens: 200 },
-        finishReason: "stop",
-        model: overrides.llmModel || "mock-gpt-4",
+    attempts: overrides.success
+      ? [{
+        attemptNumber: 1,
+        startTime: now,
+        endTime: now,
+        prompt: "Test prompt",
+        llmResponse: {
+          content: "Test response",
+          usage: { promptTokens: 100, completionTokens: 100, totalTokens: 200 },
+          finishReason: "stop",
+          model: overrides.llmModel || "mock-gpt-4",
+          duration: 1000,
+        },
+        extractedCode: "codeunit 50100 Test {}",
+        codeLanguage: "al" as const,
+        success: true,
+        score: 100,
+        failureReasons: [],
+        tokensUsed: 200,
+        cost: 0.01,
         duration: 1000,
-      },
-      extractedCode: "codeunit 50100 Test {}",
-      codeLanguage: "al",
-      success: false,
-      score: 0,
-      failureReasons: overrides.failureReasons ?? ["Compilation failed"],
-      tokensUsed: 200,
-      cost: 0.01,
-      duration: 1000,
-    }],
+        testResult: overrides.testResult,
+      }]
+      : [{
+        attemptNumber: 1,
+        startTime: now,
+        endTime: now,
+        prompt: "Test prompt",
+        llmResponse: {
+          content: "Test response",
+          usage: { promptTokens: 100, completionTokens: 100, totalTokens: 200 },
+          finishReason: "stop",
+          model: overrides.llmModel || "mock-gpt-4",
+          duration: 1000,
+        },
+        extractedCode: "codeunit 50100 Test {}",
+        codeLanguage: "al" as const,
+        success: false,
+        score: 0,
+        failureReasons: overrides.failureReasons ?? ["Compilation failed"],
+        tokensUsed: 200,
+        cost: 0.01,
+        duration: 1000,
+        testResult: overrides.testResult,
+      }],
     context: {
       manifest: {
         id: overrides.taskId,
@@ -457,6 +491,7 @@ describe("formatTaskMatrix", () => {
     const input = createMockFormatterInput() as TaskMatrixInput;
     // Set up comparison where both models pass with same score (no winner)
     input.comparisons = [{
+      taskId: "task-1",
       bestScore: 100,
       avgScore: 100,
       passingModels: ["mock/mock-gpt-4", "mock/mock-claude"],
@@ -490,6 +525,7 @@ describe("formatTaskMatrix", () => {
     const input = createMockFormatterInput() as TaskMatrixInput;
     // No winner when all models fail
     input.comparisons = [{
+      taskId: "task-1",
       bestScore: 0,
       avgScore: 0,
       passingModels: [],
@@ -849,5 +885,112 @@ describe("Edge cases for formatters", () => {
     const output = formatBenchmarkStats(input);
 
     assert(output.includes("seconds_per_task"));
+  });
+});
+
+describe("formatTaskMatrix test counts", () => {
+  it("should show test counts for passed results with testResult", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        variantId: "mock/mock-gpt-4",
+        testResult: {
+          success: true,
+          passedTests: 3,
+          totalTests: 3,
+          failedTests: 0,
+          duration: 1000,
+          results: [
+            { name: "Test1", passed: true, duration: 100 },
+            { name: "Test2", passed: true, duration: 100 },
+            { name: "Test3", passed: true, duration: 100 },
+          ],
+          output: "All tests passed",
+        },
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    // Should show test counts in the format "tests: 3/3"
+    assert(output.includes("tests: 3/3"));
+  });
+
+  it("should show partial test counts for test failures", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: false,
+        variantId: "mock/mock-gpt-4",
+        failureReasons: ["Tests failed: 2 test cases failed"],
+        testResult: {
+          success: false,
+          passedTests: 2,
+          totalTests: 5,
+          failedTests: 3,
+          duration: 1000,
+          results: [
+            { name: "Test1", passed: true, duration: 100 },
+            { name: "Test2", passed: true, duration: 100 },
+            { name: "Test3", passed: false, duration: 100 },
+            { name: "Test4", passed: false, duration: 100 },
+            { name: "Test5", passed: false, duration: 100 },
+          ],
+          output: "2/5 tests passed",
+        },
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    // Should show partial test counts "tests: 2/5"
+    assert(output.includes("tests: 2/5"));
+  });
+
+  it("should not show test counts for compile failures", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: false,
+        variantId: "mock/mock-gpt-4",
+        failureReasons: ["Compilation failed: syntax error"],
+        // No testResult - tests never ran
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    // Should show compile failure but NOT include "tests:"
+    assert(output.includes("compile"));
+    assert(!output.includes("tests:"));
+  });
+
+  it("should not show test counts when totalTests is 0", () => {
+    const input = createMockFormatterInput() as TaskMatrixInput;
+    input.results = [
+      createMockTaskExecutionResult({
+        taskId: "task-1",
+        success: true,
+        variantId: "mock/mock-gpt-4",
+        testResult: {
+          success: true,
+          passedTests: 0,
+          totalTests: 0,
+          failedTests: 0,
+          duration: 0,
+          results: [],
+          output: "No tests",
+        },
+      }),
+    ];
+
+    const output = formatTaskMatrix(input);
+
+    // Should not include "tests:" when totalTests is 0
+    assert(!output.includes("tests:"));
   });
 });

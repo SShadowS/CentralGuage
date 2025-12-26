@@ -43,6 +43,11 @@ export interface BenchmarkResult {
   totalTokensUsed?: number;
   totalCost?: number;
   attempts: Array<{ success: boolean; tokensUsed?: number; cost?: number }>;
+  /** Test counts from the final attempt (if tests ran) */
+  testSummary?: {
+    passedTests: number;
+    totalTests: number;
+  };
   context?: {
     variantId?: string;
     llmModel?: string;

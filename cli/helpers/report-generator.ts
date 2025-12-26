@@ -87,7 +87,29 @@ export function resultRecordToBenchmarkResult(
     context.manifest = { description: taskDescription };
   }
 
-  return {
+  // Extract test summary from resultJson if available
+  let testSummary: BenchmarkResult["testSummary"];
+  if (record.resultJson) {
+    try {
+      const fullResult = JSON.parse(record.resultJson);
+      // Look for testResult in the last attempt
+      const attempts = fullResult.attempts || [];
+      const lastAttempt = attempts[attempts.length - 1];
+      if (lastAttempt?.testResult) {
+        const { passedTests, totalTests } = lastAttempt.testResult;
+        if (typeof totalTests === "number" && totalTests > 0) {
+          testSummary = {
+            passedTests: passedTests ?? 0,
+            totalTests,
+          };
+        }
+      }
+    } catch {
+      // Invalid JSON - continue without test summary
+    }
+  }
+
+  const result: BenchmarkResult = {
     taskId: record.taskId,
     success: record.success,
     finalScore: record.finalScore,
@@ -97,6 +119,13 @@ export function resultRecordToBenchmarkResult(
     attempts,
     context,
   };
+
+  // Only include testSummary if it exists
+  if (testSummary) {
+    result.testSummary = testSummary;
+  }
+
+  return result;
 }
 
 /**
@@ -419,6 +448,12 @@ export function generateResultsMatrixHtml(
         let title = `${
           result.success ? "Pass" : "Fail"
         } - Score: ${result.finalScore}%`;
+
+        // Add test counts to tooltip if available
+        if (result.testSummary) {
+          title +=
+            ` (tests: ${result.testSummary.passedTests}/${result.testSummary.totalTests})`;
+        }
 
         if (!result.success) {
           const modelName = extractModelName(modelId);

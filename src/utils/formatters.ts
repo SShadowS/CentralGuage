@@ -597,13 +597,28 @@ function buildComparisonMap(
   tasks: string[],
 ): Map<string, TaskComparison> {
   const comparisonMap = new Map<string, TaskComparison>();
-  for (let i = 0; i < comparisons.length && i < tasks.length; i++) {
-    const taskId = tasks[i];
-    const comparison = comparisons[i];
-    if (taskId !== undefined && comparison !== undefined) {
-      comparisonMap.set(taskId, comparison);
+
+  // Check if comparisons have taskId (new format)
+  const hasTaskId = comparisons.length > 0 && comparisons[0]?.taskId;
+
+  if (hasTaskId) {
+    // Use taskId from comparison (correct mapping)
+    for (const comparison of comparisons) {
+      if (comparison.taskId) {
+        comparisonMap.set(comparison.taskId, comparison);
+      }
+    }
+  } else {
+    // Legacy fallback: map by array index (may be incorrect if order differs)
+    for (let i = 0; i < comparisons.length && i < tasks.length; i++) {
+      const taskId = tasks[i];
+      const comparison = comparisons[i];
+      if (taskId !== undefined && comparison !== undefined) {
+        comparisonMap.set(taskId, comparison);
+      }
     }
   }
+
   return comparisonMap;
 }
 
@@ -666,6 +681,17 @@ function truncateTaskId(taskId: string): string {
   return taskId.length > 20 ? taskId.substring(0, 17) + "..." : taskId;
 }
 
+/** Extract test counts from the last attempt's test result */
+function formatTestInfo(result: TaskExecutionResult): string {
+  const lastAttempt = result.attempts[result.attempts.length - 1];
+  if (!lastAttempt?.testResult) {
+    return ""; // No tests ran (compile failure)
+  }
+  const { passedTests, totalTests } = lastAttempt.testResult;
+  if (totalTests === 0) return "";
+  return `, tests: ${passedTests}/${totalTests}`;
+}
+
 /** Format a single result cell (success/failure) */
 function formatResultCell(
   result: TaskExecutionResult | undefined,
@@ -678,11 +704,13 @@ function formatResultCell(
   if (result.success) {
     modelTotals.passed++;
     const attemptInfo = formatAttemptInfo(result.passedAttemptNumber);
-    return `✅ ${result.finalScore.toFixed(0)} (${attemptInfo})`;
+    const testInfo = formatTestInfo(result);
+    return `✅ ${result.finalScore.toFixed(0)} (${attemptInfo}${testInfo})`;
   }
 
   const failType = determineFailureType(result);
-  return `❌ 0 (${failType})`;
+  const testInfo = formatTestInfo(result);
+  return `❌ 0 (${failType}${testInfo})`;
 }
 
 /** Format attempt number for display */
