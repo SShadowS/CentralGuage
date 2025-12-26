@@ -356,8 +356,12 @@ export function calculateTestMetrics(
   const failedTests = totalTests - passedTests;
 
   // Require at least one test to have run for success (zero tests = failure)
+  // When we have parsed individual test results, trust them over the allPassed flag.
+  // The allPassed flag from PowerShell can be incorrect when the output capture fails,
+  // but the TypeScript parser correctly identifies individual test pass/fail status.
+  // Only fall back to allPassed when we have no parsed results.
   const success = !publishFailed && totalTests > 0 &&
-    (allPassed || failedTests === 0);
+    (results.length === 0 ? allPassed : failedTests === 0);
 
   return { totalTests, passedTests, failedTests, success };
 }

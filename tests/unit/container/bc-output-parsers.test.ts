@@ -30,7 +30,7 @@ STATUS_START
 NAME:mycontainer
 RUNNING:True
 HEALTH:healthy
-BCVERSION:24.0.0.0
+BCVERSION:27.0.0.0
 UPTIME:3600
 STATUS_END
 Some log output after
@@ -40,7 +40,7 @@ Some log output after
     assertEquals(result["NAME"], "mycontainer");
     assertEquals(result["RUNNING"], "True");
     assertEquals(result["HEALTH"], "healthy");
-    assertEquals(result["BCVERSION"], "24.0.0.0");
+    assertEquals(result["BCVERSION"], "27.0.0.0");
     assertEquals(result["UPTIME"], "3600");
   });
 
@@ -548,6 +548,31 @@ describe("calculateTestMetrics", () => {
 
     assertEquals(metrics.totalTests, 2);
     assertEquals(metrics.passedTests, 2);
+  });
+
+  it("should return success=false when allPassed=true but parsed results show failures", () => {
+    // This is the key bug fix: when PowerShell incorrectly reports allPassed=true
+    // but the TypeScript parser correctly identifies failures, trust the parsed results
+    const results = [
+      { name: "Test1", passed: true, duration: 100 },
+      { name: "Test2", passed: true, duration: 100 },
+      { name: "Test3", passed: true, duration: 100 },
+      { name: "Test4", passed: true, duration: 100 },
+      { name: "Test5", passed: true, duration: 100 },
+      { name: "Test6", passed: true, duration: 100 },
+      { name: "Test7", passed: false, duration: 100 }, // Failed
+      { name: "Test8", passed: false, duration: 100 }, // Failed
+      { name: "Test9", passed: false, duration: 100 }, // Failed
+      { name: "Test10", passed: false, duration: 100 }, // Failed
+    ];
+
+    // PowerShell incorrectly says allPassed=true, but we have 4 failures
+    const metrics = calculateTestMetrics(results, true, false);
+
+    assertEquals(metrics.totalTests, 10);
+    assertEquals(metrics.passedTests, 6);
+    assertEquals(metrics.failedTests, 4);
+    assertEquals(metrics.success, false); // Should be false despite allPassed=true
   });
 });
 
