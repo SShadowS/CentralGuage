@@ -274,6 +274,7 @@ export function parseTestResults(output: string): {
   publishFailed: boolean;
 } {
   const results: TestCaseResult[] = [];
+  const seenTests = new Set<string>(); // Track seen test names to deduplicate
   let allPassed = false;
   let publishFailed = false;
   let inTest = false;
@@ -306,7 +307,8 @@ export function parseTestResults(output: string): {
       // Try TESTRESULT: prefixed format
       if (trimmedLine.startsWith("TESTRESULT:")) {
         const testResult = parseTestResultLine(trimmedLine.substring(11));
-        if (testResult) {
+        if (testResult && !seenTests.has(testResult.name)) {
+          seenTests.add(testResult.name);
           results.push(testResult);
         }
         continue;
@@ -314,7 +316,8 @@ export function parseTestResults(output: string): {
 
       // Try BC detailed output format: "Testfunction <name> Success/Failure"
       const bcTestResult = parseBcTestLine(trimmedLine);
-      if (bcTestResult) {
+      if (bcTestResult && !seenTests.has(bcTestResult.name)) {
+        seenTests.add(bcTestResult.name);
         results.push(bcTestResult);
       }
     }

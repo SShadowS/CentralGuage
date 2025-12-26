@@ -13,6 +13,7 @@ import type {
   TestResult,
 } from "./types.ts";
 import * as colors from "@std/fmt/colors";
+import { ensureDir } from "@std/fs";
 import {
   calculateTestMetrics,
   extractArtifactPath,
@@ -411,7 +412,6 @@ export class BcContainerProvider implements ContainerProvider {
 
     const startTime = Date.now();
     const projectPath = project.path.replace(/\\/g, "\\\\");
-    const outputDir = `${project.path}\\output`.replace(/\\/g, "\\\\");
 
     try {
       const compilerFolder = await this.getOrCreateCompilerFolder(
@@ -419,7 +419,20 @@ export class BcContainerProvider implements ContainerProvider {
       );
       const escapedCompilerFolder = compilerFolder.replace(/\\/g, "\\\\");
 
-      await Deno.mkdir(`${project.path}\\output`, { recursive: true });
+      // Output to a subfolder of the compiler folder (which IS shared with container)
+      // Use a unique folder per project based on project name
+      const appJson = project.appJson as { name?: string };
+      const projectName = (appJson.name || "app").replace(
+        /[^a-zA-Z0-9-_]/g,
+        "_",
+      );
+      const outputDir = `${compilerFolder}\\output\\${projectName}`.replace(
+        /\\/g,
+        "\\\\",
+      );
+      await Deno.mkdir(`${compilerFolder}\\output\\${projectName}`, {
+        recursive: true,
+      });
 
       const script = this.buildCompileScript(
         escapedCompilerFolder,
@@ -451,9 +464,71 @@ export class BcContainerProvider implements ContainerProvider {
     }
   }
 
+  async publishApp(
+    containerName: string,
+    appPath: string,
+  ): Promise<void> {
+    console.log(
+      colors.cyan(
+        `[BC Container] Publishing app to container: ${containerName}`,
+      ),
+    );
+
+    // Copy the app to the shared "my" folder which is mounted in the container
+    const appFileName = appPath.split(/[/\\]/).pop()!;
+    const uuid = crypto.randomUUID().slice(0, 8);
+    const sharedFolder =
+      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
+
+    await Deno.mkdir(sharedFolder, { recursive: true });
+    await Deno.copyFile(appPath, sharedAppPath);
+
+    // Use the host path - bccontainerhelper will translate it to container path internally
+    const escapedHostPath = sharedAppPath.replace(/\\/g, "\\\\");
+
+    // Parse app name/publisher from filename pattern: Publisher_Name_Version.app
+    const fileNameParts = appFileName.replace(".app", "").split("_");
+    const publisher = fileNameParts[0] || "";
+    const appName = fileNameParts.slice(1, -1).join("_") || "";
+
+    const script = `
+      Import-Module bccontainerhelper -WarningAction SilentlyContinue
+
+      # Try to unpublish any existing version first (by name and publisher)
+      $existingApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" }
+      if ($existingApp) {
+        Write-Host "Unpublishing existing app: $($existingApp.Name)"
+        Unpublish-BcContainerApp -containerName "${containerName}" -appName $existingApp.Name -publisher $existingApp.Publisher -version $existingApp.Version -uninstall -ErrorAction SilentlyContinue
+      }
+
+      # Publish the new app using the host path (bccontainerhelper translates it)
+      Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedHostPath}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
+      Write-Host "PUBLISH_SUCCESS"
+    `;
+
+    const result = await this.executePowerShell(script);
+
+    // Cleanup the copied file
+    try {
+      await Deno.remove(sharedAppPath);
+    } catch {
+      // Ignore cleanup errors
+    }
+
+    if (!result.output.includes("PUBLISH_SUCCESS")) {
+      throw new Error(`Publish failed: ${result.output}`);
+    }
+
+    console.log(
+      colors.green(`[BC Container] App published successfully`),
+    );
+  }
+
   async runTests(
     containerName: string,
     project: ALProject,
+    appFilePath?: string,
   ): Promise<TestResult> {
     console.log(
       colors.cyan(
@@ -464,29 +539,49 @@ export class BcContainerProvider implements ContainerProvider {
     const startTime = Date.now();
     const credentials = this.getCredentials(containerName);
 
-    // Ensure we have a compiled app file
-    const appFileResult = await this.ensureCompiledApp(
-      containerName,
-      project,
-      startTime,
-    );
-    if (!appFileResult.success) {
-      return appFileResult.failureResult!;
+    // Use provided app file path or search for one
+    let actualAppFilePath = appFilePath;
+    if (!actualAppFilePath) {
+      const appFileResult = await this.ensureCompiledApp(
+        containerName,
+        project,
+        startTime,
+      );
+      if (!appFileResult.success) {
+        return appFileResult.failureResult!;
+      }
+      actualAppFilePath = appFileResult.appFilePath!;
     }
 
     // Extract extensionId from app.json for test filtering
     const appJson = project.appJson as { id?: string };
     const extensionId = appJson.id || "";
 
-    // Build and execute the test script
+    // Copy main app to shared folder accessible by container
+    const appFileName = actualAppFilePath.split(/[/\\]/).pop()!;
+    const uuid = crypto.randomUUID().slice(0, 8);
+    const sharedFolder =
+      `C:\\ProgramData\\BcContainerHelper\\Extensions\\${containerName}\\my`;
+    await ensureDir(sharedFolder);
+    const sharedAppPath = `${sharedFolder}\\${uuid}_${appFileName}`;
+    await Deno.copyFile(actualAppFilePath, sharedAppPath);
+
+    // Build and execute the test script (prereqs already published)
     const script = this.buildTestScript(
       containerName,
       credentials,
-      appFileResult.appFilePath!,
+      sharedAppPath,
       extensionId,
     );
     const result = await this.executePowerShell(script);
     const duration = Date.now() - startTime;
+
+    // Cleanup copied file
+    try {
+      await Deno.remove(sharedAppPath);
+    } catch {
+      // Ignore cleanup errors
+    }
 
     // Parse and return results
     const { results, allPassed, publishFailed } = parseTestResults(
@@ -610,6 +705,7 @@ export class BcContainerProvider implements ContainerProvider {
   ): string {
     const escapedAppFile = appFilePath.replace(/\\/g, "\\\\");
 
+    // Prereqs are already published by publishApp() - just publish main app and run tests
     return `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
 
@@ -683,16 +779,27 @@ export class BcContainerProvider implements ContainerProvider {
       # Run tests
       Write-Output "TEST_START"
       try {
-        $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential ${extensionIdParam} -testCodeunit "*" -detailed -returnTrueIfAllPassed -ErrorAction Stop 2>&1
+        # Use -detailed for verbose output
+        # The *>&1 captures all streams (including Write-Host) and outputs them
+        # We DON'T re-output the lines to avoid duplicating test results in parsing
+        $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential ${extensionIdParam} -testCodeunit "*" -detailed -ErrorAction Stop *>&1
 
-        if ($results -eq $true) {
-          Write-Output "ALL_TESTS_PASSED"
-        } elseif ($results -eq $false) {
-          Write-Output "SOME_TESTS_FAILED"
-        } else {
-          foreach ($line in $results) {
-            Write-Output "TESTRESULT:$line"
+        # Check if all tests passed by looking at the captured output
+        # Only check actual test result lines (Testfunction ... Failure/Success)
+        $allPassed = $true
+        foreach ($line in $results) {
+          $lineStr = "$line"
+          # Only match actual test failure lines: "Testfunction <name> Failure"
+          # This avoids false positives from warnings like "can lead to test failures"
+          if ($lineStr -match "Testfunction\s+\S+\s+Failure") {
+            $allPassed = $false
           }
+        }
+
+        if ($allPassed) {
+          Write-Output "ALL_TESTS_PASSED"
+        } else {
+          Write-Output "SOME_TESTS_FAILED"
         }
       } catch {
         Write-Output "TEST_ERROR:$($_.Exception.Message)"
@@ -784,5 +891,91 @@ export class BcContainerProvider implements ContainerProvider {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Clean up compiler folders to free disk space.
+   * Removes all cached compiler folders from this session.
+   */
+  async cleanupCompilerFolders(): Promise<void> {
+    if (this.compilerFolderCache.size === 0) {
+      return;
+    }
+
+    console.log(
+      colors.cyan(
+        `[BC Container] Cleaning up ${this.compilerFolderCache.size} compiler folder(s)...`,
+      ),
+    );
+
+    for (const [containerName, folderPath] of this.compilerFolderCache) {
+      try {
+        await Deno.remove(folderPath, { recursive: true });
+        console.log(
+          colors.green(`[BC Container] Removed compiler folder: ${folderPath}`),
+        );
+      } catch (error) {
+        console.log(
+          colors.yellow(
+            `[BC Container] Failed to remove compiler folder ${folderPath}: ${error}`,
+          ),
+        );
+      }
+      this.compilerFolderCache.delete(containerName);
+    }
+  }
+
+  /**
+   * Clean up all compiler folders in the BcContainerHelper directory.
+   * Use this to reclaim disk space from previous runs.
+   */
+  async cleanupAllCompilerFolders(): Promise<
+    { removed: number; failed: number }
+  > {
+    const compilerDir = "C:\\ProgramData\\BcContainerHelper\\compiler";
+    let removed = 0;
+    let failed = 0;
+
+    console.log(
+      colors.cyan(
+        `[BC Container] Cleaning up all compiler folders in ${compilerDir}...`,
+      ),
+    );
+
+    try {
+      for await (const entry of Deno.readDir(compilerDir)) {
+        if (entry.isDirectory) {
+          const folderPath = `${compilerDir}\\${entry.name}`;
+          try {
+            await Deno.remove(folderPath, { recursive: true });
+            removed++;
+          } catch {
+            failed++;
+          }
+        }
+      }
+    } catch (error) {
+      console.log(
+        colors.yellow(
+          `[BC Container] Could not access compiler directory: ${error}`,
+        ),
+      );
+    }
+
+    if (removed > 0) {
+      console.log(
+        colors.green(`[BC Container] Removed ${removed} compiler folder(s)`),
+      );
+    }
+    if (failed > 0) {
+      console.log(
+        colors.yellow(`[BC Container] Failed to remove ${failed} folder(s)`),
+      );
+    }
+
+    // Clear the cache
+    this.compilerFolderCache.clear();
+
+    return { removed, failed };
   }
 }
