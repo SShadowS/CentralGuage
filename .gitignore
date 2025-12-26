@@ -53,6 +53,7 @@ CLAUDE.md
 PLAN.md
 .claude/
 .mcp.json
+.serena/
 debug/
 
 # Local output directories
