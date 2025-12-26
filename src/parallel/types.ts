@@ -235,6 +235,9 @@ export interface ParallelTaskResult {
  * Comparison metrics across models for a task
  */
 export interface TaskComparison {
+  /** Task ID for this comparison */
+  taskId: string;
+
   /** Model with highest score */
   winner?: string;
 

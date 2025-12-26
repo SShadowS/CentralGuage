@@ -22,6 +22,7 @@ import { loadTaskManifest } from "../../src/tasks/loader.ts";
 import { TaskExecutorV2 } from "../../src/tasks/executor-v2.ts";
 import {
   createDefaultConfig,
+  CriticalError,
   ParallelBenchmarkOrchestrator,
 } from "../../src/parallel/mod.ts";
 import type { ParallelExecutionEvent } from "../../src/parallel/mod.ts";
@@ -253,6 +254,23 @@ async function runParallelBenchmark(
     let containerReady = false;
     try {
       containerReady = await containerProvider.isHealthy(containerName);
+      if (!containerReady) {
+        // Container exists but might be stopped - try to start it
+        try {
+          const status = await containerProvider.status(containerName);
+          if (!status.isRunning) {
+            log.container(
+              `Container ${containerName} exists but is stopped, starting...`,
+            );
+            await containerProvider.start(containerName);
+            // Wait a moment for container to be ready
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+            containerReady = await containerProvider.isHealthy(containerName);
+          }
+        } catch {
+          // Status check failed, container might not exist
+        }
+      }
     } catch {
       // Container doesn't exist yet
     }
@@ -342,10 +360,29 @@ async function runParallelBenchmark(
           const status = event.result.success
             ? colors.green("pass")
             : colors.red("fail");
+          // Extract test counts from the last attempt's testResult
+          const lastAttempt =
+            event.result.attempts[event.result.attempts.length - 1];
+          const testResult = lastAttempt?.testResult;
+          const testInfo = testResult
+            ? `, tests: ${testResult.passedTests}/${testResult.totalTests}`
+            : "";
           log.llm(
             variantId,
-            `${status} (score: ${event.result.finalScore.toFixed(1)})`,
+            `${status} (score: ${
+              event.result.finalScore.toFixed(1)
+            }${testInfo})`,
           );
+          // Debug: show full test output if enabled
+          if (options.debug && testResult?.output) {
+            console.log(
+              colors.gray(
+                `[Debug] --- Test Output (${variantId}/${event.result.taskId}) ---`,
+              ),
+            );
+            console.log(testResult.output);
+            console.log(colors.gray("[Debug] --- End Test Output ---"));
+          }
           if (!modelPassRates.has(variantId)) {
             modelPassRates.set(variantId, {
               total: 0,
@@ -591,16 +628,38 @@ async function runParallelBenchmark(
       await containerProvider.remove(containerName);
     }
 
+    // Cleanup compiler folders to free disk space
+    if (containerProvider.cleanupCompilerFolders) {
+      await containerProvider.cleanupCompilerFolders();
+    }
+
     // Finalize debug logging
     if (debugLogger) {
       await debugLogger.finalize();
     }
   } catch (error) {
-    log.fail(
-      `Benchmark failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
+    // Check if this is a critical infrastructure error
+    if (CriticalError.isCriticalError(error)) {
+      console.log("");
+      log.fail(
+        colors.bold("BENCHMARK ABORTED - Critical infrastructure error"),
+      );
+      log.fail(
+        error instanceof Error ? error.message : String(error),
+      );
+      console.log("");
+      console.log(
+        colors.yellow(
+          "This error invalidates the benchmark run. Please fix the issue and retry.",
+        ),
+      );
+    } else {
+      log.fail(
+        `Benchmark failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     if (debugLogger) {
       await debugLogger.finalize();

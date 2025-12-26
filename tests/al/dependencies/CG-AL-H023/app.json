@@ -1,0 +1,24 @@
+{
+  "id": "a1b2c3d4-0ff1-0000-0000-000000000023",
+  "name": "CG-AL-H023 Prereq",
+  "publisher": "CentralGauge",
+  "version": "1.0.0.0",
+  "platform": "27.0.0.0",
+  "application": "27.0.0.0",
+  "idRanges": [
+    {
+      "from": 69228,
+      "to": 69239
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "a1b2c3d4-0ff0-0000-0000-000000000022",
+      "name": "CG-AL-H022 Prereq",
+      "publisher": "CentralGauge",
+      "version": "1.0.0.0"
+    }
+  ],
+  "runtime": "16.0",
+  "features": ["NoImplicitWith"]
+}

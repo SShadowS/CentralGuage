@@ -83,8 +83,11 @@ export async function applyFix(
     return false;
   }
 
-  // Check if this is a multi-change format (contains "// ..." separator)
-  if (fix.codeBefore.includes("// ...")) {
+  // Check if this is a multi-change format (contains "// ..." or "..." separator)
+  // LLMs may use different separator formats, so we accept both
+  const hasMultiChangeSeparator = fix.codeBefore.includes("// ...") ||
+    /\n\s*\.\.\.\s*\n/.test(fix.codeBefore);
+  if (hasMultiChangeSeparator) {
     if (debug) {
       console.log(colors.gray("[DEBUG] Detected multi-change format"));
     }
@@ -166,8 +169,9 @@ async function applyMultiChangeFix(
   fix: SuggestedFix,
   debug = false,
 ): Promise<boolean> {
-  // Split both before and after by the "// ..." separator
-  const separator = /\n?\s*\/\/\s*\.\.\.\s*\n?/;
+  // Split both before and after by separator - accepts both "// ..." and plain "..."
+  // Pattern matches: newline, optional whitespace, optional "//", optional whitespace, "...", optional whitespace, newline
+  const separator = /\n\s*(?:\/\/)?\s*\.\.\.\s*\n/;
   const beforeParts = fix.codeBefore.split(separator).map((s) => s.trim())
     .filter(Boolean);
   const afterParts = fix.codeAfter.split(separator).map((s) => s.trim()).filter(

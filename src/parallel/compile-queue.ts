@@ -3,8 +3,8 @@
  * Ensures only one compilation runs at a time
  */
 
-import { dirname, join } from "@std/path";
-import { exists } from "@std/fs";
+import { basename, dirname, join } from "@std/path";
+import { ensureDir, exists } from "@std/fs";
 import type {
   CompileWorkItem,
   CompileWorkResult,
@@ -14,6 +14,148 @@ import type { ContainerProvider } from "../container/interface.ts";
 import type { TestResult } from "../container/types.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+
+/**
+ * Critical error that should abort the entire benchmark run.
+ * Used for infrastructure issues like disk space, container failures, etc.
+ */
+export class CriticalError extends Error {
+  public readonly originalError: Error | undefined;
+
+  constructor(message: string, originalError?: Error) {
+    super(message);
+    this.name = "CriticalError";
+    this.originalError = originalError;
+  }
+
+  /**
+   * Check if an error is a critical infrastructure error that should abort the run.
+   */
+  static isCriticalError(error: unknown): boolean {
+    if (error instanceof CriticalError) return true;
+    const message = error instanceof Error ? error.message : String(error);
+    // Disk space errors
+    if (message.includes("not enough space on the disk")) return true;
+    if (message.includes("os error 112")) return true; // Windows disk full
+    if (message.includes("ENOSPC")) return true; // Linux/Unix disk full
+    // Container not running
+    if (message.includes("container is not running")) return true;
+    if (message.includes("Container not found")) return true;
+    return false;
+  }
+
+  /**
+   * Wrap an error as CriticalError if it matches critical patterns.
+   */
+  static wrapIfCritical(error: unknown): Error {
+    if (CriticalError.isCriticalError(error)) {
+      const message = error instanceof Error ? error.message : String(error);
+      return new CriticalError(
+        `Critical infrastructure error: ${message}`,
+        error instanceof Error ? error : undefined,
+      );
+    }
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
+
+/**
+ * Prereq app information
+ */
+interface PrereqApp {
+  path: string;
+  appJson: Record<string, unknown>;
+  compiledAppPath?: string | undefined;
+}
+
+/**
+ * Find prereq app directory for a given task ID.
+ */
+async function findPrereqApp(
+  taskId: string,
+  projectRoot: string,
+): Promise<PrereqApp | null> {
+  const prereqDir = join(projectRoot, "tests", "al", "dependencies", taskId);
+
+  try {
+    const stat = await Deno.stat(prereqDir);
+    if (!stat.isDirectory) return null;
+
+    const appJsonPath = join(prereqDir, "app.json");
+    const appJsonContent = await Deno.readTextFile(appJsonPath);
+    const appJson = JSON.parse(appJsonContent) as Record<string, unknown>;
+
+    return { path: prereqDir, appJson };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find prereq app by its app ID (used for resolving dependencies).
+ */
+async function findPrereqAppById(
+  appId: string,
+  projectRoot: string,
+): Promise<PrereqApp | null> {
+  const depsDir = join(projectRoot, "tests", "al", "dependencies");
+
+  try {
+    for await (const entry of Deno.readDir(depsDir)) {
+      if (!entry.isDirectory) continue;
+
+      const appJsonPath = join(depsDir, entry.name, "app.json");
+      try {
+        const content = await Deno.readTextFile(appJsonPath);
+        const appJson = JSON.parse(content) as Record<string, unknown>;
+        if (appJson["id"] === appId) {
+          return { path: join(depsDir, entry.name), appJson };
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Find all prereq apps needed for a task, in dependency order.
+ */
+async function findAllPrereqApps(
+  taskId: string,
+  projectRoot: string,
+): Promise<PrereqApp[]> {
+  const result: PrereqApp[] = [];
+  const visited = new Set<string>();
+
+  async function collectDeps(prereq: PrereqApp): Promise<void> {
+    const appId = prereq.appJson["id"] as string;
+    if (visited.has(appId)) return;
+    visited.add(appId);
+
+    const deps = prereq.appJson["dependencies"] as
+      | Array<{ id: string }>
+      | undefined || [];
+    for (const dep of deps) {
+      const depPrereq = await findPrereqAppById(dep.id, projectRoot);
+      if (depPrereq) {
+        await collectDeps(depPrereq);
+      }
+    }
+
+    result.push(prereq);
+  }
+
+  const mainPrereq = await findPrereqApp(taskId, projectRoot);
+  if (mainPrereq) {
+    await collectDeps(mainPrereq);
+  }
+
+  return result;
+}
 
 /**
  * Internal queue entry with resolve/reject callbacks
@@ -189,9 +331,121 @@ export class CompileQueue {
     const startTime = Date.now();
 
     // Create temporary project with the generated code
-    const projectDir = await this.createTempProject(item);
+    let projectDir: string | undefined;
+    try {
+      projectDir = await this.createTempProject(item);
+    } catch (error) {
+      // Check for critical errors during project creation (e.g., disk space)
+      throw CriticalError.wrapIfCritical(error);
+    }
 
-    // Load the project
+    try {
+      return await this.executeCompileInner(item, projectDir, startTime);
+    } finally {
+      // Always clean up temp directory, even on error
+      await this.cleanupTempProject(projectDir);
+    }
+  }
+
+  /**
+   * Inner compile execution (called within try/finally for cleanup)
+   */
+  private async executeCompileInner(
+    item: CompileWorkItem,
+    projectDir: string,
+    startTime: number,
+  ): Promise<CompileWorkResult> {
+    // Find and compile prereq apps
+    const taskId = item.context.manifest.id;
+    const projectRoot = Deno.cwd();
+    const prereqApps = await findAllPrereqApps(taskId, projectRoot);
+    const compiledPrereqs: PrereqApp[] = [];
+
+    for (const prereq of prereqApps) {
+      // For chained prereqs, copy previously compiled prereqs to this prereq's .alpackages
+      if (compiledPrereqs.length > 0) {
+        const prereqAlpackages = join(prereq.path, ".alpackages");
+        await ensureDir(prereqAlpackages);
+        for (const compiled of compiledPrereqs) {
+          if (compiled.compiledAppPath) {
+            const appFileName = basename(compiled.compiledAppPath);
+            const destPath = join(prereqAlpackages, appFileName);
+            await Deno.copyFile(compiled.compiledAppPath, destPath);
+          }
+        }
+      }
+
+      const prereqProject = await ALProjectManager.loadProject(prereq.path);
+      const prereqCompileResult = await this.containerProvider.compileProject(
+        this.containerName,
+        prereqProject,
+      );
+      if (!prereqCompileResult.success) {
+        console.error(
+          `[Prereq] Compilation failed for ${prereq.appJson["name"]}: ${
+            prereqCompileResult.errors.map((e) => e.message).join(", ")
+          }`,
+        );
+      } else {
+        // Publish prereq immediately after successful compilation
+        if (prereqCompileResult.artifactPath) {
+          await this.containerProvider.publishApp(
+            this.containerName,
+            prereqCompileResult.artifactPath,
+          );
+        }
+        compiledPrereqs.push({
+          ...prereq,
+          compiledAppPath: prereqCompileResult.artifactPath,
+        });
+      }
+    }
+
+    // Inject prereq dependencies into main app.json and copy symbols
+    const lastPrereq = compiledPrereqs[compiledPrereqs.length - 1];
+    if (lastPrereq) {
+      const appJsonPath = join(projectDir, "app.json");
+      const alpackagesDir = join(projectDir, ".alpackages");
+
+      try {
+        await ensureDir(alpackagesDir);
+
+        // Copy all prereq .app files to .alpackages
+        for (const prereq of compiledPrereqs) {
+          if (prereq.compiledAppPath) {
+            const appFileName = basename(prereq.compiledAppPath);
+            const destPath = join(alpackagesDir, appFileName);
+            await Deno.copyFile(prereq.compiledAppPath, destPath);
+          }
+        }
+
+        // Update app.json with ALL prereq dependencies (for transitive resolution)
+        const appJsonContent = await Deno.readTextFile(appJsonPath);
+        const appJson = JSON.parse(appJsonContent);
+        const deps = appJson["dependencies"] || [];
+
+        for (const prereq of compiledPrereqs) {
+          const prereqId = prereq.appJson["id"] as string;
+          if (!deps.some((d: { id: string }) => d.id === prereqId)) {
+            deps.push({
+              id: prereqId,
+              name: prereq.appJson["name"],
+              publisher: prereq.appJson["publisher"],
+              version: prereq.appJson["version"],
+            });
+          }
+        }
+        appJson["dependencies"] = deps;
+        await Deno.writeTextFile(
+          appJsonPath,
+          JSON.stringify(appJson, null, 2),
+        );
+      } catch (e) {
+        console.error(`[Prereq] Failed to inject dependency: ${e}`);
+      }
+    }
+
+    // Load the project (after prereq injection)
     const project = await ALProjectManager.loadProject(projectDir);
 
     // Compile (track time separately)
@@ -218,10 +472,12 @@ export class CompileQueue {
     let testResult: TestResult | undefined;
     let testDuration: number | undefined;
     if (compilationResult.success && item.context.manifest.expected.testApp) {
+      // Prereqs are already published after compilation - just run tests
       const testStart = Date.now();
       testResult = await this.containerProvider.runTests(
         this.containerName,
         project,
+        compilationResult.artifactPath,
       );
       testDuration = Date.now() - testStart;
 
@@ -237,7 +493,7 @@ export class CompileQueue {
       }
     }
 
-    // Save verbose artifacts (AL files and .app) before cleanup
+    // Save verbose artifacts (AL files and .app) before cleanup (cleanup is in finally block)
     if (debugLogger) {
       await debugLogger.saveVerboseArtifacts(
         item.context.manifest.id,
@@ -247,9 +503,6 @@ export class CompileQueue {
         compilationResult.artifactPath,
       );
     }
-
-    // Clean up temp project
-    await this.cleanupTempProject(projectDir);
 
     const result: CompileWorkResult = {
       workItemId: item.id,

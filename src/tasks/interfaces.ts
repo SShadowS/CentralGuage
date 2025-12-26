@@ -65,6 +65,8 @@ export interface TaskManifest {
     tags?: string[] | undefined;
     /** Estimated token usage */
     estimatedTokens?: number | undefined;
+    /** App target: OnPrem required for HttpClient, NavApp, etc. */
+    target?: "Cloud" | "OnPrem" | undefined;
   } | undefined;
 
   /** Task-specific prompt injections */

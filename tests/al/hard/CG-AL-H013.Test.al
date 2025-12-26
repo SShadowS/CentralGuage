@@ -126,7 +126,7 @@ codeunit 80014 "CG-AL-H013 Test"
 
         Assert.IsTrue(Result.Contains('15'), 'Should contain 15');
         Assert.IsTrue(Result.Contains('25'), 'Should contain 25');
-        Assert.IsFalse(Result.Contains('5,') or Result.StartsWith('5'), 'Should not contain 5');
+        Assert.IsFalse(Result.Contains(',5,') or Result.StartsWith('5,') or Result.EndsWith(',5') or (Result = '5'), 'Should not contain 5');
         Assert.IsFalse(Result.Contains('8'), 'Should not contain 8');
         Assert.IsFalse(Result.Contains(',10,') or Result.EndsWith(',10'), 'Should not contain 10 (at threshold)');
     end;

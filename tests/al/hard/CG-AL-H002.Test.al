@@ -6,6 +6,36 @@ codeunit 80002 "CG-AL-H002 Test"
     var
         Assert: Codeunit Assert;
 
+    local procedure CleanupTestData(WhsCode: Code[10])
+    var
+        Warehouse: Record "CG Warehouse";
+        WarehouseEntry: Record "CG Warehouse Entry";
+    begin
+        // Clean up any existing test data to ensure test isolation
+        // Delete entries first (child records) to avoid FK issues
+        WarehouseEntry.Reset();
+        WarehouseEntry.SetRange("Warehouse Code", WhsCode);
+        WarehouseEntry.DeleteAll(true);
+
+        if Warehouse.Get(WhsCode) then
+            Warehouse.Delete(true);
+    end;
+
+    local procedure CleanupAllTestData()
+    var
+        Warehouse: Record "CG Warehouse";
+        WarehouseEntry: Record "CG Warehouse Entry";
+    begin
+        // Clean up ALL test warehouse data (WHS001-WHS004)
+        WarehouseEntry.Reset();
+        WarehouseEntry.SetFilter("Warehouse Code", 'WHS001|WHS002|WHS003|WHS004');
+        WarehouseEntry.DeleteAll(true);
+
+        Warehouse.Reset();
+        Warehouse.SetFilter(Code, 'WHS001|WHS002|WHS003|WHS004');
+        Warehouse.DeleteAll(true);
+    end;
+
     [Test]
     procedure TestFlowFieldSum()
     var
@@ -15,6 +45,9 @@ codeunit 80002 "CG-AL-H002 Test"
     begin
         // [SCENARIO] FlowField sums quantities correctly
         WhsCode := 'WHS001';
+
+        // [GIVEN] Clean state - remove any existing test data
+        CleanupAllTestData();
 
         Warehouse.Init();
         Warehouse.Code := WhsCode;
@@ -57,6 +90,9 @@ codeunit 80002 "CG-AL-H002 Test"
     begin
         // [SCENARIO] FlowField counts entries correctly
         WhsCode := 'WHS002';
+
+        // [GIVEN] Clean state - remove any existing test data
+        CleanupTestData(WhsCode);
 
         Warehouse.Init();
         Warehouse.Code := WhsCode;
@@ -104,6 +140,9 @@ codeunit 80002 "CG-AL-H002 Test"
         // [SCENARIO] FlowField handles negative quantities
         WhsCode := 'WHS003';
 
+        // [GIVEN] Clean state - remove any existing test data
+        CleanupTestData(WhsCode);
+
         Warehouse.Init();
         Warehouse.Code := WhsCode;
         Warehouse.Name := 'Test Warehouse 3';
@@ -140,6 +179,9 @@ codeunit 80002 "CG-AL-H002 Test"
     begin
         // [SCENARIO] FlowField is 0 when no entries exist
         WhsCode := 'WHS004';
+
+        // [GIVEN] Clean state - remove any existing test data
+        CleanupTestData(WhsCode);
 
         Warehouse.Init();
         Warehouse.Code := WhsCode;

@@ -54,8 +54,8 @@ codeunit 80022 "CG-AL-H022 Test"
         TableName: Text;
     begin
         // [SCENARIO] GetTableName works for custom tables
-        // [WHEN] Getting name for our helper table (70225)
-        TableName := DynamicHandler.GetTableName(70225);
+        // [WHEN] Getting name for our helper table (69225 from prereq)
+        TableName := DynamicHandler.GetTableName(69225);
 
         // [THEN] Returns 'CG Test Record'
         Assert.AreEqual('CG Test Record', TableName, 'Should return helper table name');
@@ -70,7 +70,7 @@ codeunit 80022 "CG-AL-H022 Test"
     begin
         // [SCENARIO] GetPrimaryKeyFieldCount returns 1 for single-field PK
         // [WHEN] Getting PK field count for CG Test Record (single field PK)
-        FieldCount := DynamicHandler.GetPrimaryKeyFieldCount(70225);
+        FieldCount := DynamicHandler.GetPrimaryKeyFieldCount(69225);
 
         // [THEN] Returns 1
         Assert.AreEqual(1, FieldCount, 'CG Test Record has single field PK');
@@ -364,7 +364,7 @@ codeunit 80022 "CG-AL-H022 Test"
     begin
         // [SCENARIO] ApplyFilterString applies valid filter
         // [GIVEN] A record ref
-        RecRef.Open(70225);
+        RecRef.Open(69225);
         FilterStr := 'WHERE(Code=FILTER(TEST*))';
 
         // [WHEN] Applying filter
@@ -385,7 +385,7 @@ codeunit 80022 "CG-AL-H022 Test"
     begin
         // [SCENARIO] GetRelatedTableId returns related table for field with TableRelation
         // [WHEN] Getting relation for "Customer No." field (field 5) in CG Test Record
-        RelatedTableId := DynamicHandler.GetRelatedTableId(70225, 5);
+        RelatedTableId := DynamicHandler.GetRelatedTableId(69225, 5);
 
         // [THEN] Returns Customer table ID (18)
         Assert.AreEqual(Database::Customer, RelatedTableId, 'Should return Customer table ID');
@@ -398,7 +398,7 @@ codeunit 80022 "CG-AL-H022 Test"
     begin
         // [SCENARIO] GetRelatedTableId returns 0 for field without relation
         // [WHEN] Getting relation for "Description" field (field 2) in CG Test Record
-        RelatedTableId := DynamicHandler.GetRelatedTableId(70225, 2);
+        RelatedTableId := DynamicHandler.GetRelatedTableId(69225, 2);
 
         // [THEN] Returns 0
         Assert.AreEqual(0, RelatedTableId, 'Should return 0 for field without relation');
@@ -411,7 +411,7 @@ codeunit 80022 "CG-AL-H022 Test"
     begin
         // [SCENARIO] GetRelatedTableId returns 0 for non-existent field
         // [WHEN] Getting relation for non-existent field
-        RelatedTableId := DynamicHandler.GetRelatedTableId(70225, 999);
+        RelatedTableId := DynamicHandler.GetRelatedTableId(69225, 999);
 
         // [THEN] Returns 0
         Assert.AreEqual(0, RelatedTableId, 'Should return 0 for non-existent field');

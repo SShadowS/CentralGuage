@@ -40,7 +40,7 @@ codeunit 80011 "CG-AL-M001 Test"
         ProductAPI.Close();
 
         // [THEN] Product is created
-        Product.SetRange("Product Code", ProductCode);
+        Product.SetRange("No.", ProductCode);
         Assert.IsTrue(Product.FindFirst(), 'Product should be created');
 
         // Cleanup
@@ -62,7 +62,7 @@ codeunit 80011 "CG-AL-M001 Test"
         ProductAPI.GoToRecord(Product);
 
         // [THEN] Data is displayed correctly
-        ProductAPI.productCode.AssertEquals(Product."Product Code");
+        ProductAPI.productCode.AssertEquals(Product."No.");
         ProductAPI.description.AssertEquals(Product.Description);
 
         ProductAPI.Close();
@@ -238,7 +238,7 @@ codeunit 80011 "CG-AL-M001 Test"
     local procedure CreateTestProduct(var Product: Record Product)
     begin
         Product.Init();
-        Product."Product Code" := CopyStr(LibraryRandom.RandText(10), 1, 20);
+        Product."No." := CopyStr(LibraryRandom.RandText(10), 1, 20);
         Product.Description := 'Test Product';
         Product."Unit Price" := 50.00;
         Product."Stock Quantity" := 100;

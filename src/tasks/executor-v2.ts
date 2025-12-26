@@ -29,6 +29,104 @@ import {
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import type { InjectionStage } from "../prompts/mod.ts";
 
+/**
+ * Prereq app information
+ */
+interface PrereqApp {
+  path: string;
+  appJson: Record<string, unknown>;
+  compiledAppPath?: string | undefined;
+}
+
+/**
+ * Find prereq app directory for a given task ID.
+ */
+async function findPrereqApp(
+  taskId: string,
+  projectRoot: string,
+): Promise<PrereqApp | null> {
+  const prereqDir = join(projectRoot, "tests", "al", "dependencies", taskId);
+
+  try {
+    const stat = await Deno.stat(prereqDir);
+    if (!stat.isDirectory) return null;
+
+    const appJsonPath = join(prereqDir, "app.json");
+    const appJsonContent = await Deno.readTextFile(appJsonPath);
+    const appJson = JSON.parse(appJsonContent) as Record<string, unknown>;
+
+    return { path: prereqDir, appJson };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find prereq app by its app ID (used for resolving dependencies).
+ */
+async function findPrereqAppById(
+  appId: string,
+  projectRoot: string,
+): Promise<PrereqApp | null> {
+  const depsDir = join(projectRoot, "tests", "al", "dependencies");
+
+  try {
+    for await (const entry of Deno.readDir(depsDir)) {
+      if (!entry.isDirectory) continue;
+
+      const appJsonPath = join(depsDir, entry.name, "app.json");
+      try {
+        const content = await Deno.readTextFile(appJsonPath);
+        const appJson = JSON.parse(content) as Record<string, unknown>;
+        if (appJson["id"] === appId) {
+          return { path: join(depsDir, entry.name), appJson };
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Find all prereq apps needed for a task, in dependency order.
+ */
+async function findAllPrereqApps(
+  taskId: string,
+  projectRoot: string,
+): Promise<PrereqApp[]> {
+  const result: PrereqApp[] = [];
+  const visited = new Set<string>();
+
+  async function collectDeps(prereq: PrereqApp): Promise<void> {
+    const appId = prereq.appJson["id"] as string;
+    if (visited.has(appId)) return;
+    visited.add(appId);
+
+    const deps = prereq.appJson["dependencies"] as
+      | Array<{ id: string }>
+      | undefined || [];
+    for (const dep of deps) {
+      const depPrereq = await findPrereqAppById(dep.id, projectRoot);
+      if (depPrereq) {
+        await collectDeps(depPrereq);
+      }
+    }
+
+    result.push(prereq);
+  }
+
+  const mainPrereq = await findPrereqApp(taskId, projectRoot);
+  if (mainPrereq) {
+    await collectDeps(mainPrereq);
+  }
+
+  return result;
+}
+
 export class TaskExecutorV2 {
   private templateRenderer: TemplateRenderer | null = null;
 
@@ -439,6 +537,11 @@ export class TaskExecutorV2 {
       idRanges: [{ from: 70000, to: 89999 }],
     };
 
+    // Add target if specified (OnPrem required for HttpClient, NavApp, etc.)
+    if (context.manifest.metadata?.target) {
+      appJson["target"] = context.manifest.metadata.target;
+    }
+
     // Add test toolkit dependencies if testApp is specified
     if (hasTestApp) {
       appJson["dependencies"] = [
@@ -755,12 +858,91 @@ export class TaskExecutorV2 {
       code,
       attemptNumber,
     );
-    const project = await ALProjectManager.loadProject(projectDir);
 
-    // Compile
+    // Get container provider
     const containerProvider = ContainerProviderRegistry.create(
       context.containerProvider,
     );
+
+    // Find and compile prereq apps
+    const taskId = context.manifest.id;
+    const projectRoot = Deno.cwd();
+    console.log(
+      `[Prereq] Looking for prereqs for task ${taskId} in ${projectRoot}`,
+    );
+    const prereqApps = await findAllPrereqApps(taskId, projectRoot);
+    console.log(`[Prereq] Found ${prereqApps.length} prereq app(s)`);
+    const compiledPrereqs: PrereqApp[] = [];
+
+    for (const prereq of prereqApps) {
+      const prereqProject = await ALProjectManager.loadProject(prereq.path);
+      const prereqCompileResult = await containerProvider.compileProject(
+        context.containerName,
+        prereqProject,
+      );
+      if (!prereqCompileResult.success) {
+        console.error(
+          `[Prereq] Compilation failed for ${prereq.appJson["name"]}: ${
+            prereqCompileResult.errors.map((e) => e.message).join(", ")
+          }`,
+        );
+        // Continue without prereq - will likely fail later
+      } else {
+        compiledPrereqs.push({
+          ...prereq,
+          compiledAppPath: prereqCompileResult.artifactPath,
+        });
+      }
+    }
+
+    // Inject prereq dependencies into main app.json and copy symbols if we have prereqs
+    const lastPrereq = compiledPrereqs[compiledPrereqs.length - 1];
+    if (lastPrereq) {
+      const appJsonPath = join(projectDir, "app.json");
+      const alpackagesDir = join(projectDir, ".alpackages");
+
+      try {
+        // Ensure .alpackages directory exists
+        await ensureDir(alpackagesDir);
+
+        // Copy all prereq .app files to .alpackages so they're available as symbols
+        for (const prereq of compiledPrereqs) {
+          if (prereq.compiledAppPath) {
+            const appFileName = basename(prereq.compiledAppPath);
+            const destPath = join(alpackagesDir, appFileName);
+            await Deno.copyFile(prereq.compiledAppPath, destPath);
+            console.log(`[Prereq] Copied ${appFileName} to .alpackages`);
+          }
+        }
+
+        // Update app.json with prereq dependencies
+        const appJsonContent = await Deno.readTextFile(appJsonPath);
+        const appJson = JSON.parse(appJsonContent);
+        const deps = appJson["dependencies"] || [];
+
+        // Add prereq as dependency if not already present
+        const prereqId = lastPrereq.appJson["id"] as string;
+        if (!deps.some((d: { id: string }) => d.id === prereqId)) {
+          deps.push({
+            id: prereqId,
+            name: lastPrereq.appJson["name"],
+            publisher: lastPrereq.appJson["publisher"],
+            version: lastPrereq.appJson["version"],
+          });
+          appJson["dependencies"] = deps;
+          await Deno.writeTextFile(
+            appJsonPath,
+            JSON.stringify(appJson, null, 2),
+          );
+        }
+      } catch (e) {
+        console.error(`[Prereq] Failed to inject dependency: ${e}`);
+      }
+    }
+
+    const project = await ALProjectManager.loadProject(projectDir);
+
+    // Compile
     const compilationResult = await containerProvider.compileProject(
       context.containerName,
       project,
@@ -781,6 +963,15 @@ export class TaskExecutorV2 {
     // Run tests if required and compilation succeeded
     let testResult: TestResult | undefined;
     if (compilationResult.success && context.manifest.expected.testApp) {
+      // Publish prereq apps before running tests
+      const prereqAppPaths = compiledPrereqs
+        .map((p) => p.compiledAppPath)
+        .filter((p): p is string => p !== undefined);
+
+      for (const prereqPath of prereqAppPaths) {
+        await containerProvider.publishApp(context.containerName, prereqPath);
+      }
+
       testResult = await containerProvider.runTests(
         context.containerName,
         project,

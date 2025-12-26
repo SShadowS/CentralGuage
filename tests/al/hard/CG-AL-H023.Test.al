@@ -68,7 +68,7 @@ codeunit 80025 "CG-AL-H023 Test"
         Assert.AreEqual('CG Test Record', JsonToken.AsValue().AsText(), 'TableName should match');
 
         Assert.IsTrue(MetadataObj.Get('TableId', JsonToken), 'Should have TableId');
-        Assert.AreEqual(70225, JsonToken.AsValue().AsInteger(), 'TableId should be 70225');
+        Assert.AreEqual(69225, JsonToken.AsValue().AsInteger(), 'TableId should be 69225');
 
         // Cleanup
         TestRecord.Delete();
@@ -107,7 +107,7 @@ codeunit 80025 "CG-AL-H023 Test"
     begin
         // [SCENARIO] DeserializeFromJson populates RecordRef from JSON
         // [GIVEN] JSON with valid data and metadata
-        MetadataObj.Add('TableId', 70225);
+        MetadataObj.Add('TableId', 69225);
         MetadataObj.Add('TableName', 'CG Test Record');
         JsonData.Add('_metadata', MetadataObj);
         JsonData.Add('Code', 'DES001');
@@ -115,7 +115,7 @@ codeunit 80025 "CG-AL-H023 Test"
         JsonData.Add('Amount', 999.99);
         JsonData.Add('Active', false);
 
-        RecRef.Open(70225);
+        RecRef.Open(69225);
 
         // [WHEN] Deserializing
         Success := Introspector.DeserializeFromJson(JsonData, RecRef);
@@ -142,7 +142,7 @@ codeunit 80025 "CG-AL-H023 Test"
         JsonData.Add('_metadata', MetadataObj);
         JsonData.Add('Code', 'TEST');
 
-        RecRef.Open(70225); // CG Test Record
+        RecRef.Open(69225); // CG Test Record
 
         // [WHEN] Deserializing
         Success := Introspector.DeserializeFromJson(JsonData, RecRef);
@@ -246,7 +246,7 @@ codeunit 80025 "CG-AL-H023 Test"
         SourceRecord.Active := true;
         SourceRecord."Customer No." := '';
 
-        DestRecRef.Open(70225);
+        DestRecRef.Open(69225);
 
         // [WHEN] Cloning
         Success := Introspector.CloneRecord(SourceRecord, DestRecRef);
@@ -299,7 +299,7 @@ codeunit 80025 "CG-AL-H023 Test"
     begin
         // [SCENARIO] GetTableSchema returns complete field info
         // [WHEN] Getting schema for CG Test Record
-        Schema := Introspector.GetTableSchema(70225);
+        Schema := Introspector.GetTableSchema(69225);
 
         // [THEN] Returns array with field info
         Assert.IsTrue(Schema.Count >= 5, 'Should have at least 5 fields');
@@ -327,7 +327,7 @@ codeunit 80025 "CG-AL-H023 Test"
     begin
         // [SCENARIO] GetTableSchema correctly identifies primary key fields
         // [WHEN] Getting schema for CG Test Record
-        Schema := Introspector.GetTableSchema(70225);
+        Schema := Introspector.GetTableSchema(69225);
 
         // [THEN] Code field (field 1) should be marked as PK
         FoundPKField := false;
@@ -356,7 +356,7 @@ codeunit 80025 "CG-AL-H023 Test"
     begin
         // [SCENARIO] GetTableSchema includes table relation info
         // [WHEN] Getting schema for CG Test Record
-        Schema := Introspector.GetTableSchema(70225);
+        Schema := Introspector.GetTableSchema(69225);
 
         // [THEN] Customer No. field should have relation to Customer table
         FoundRelation := false;
@@ -386,7 +386,7 @@ codeunit 80025 "CG-AL-H023 Test"
         // [SCENARIO] BuildDynamicFilter applies filter by field name
         // [GIVEN] Filter criteria
         FilterCriteria.Add('Code', 'TEST*');
-        RecRef.Open(70225);
+        RecRef.Open(69225);
 
         // [WHEN] Building filter
         Success := Introspector.BuildDynamicFilter(RecRef, FilterCriteria);
@@ -410,7 +410,7 @@ codeunit 80025 "CG-AL-H023 Test"
         // [GIVEN] Multiple filter criteria
         FilterCriteria.Add('Code', 'A*');
         FilterCriteria.Add('Active', 'true');
-        RecRef.Open(70225);
+        RecRef.Open(69225);
 
         // [WHEN] Building filter
         Success := Introspector.BuildDynamicFilter(RecRef, FilterCriteria);
@@ -431,7 +431,7 @@ codeunit 80025 "CG-AL-H023 Test"
         // [SCENARIO] BuildDynamicFilter returns false for invalid field
         // [GIVEN] Filter with non-existent field
         FilterCriteria.Add('NonExistentField', 'Value');
-        RecRef.Open(70225);
+        RecRef.Open(69225);
 
         // [WHEN] Building filter
         Success := Introspector.BuildDynamicFilter(RecRef, FilterCriteria);
@@ -461,7 +461,7 @@ codeunit 80025 "CG-AL-H023 Test"
         KeyValues.Add('FIND001');
 
         // [WHEN] Looking up by PK
-        Found := Introspector.GetRecordByPrimaryKey(70225, KeyValues, ResultRecRef);
+        Found := Introspector.GetRecordByPrimaryKey(69225, KeyValues, ResultRecRef);
 
         // [THEN] Record is found
         Assert.IsTrue(Found, 'Should find the record');
@@ -485,7 +485,7 @@ codeunit 80025 "CG-AL-H023 Test"
         KeyValues.Add('NONEXISTENT999');
 
         // [WHEN] Looking up
-        Found := Introspector.GetRecordByPrimaryKey(70225, KeyValues, ResultRecRef);
+        Found := Introspector.GetRecordByPrimaryKey(69225, KeyValues, ResultRecRef);
 
         // [THEN] Not found
         Assert.IsFalse(Found, 'Should not find non-existent record');
@@ -575,7 +575,7 @@ codeunit 80025 "CG-AL-H023 Test"
         ParentRecRef.GetTable(ParentRecord);
 
         // [WHEN] Finding related records
-        RelatedIds := Introspector.FindRelatedRecords(ParentRecRef, 70228); // CG Related Record table
+        RelatedIds := Introspector.FindRelatedRecords(ParentRecRef, 69228); // CG Related Record table
 
         // [THEN] Both children found
         Assert.AreEqual(2, RelatedIds.Count, 'Should find 2 related records');
@@ -603,7 +603,7 @@ codeunit 80025 "CG-AL-H023 Test"
         ParentRecRef.GetTable(ParentRecord);
 
         // [WHEN] Finding related records
-        RelatedIds := Introspector.FindRelatedRecords(ParentRecRef, 70228);
+        RelatedIds := Introspector.FindRelatedRecords(ParentRecRef, 69228);
 
         // [THEN] Empty list
         Assert.AreEqual(0, RelatedIds.Count, 'Should find no related records');

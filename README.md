@@ -359,6 +359,26 @@ deno run --allow-all cli/centralgauge.ts stats-cost --group task
 
 The task set hash uniquely identifies which tasks were run in a benchmark. Runs with the same hash tested the same set of tasks, making them directly comparable for model performance analysis. Use `--task-set` to filter and compare runs across identical task sets.
 
+### Reports Filtered by Current Tasks
+
+Generate reports that only include runs matching your current task/test files:
+
+```bash
+# Filter by hash of current task files (all tasks)
+deno run --allow-all cli/centralgauge.ts report-from-db --current-tasks
+
+# Filter by specific task patterns
+deno run --allow-all cli/centralgauge.ts report-from-db --current-tasks --tasks "tasks/easy/*.yml"
+
+# Combine with interactive mode (pre-filter, then select runs)
+deno run --allow-all cli/centralgauge.ts report-from-db --current-tasks --interactive
+
+# List available task sets to see which hashes have runs
+deno run --allow-all cli/centralgauge.ts report-from-db --list-sets
+```
+
+This is useful when you've modified task definitions or test files and want to see only the benchmark runs that match the current state of your files.
+
 ### Database Location
 
 Stats are stored in `results/centralgauge.db` by default. Use `--db <path>` to specify a different location.

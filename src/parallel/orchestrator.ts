@@ -20,7 +20,7 @@ import type {
 } from "./types.ts";
 import { createDefaultConfig } from "./types.ts";
 import { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";
-import { CompileQueue } from "./compile-queue.ts";
+import { CompileQueue, CriticalError } from "./compile-queue.ts";
 import { buildTaskComparison, ResultAggregator } from "./result-aggregator.ts";
 import { ProviderRateLimiter } from "./rate-limiter.ts";
 import { ContainerProviderRegistry } from "../container/registry.ts";
@@ -230,8 +230,14 @@ export class ParallelBenchmarkOrchestrator {
       models: variants.map((v) => v.variantId),
     });
 
+    // Track any critical errors that should abort the run
+    let criticalError: Error | null = null;
+
     // Process each variant (in parallel)
     const promises = variants.map(async (variant) => {
+      // Skip if we already hit a critical error
+      if (criticalError) return;
+
       try {
         const result = await this.processTaskForVariant(
           manifest,
@@ -244,6 +250,19 @@ export class ParallelBenchmarkOrchestrator {
         this.emit({ type: "result", result });
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
+
+        // Check for critical errors that should abort the entire run
+        if (CriticalError.isCriticalError(error)) {
+          criticalError = err;
+          this.emit({
+            type: "error",
+            taskId: manifest.id,
+            model: variant.variantId,
+            error: err,
+          });
+          return; // Don't add to failures, will abort after
+        }
+
         failures.set(variant.variantId, err);
         this.errors.push(`${manifest.id}/${variant.variantId}: ${err.message}`);
 
@@ -257,6 +276,11 @@ export class ParallelBenchmarkOrchestrator {
     });
 
     await Promise.allSettled(promises);
+
+    // If a critical error occurred, abort the entire benchmark
+    if (criticalError) {
+      throw criticalError;
+    }
 
     const comparison = buildTaskComparison(manifest.id, modelResults);
 

@@ -42,9 +42,7 @@ codeunit 80016 "CG-AL-M006 Test"
         // [THEN] Error is raised
         asserterror Customer.Validate("Credit Score", 200);
         Assert.ExpectedError('Credit Score must be between 300 and 850');
-
-        // Cleanup
-        Customer.Delete();
+        // No cleanup needed - asserterror rolls back the transaction
     end;
 
     [Test]

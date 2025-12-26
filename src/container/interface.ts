@@ -22,9 +22,17 @@ export interface ContainerProvider {
     containerName: string,
     project: ALProject,
   ): Promise<CompilationResult>;
+
+  // Publish an app to the container (install and sync)
+  publishApp(
+    containerName: string,
+    appPath: string,
+  ): Promise<void>;
+
   runTests(
     containerName: string,
     project: ALProject,
+    appFilePath?: string,
   ): Promise<TestResult>;
 
   // File operations
@@ -47,4 +55,7 @@ export interface ContainerProvider {
 
   // Health checks
   isHealthy(containerName: string): Promise<boolean>;
+
+  // Cleanup operations (optional - not all providers need this)
+  cleanupCompilerFolders?(): Promise<void>;
 }

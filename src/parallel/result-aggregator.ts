@@ -502,7 +502,7 @@ export class ResultAggregator {
  * Build a task comparison from individual results
  */
 export function buildTaskComparison(
-  _taskId: string,
+  taskId: string,
   modelResults: Map<string, TaskExecutionResult>,
 ): TaskComparison {
   const scores: Array<{ model: string; score: number }> = [];
@@ -535,6 +535,7 @@ export function buildTaskComparison(
   const best = scores[0];
 
   const comparison: TaskComparison = {
+    taskId,
     bestScore: best ? best.score : 0,
     avgScore,
     passingModels,

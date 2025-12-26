@@ -27,6 +27,8 @@ description: >-
 
   Include Access = Public on the codeunit.
   Use HttpClient, HttpRequestMessage, HttpResponseMessage, and HttpContent appropriately.
+metadata:
+  target: OnPrem
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M022.Test.al

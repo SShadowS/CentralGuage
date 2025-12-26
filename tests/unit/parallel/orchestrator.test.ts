@@ -1531,6 +1531,7 @@ describe("ParallelBenchmarkOrchestrator - Dependency Injection", () => {
                 output: "ok",
                 duration: 100,
               }),
+            publishApp: () => Promise.resolve(),
             runTests: () =>
               Promise.resolve({
                 success: true,

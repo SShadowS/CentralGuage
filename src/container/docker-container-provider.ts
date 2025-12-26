@@ -324,9 +324,19 @@ export class DockerContainerProvider implements ContainerProvider {
     }
   }
 
+  publishApp(
+    _containerName: string,
+    _appPath: string,
+  ): Promise<void> {
+    return Promise.reject(
+      new Error("publishApp not implemented for Docker provider"),
+    );
+  }
+
   async runTests(
     containerName: string,
     project: ALProject,
+    _appFilePath?: string,
   ): Promise<TestResult> {
     console.log(`🧪 [Docker] Running tests in container: ${containerName}`);
 

@@ -1,4 +1,4 @@
-table 70228 "CG Related Record"
+table 69228 "CG Related Record"
 {
     Caption = 'CG Related Record';
     DataClassification = CustomerContent;

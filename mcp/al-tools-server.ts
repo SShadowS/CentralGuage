@@ -136,6 +136,12 @@ const TOOLS: Tool[] = [
           description:
             `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
         },
+        target: {
+          type: "string",
+          enum: ["Cloud", "OnPrem"],
+          description:
+            "App target. Use 'OnPrem' for features like HttpClient, NavApp. Default: Cloud.",
+        },
       },
       required: ["projectDir", "testFile"],
     },
@@ -255,16 +261,176 @@ function ensureTestCodeunitRange(appJson: AppJson): void {
 }
 
 /**
+ * Extract task ID from a test file path.
+ * e.g., "tests/al/easy/CG-AL-E002.Test.al" -> "CG-AL-E002"
+ */
+function extractTaskIdFromTestPath(testFilePath: string): string | null {
+  const fileName = basename(testFilePath);
+  const match = fileName.match(/^(CG-AL-[A-Z]\d+)/);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Extract project root from a test file path.
+ * Looks for the "tests/al/" marker in the path and returns the parent.
+ */
+function extractProjectRoot(testFilePath: string): string {
+  const normalized = testFilePath.replace(/\\/g, "/");
+  const testsAlIndex = normalized.indexOf("tests/al/");
+  if (testsAlIndex > 0) {
+    return normalized.substring(0, testsAlIndex);
+  }
+  return Deno.cwd();
+}
+
+/**
+ * Find prereq app directory for a given task ID.
+ * Checks for tests/al/dependencies/{task-id}/ directory.
+ */
+async function findPrereqApp(
+  taskId: string,
+  projectRoot: string,
+): Promise<{ path: string; appJson: AppJson } | null> {
+  // Resolve path relative to project root
+  const prereqDir = join(
+    projectRoot,
+    "tests",
+    "al",
+    "dependencies",
+    taskId,
+  );
+
+  try {
+    const stat = await Deno.stat(prereqDir);
+    if (!stat.isDirectory) return null;
+
+    // Check for app.json
+    const appJsonPath = join(prereqDir, "app.json");
+    const appJsonContent = await Deno.readTextFile(appJsonPath);
+    const appJson = JSON.parse(appJsonContent) as AppJson;
+
+    return { path: prereqDir, appJson };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find prereq app by its app ID (used for resolving dependencies).
+ */
+async function findPrereqAppById(
+  appId: string,
+  projectRoot: string,
+): Promise<{ path: string; appJson: AppJson } | null> {
+  const depsDir = join(projectRoot, "tests", "al", "dependencies");
+
+  try {
+    for await (const entry of Deno.readDir(depsDir)) {
+      if (!entry.isDirectory) continue;
+
+      const appJsonPath = join(depsDir, entry.name, "app.json");
+      try {
+        const content = await Deno.readTextFile(appJsonPath);
+        const appJson = JSON.parse(content) as AppJson;
+        if (appJson["id"] === appId) {
+          return { path: join(depsDir, entry.name), appJson };
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Find all prereq apps needed for a task, in dependency order.
+ * Returns array with dependencies first, then the main prereq.
+ */
+async function findAllPrereqApps(
+  taskId: string,
+  projectRoot: string,
+): Promise<Array<{ path: string; appJson: AppJson }>> {
+  const result: Array<{ path: string; appJson: AppJson }> = [];
+  const visited = new Set<string>();
+
+  async function collectDeps(
+    prereq: { path: string; appJson: AppJson },
+  ): Promise<void> {
+    const appId = prereq.appJson["id"] as string;
+    if (visited.has(appId)) return;
+    visited.add(appId);
+
+    // First, process dependencies
+    const deps = prereq.appJson.dependencies || [];
+    for (const dep of deps) {
+      // Check if this dependency is one of our prereq apps
+      const depPrereq = await findPrereqAppById(dep.id, projectRoot);
+      if (depPrereq) {
+        await collectDeps(depPrereq);
+      }
+    }
+
+    // Then add this prereq
+    result.push(prereq);
+  }
+
+  const mainPrereq = await findPrereqApp(taskId, projectRoot);
+  if (mainPrereq) {
+    await collectDeps(mainPrereq);
+  }
+
+  return result;
+}
+
+/**
+ * Add prereq app as dependency to app.json.
+ */
+function ensurePrereqDependency(
+  appJson: AppJson,
+  prereqAppJson: AppJson,
+): void {
+  if (!appJson.dependencies) {
+    appJson.dependencies = [];
+  }
+
+  const prereqId = prereqAppJson["id"] as string;
+  const exists = appJson.dependencies.some((d) => d.id === prereqId);
+  if (!exists) {
+    appJson.dependencies.push({
+      id: prereqId,
+      name: prereqAppJson["name"] as string,
+      publisher: prereqAppJson["publisher"] as string,
+      version: prereqAppJson["version"] as string,
+    });
+  }
+}
+
+/**
  * Prepare app.json for test verification by adding dependencies and ID ranges.
  */
 async function prepareAppJsonForTesting(
   sourceDir: string,
   targetDir: string,
+  prereqAppJson?: AppJson,
+  appTarget?: "Cloud" | "OnPrem",
 ): Promise<{ success: true } | { success: false; message: string }> {
   const appJsonPath = join(sourceDir, "app.json");
   try {
     const appJsonContent = await Deno.readTextFile(appJsonPath);
     const appJson = JSON.parse(appJsonContent) as AppJson;
+
+    // Add prereq dependency if provided
+    if (prereqAppJson) {
+      ensurePrereqDependency(appJson, prereqAppJson);
+    }
+
+    // Set target if provided (OnPrem required for HttpClient, NavApp, etc.)
+    if (appTarget) {
+      appJson["target"] = appTarget;
+    }
 
     ensureTestDependencies(appJson);
     ensureTestCodeunitRange(appJson);
@@ -497,10 +663,54 @@ async function handleAlVerify(params: {
   projectDir: string;
   testFile: string;
   containerName?: string;
+  target?: "Cloud" | "OnPrem";
 }): Promise<VerifyResult> {
   const containerName = params.containerName || DEFAULT_CONTAINER;
 
   try {
+    // Check for prereq apps based on task ID (handles dependency chains)
+    const taskId = extractTaskIdFromTestPath(params.testFile);
+    const projectRoot = extractProjectRoot(params.testFile);
+    const prereqApps: Array<{
+      path: string;
+      appJson: AppJson;
+      compiledAppPath: string | undefined;
+    }> = [];
+
+    if (taskId) {
+      // Find all prereqs in dependency order
+      const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
+      console.error(
+        `[DEBUG] Found ${allPrereqs.length} prereq(s) for ${taskId} in ${projectRoot}`,
+      );
+
+      for (const prereq of allPrereqs) {
+        // Compile each prereq in order
+        const prereqProject = await buildALProject(prereq.path, false);
+        const prereqCompileResult = await containerProvider.compileProject(
+          containerName,
+          prereqProject,
+        );
+        if (!prereqCompileResult.success) {
+          return {
+            success: false,
+            message: `Prereq app compilation failed for ${
+              prereq.appJson["name"]
+            }`,
+            compileErrors: prereqCompileResult.errors.map(
+              (e) =>
+                `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
+            ),
+          };
+        }
+        prereqApps.push({
+          path: prereq.path,
+          appJson: prereq.appJson,
+          compiledAppPath: prereqCompileResult.artifactPath,
+        });
+      }
+    }
+
     // Create isolated verification directory
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 8);
@@ -511,10 +721,15 @@ async function handleAlVerify(params: {
     );
     await ensureDir(verifyDir);
 
-    // Prepare app.json with test dependencies
+    // Prepare app.json with test dependencies (and prereq dependencies if exist)
+    // Only add the last prereq as direct dependency - it will chain to others
+    const lastPrereq = prereqApps[prereqApps.length - 1];
+    const mainPrereqAppJson = lastPrereq?.appJson;
     const appJsonResult = await prepareAppJsonForTesting(
       params.projectDir,
       verifyDir,
+      mainPrereqAppJson,
+      params.target,
     );
     if (!appJsonResult.success) {
       return { success: false, message: appJsonResult.message };
@@ -543,8 +758,22 @@ async function handleAlVerify(params: {
       };
     }
 
-    // Run tests and return result
-    const testResult = await containerProvider.runTests(containerName, project);
+    // Publish prereq apps in order before running tests
+    for (const prereqApp of prereqApps) {
+      if (prereqApp.compiledAppPath) {
+        await containerProvider.publishApp(
+          containerName,
+          prereqApp.compiledAppPath,
+        );
+      }
+    }
+
+    // Run tests
+    const testResult = await containerProvider.runTests(
+      containerName,
+      project,
+      compileResult.artifactPath,
+    );
     if (testResult.success) {
       return {
         success: true,
@@ -608,7 +837,12 @@ const TOOL_HANDLERS: Record<
     handleContainerStatus(args as { containerName?: string }),
   al_verify: (args) =>
     handleAlVerify(
-      args as { projectDir: string; testFile: string; containerName?: string },
+      args as {
+        projectDir: string;
+        testFile: string;
+        containerName?: string;
+        target?: "Cloud" | "OnPrem";
+      },
     ),
 };
 

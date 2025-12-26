@@ -127,15 +127,14 @@ codeunit 80023 "CG-AL-M023 Test"
         LibraryInventory.CreateItem(Item1);
         LibraryInventory.CreateItem(Item2);
         
-        // Calculate expected sum from all items
+        // Calculate expected sum from all items by iterating
         Item1.Reset();
-        Item1.CalcSums(Inventory);
-        ExpectedSum := Item1.Inventory;
-
-        // Calculate expected (existing items + our test items)
-        Item1.Reset();
-        Item1.CalcSums(Inventory);
-        ExpectedSum := Item1.Inventory;
+        ExpectedSum := 0;
+        if Item1.FindSet() then
+            repeat
+                Item1.CalcFields(Inventory);
+                ExpectedSum += Item1.Inventory;
+            until Item1.Next() = 0;
 
         // [WHEN] Summing inventory
         TotalInventory := PartialLoader.SumItemInventory();

@@ -70,6 +70,7 @@ describe("ContainerProviderRegistry", () => {
               output: "",
               duration: 0,
             }),
+          publishApp: () => Promise.resolve(),
           runTests: () =>
             Promise.resolve({
               success: true,
@@ -117,6 +118,7 @@ describe("ContainerProviderRegistry", () => {
                 output: "",
                 duration: 0,
               }),
+            publishApp: () => Promise.resolve(),
             runTests: () =>
               Promise.resolve({
                 success: true,
@@ -421,6 +423,7 @@ describe("Provider registration isolation", () => {
               output: "",
               duration: 0,
             }),
+          publishApp: () => Promise.resolve(),
           runTests: () =>
             Promise.resolve({
               success: true,
@@ -462,6 +465,7 @@ describe("Provider registration isolation", () => {
               output: "",
               duration: 0,
             }),
+          publishApp: () => Promise.resolve(),
           runTests: () =>
             Promise.resolve({
               success: true,

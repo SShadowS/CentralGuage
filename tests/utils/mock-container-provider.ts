@@ -321,6 +321,14 @@ export class MockContainerProvider implements ContainerProvider {
     return result;
   }
 
+  async publishApp(
+    containerName: string,
+    appPath: string,
+  ): Promise<void> {
+    this.recordCall("publishApp", containerName, appPath);
+    await Promise.resolve();
+  }
+
   async runTests(
     containerName: string,
     project: ALProject,

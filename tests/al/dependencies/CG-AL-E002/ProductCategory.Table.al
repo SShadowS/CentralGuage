@@ -1,6 +1,6 @@
-table 70225 "CG Test Record"
+table 69001 "Product Category"
 {
-    Caption = 'CG Test Record';
+    Caption = 'Product Category';
     DataClassification = CustomerContent;
 
     fields
@@ -14,19 +14,14 @@ table 70225 "CG Test Record"
         {
             Caption = 'Description';
         }
-        field(3; "Amount"; Decimal)
-        {
-            Caption = 'Amount';
-        }
-        field(4; "Active"; Boolean)
+        field(3; "Active"; Boolean)
         {
             Caption = 'Active';
             InitValue = true;
         }
-        field(5; "Customer No."; Code[20])
+        field(4; "Created Date"; Date)
         {
-            Caption = 'Customer No.';
-            TableRelation = Customer."No.";
+            Caption = 'Created Date';
         }
     }
 

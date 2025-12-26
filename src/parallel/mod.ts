@@ -38,6 +38,7 @@ export {
 // Compile queue
 export {
   CompileQueue,
+  CriticalError,
   QueueFullError,
   QueueTimeoutError,
 } from "./compile-queue.ts";

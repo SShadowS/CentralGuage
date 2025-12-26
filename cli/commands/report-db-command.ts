@@ -6,7 +6,9 @@
 import { Command } from "@cliffy/command";
 import { Checkbox, Confirm, Select } from "@cliffy/prompt";
 import { Table } from "@cliffy/table";
+import { expandGlob } from "@std/fs";
 import * as colors from "@std/fmt/colors";
+import { generateComprehensiveTaskSetHash } from "../../src/stats/hasher.ts";
 import { openStorage } from "../../src/stats/mod.ts";
 import type {
   ResultRecord,
@@ -60,6 +62,47 @@ function formatRunOption(run: RunRecord, isLatest: boolean): string {
 }
 
 /**
+ * Compute task set hash from current task/test files
+ * @param patterns Glob patterns for task YAML files
+ * @returns The computed hash
+ */
+async function computeCurrentTaskSetHash(
+  patterns: readonly string[],
+): Promise<string> {
+  const manifestPaths: string[] = [];
+
+  for (const pattern of patterns) {
+    for await (const entry of expandGlob(pattern)) {
+      if (entry.isFile && entry.name.endsWith(".yml")) {
+        manifestPaths.push(entry.path);
+      }
+    }
+  }
+
+  if (manifestPaths.length === 0) {
+    throw new Error(
+      `No task manifests found matching patterns: ${patterns.join(", ")}`,
+    );
+  }
+
+  const hashResult = await generateComprehensiveTaskSetHash(manifestPaths);
+
+  if (hashResult.warnings.length > 0) {
+    for (const warning of hashResult.warnings) {
+      console.log(colors.yellow(`[WARN] ${warning}`));
+    }
+  }
+
+  console.log(
+    colors.gray(
+      `Computed hash from ${hashResult.taskCount} tasks (${hashResult.totalFilesHashed} files)`,
+    ),
+  );
+
+  return hashResult.hash;
+}
+
+/**
  * List available task sets
  */
 async function listTaskSets(dbPath: string): Promise<void> {
@@ -108,8 +151,13 @@ async function listTaskSets(dbPath: string): Promise<void> {
 
 /**
  * Interactive test set selection
+ * @param dbPath Path to the SQLite database
+ * @param preFilterHash Optional hash to pre-filter to (skips task set selection)
  */
-async function interactiveSelection(dbPath: string): Promise<
+async function interactiveSelection(
+  dbPath: string,
+  preFilterHash?: string,
+): Promise<
   {
     taskSetHash: string;
     selectedRuns: Map<string, RunRecord>;
@@ -121,21 +169,53 @@ async function interactiveSelection(dbPath: string): Promise<
   });
 
   try {
-    // Step 1: Select test set
-    const summaries = await storage.getTaskSetSummaries();
+    let selectedHash: string;
 
-    if (summaries.length === 0) {
-      console.log(colors.yellow("No task sets found in database."));
-      return null;
+    if (preFilterHash) {
+      // Pre-filtered by --current-tasks, verify it exists
+      const summaries = await storage.getTaskSetSummaries();
+      const matchingSummary = summaries.find(
+        (s) =>
+          s.taskSetHash.startsWith(preFilterHash) ||
+          s.taskSetHash === preFilterHash,
+      );
+
+      if (!matchingSummary) {
+        console.log(
+          colors.yellow(
+            `No runs found matching current task set hash: ${preFilterHash}`,
+          ),
+        );
+        console.log(
+          colors.gray(
+            "Your task/test files may have changed since the last benchmark run.",
+          ),
+        );
+        console.log(colors.gray("Use --list-sets to see available test sets."));
+        return null;
+      }
+
+      selectedHash = matchingSummary.taskSetHash;
+      console.log(
+        colors.bold(`Using current task set: ${selectedHash.slice(0, 8)}`),
+      );
+    } else {
+      // Step 1: Select test set interactively
+      const summaries = await storage.getTaskSetSummaries();
+
+      if (summaries.length === 0) {
+        console.log(colors.yellow("No task sets found in database."));
+        return null;
+      }
+
+      selectedHash = await Select.prompt({
+        message: "Select test set to report on",
+        options: summaries.map((s) => ({
+          name: formatTaskSetOption(s),
+          value: s.taskSetHash,
+        })),
+      });
     }
-
-    const selectedHash: string = await Select.prompt({
-      message: "Select test set to report on",
-      options: summaries.map((s) => ({
-        name: formatTaskSetOption(s),
-        value: s.taskSetHash,
-      })),
-    });
 
     // Step 2: Get variants for this test set
     const variantGroups = await storage.getRunsByVariantForTaskSet(
@@ -341,6 +421,8 @@ async function handleReportFromDb(
     runId?: string;
     interactive: boolean;
     listSets: boolean;
+    currentTasks: boolean;
+    tasks: readonly string[];
     output: string;
     db: string;
   },
@@ -351,9 +433,23 @@ async function handleReportFromDb(
     return;
   }
 
+  // Compute current task set hash if requested
+  let currentHash: string | undefined;
+  if (options.currentTasks) {
+    try {
+      currentHash = await computeCurrentTaskSetHash(options.tasks);
+      console.log(colors.bold(`Current task set hash: ${currentHash}`));
+    } catch (error) {
+      log.fail(
+        error instanceof Error ? error.message : "Failed to compute hash",
+      );
+      return;
+    }
+  }
+
   // Interactive mode
   if (options.interactive) {
-    const selection = await interactiveSelection(options.db);
+    const selection = await interactiveSelection(options.db, currentHash);
     if (selection) {
       // Generate report with selection
       console.log(colors.bold("\nGenerating report..."));
@@ -406,15 +502,18 @@ async function handleReportFromDb(
     return;
   }
 
-  // Direct mode - require test set
-  if (!options.testSet) {
-    log.fail("Either --test-set <hash> or --interactive is required.");
+  // Direct mode - require test set (or use computed hash from --current-tasks)
+  const effectiveTestSet = options.testSet ?? currentHash;
+  if (!effectiveTestSet) {
+    log.fail(
+      "Either --test-set <hash>, --current-tasks, or --interactive is required.",
+    );
     log.info("Use --list-sets to see available test sets.");
     return;
   }
 
   await generateReportFromDb(
-    options.testSet,
+    effectiveTestSet,
     options.runId,
     options.db,
     options.output,
@@ -436,6 +535,14 @@ export function registerReportDbCommand(cli: Command): void {
     )
     .option("-i, --interactive", "Interactive TUI mode", { default: false })
     .option("--list-sets", "List available test sets", { default: false })
+    .option("--current-tasks", "Filter by hash of current task/test files", {
+      default: false,
+    })
+    .option(
+      "-t, --tasks <patterns:string[]>",
+      "Task file patterns (for --current-tasks)",
+      { default: ["tasks/**/*.yml"] },
+    )
     .option("-o, --output <dir:string>", "Output directory", {
       default: "reports-output/",
     })

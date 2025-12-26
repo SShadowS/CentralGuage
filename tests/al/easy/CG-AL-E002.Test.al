@@ -47,7 +47,8 @@ codeunit 80002 "CG-AL-E002 Test"
         Assert.AreEqual(ProductCategory.Code, ProductCategoryCard.Code.Value, 'Code field should be visible');
         Assert.AreEqual(ProductCategory.Description, ProductCategoryCard.Description.Value, 'Description field should be visible');
         Assert.AreEqual(Format(ProductCategory.Active), ProductCategoryCard.Active.Value, 'Active field should be visible');
-        Assert.AreEqual(Format(ProductCategory."Created Date"), ProductCategoryCard."Created Date".Value, 'Created Date field should be visible');
+        // Compare actual Date values to avoid locale-dependent format differences
+        Assert.AreEqual(ProductCategory."Created Date", ProductCategoryCard."Created Date".AsDate(), 'Created Date field should be visible');
 
         ProductCategoryCard.Close();
 

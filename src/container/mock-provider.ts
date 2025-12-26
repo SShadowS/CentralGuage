@@ -110,9 +110,19 @@ export class MockContainerProvider implements ContainerProvider {
     return result;
   }
 
+  async publishApp(
+    _containerName: string,
+    _appPath: string,
+  ): Promise<void> {
+    console.log(`📦 [Mock] Publishing app`);
+    await this.simulateDelay(500);
+    console.log(`✅ [Mock] App published`);
+  }
+
   async runTests(
     _containerName: string,
     project: ALProject,
+    _appFilePath?: string,
   ): Promise<TestResult> {
     console.log(`🧪 [Mock] Running tests for project: ${project.path}`);
     const startTime = Date.now();

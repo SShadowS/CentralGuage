@@ -429,6 +429,47 @@ TEST_END
     assertEquals(results[1]!.passed, false);
     assertEquals(results[2]!.passed, true);
   });
+
+  it("should parse BC detailed test output format", () => {
+    const output = `
+TEST_START
+Testfunction TestCalculator Success (0.033 seconds)
+Testfunction TestValidator Success (0.016 seconds)
+Testfunction TestParser Failure (0.042 seconds)
+ALL_TESTS_PASSED
+TEST_END
+`;
+    const { results, allPassed } = parseTestResults(output);
+
+    assertEquals(results.length, 3);
+    assertEquals(results[0]!.name, "TestCalculator");
+    assertEquals(results[0]!.passed, true);
+    assertEquals(results[0]!.duration, 33); // 0.033 * 1000
+    assertEquals(results[1]!.name, "TestValidator");
+    assertEquals(results[1]!.passed, true);
+    assertEquals(results[2]!.name, "TestParser");
+    assertEquals(results[2]!.passed, false);
+    assertEquals(allPassed, true);
+  });
+
+  it("should parse BC detailed format with mixed TESTRESULT lines", () => {
+    const output = `
+TEST_START
+Testfunction TestOne Success (0.100 seconds)
+TESTRESULT:Test TestTwo passed
+Testfunction TestThree Failure (0.200 seconds)
+TEST_END
+`;
+    const { results } = parseTestResults(output);
+
+    assertEquals(results.length, 3);
+    assertEquals(results[0]!.name, "TestOne");
+    assertEquals(results[0]!.passed, true);
+    assertEquals(results[1]!.name, "TestTwo");
+    assertEquals(results[1]!.passed, true);
+    assertEquals(results[2]!.name, "TestThree");
+    assertEquals(results[2]!.passed, false);
+  });
 });
 
 describe("calculateTestMetrics", () => {
