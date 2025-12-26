@@ -66,3 +66,7 @@ test-streaming.ts
 DEPLOY.md
 # Agent task working directories
 test-configs/*/.tasks/
+
+# AL build artifacts (prereq apps)
+tests/al/dependencies/*/.alpackages/
+tests/al/dependencies/*/output/
