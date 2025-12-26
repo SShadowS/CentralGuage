@@ -6,7 +6,8 @@
  */
 
 import { basename, join } from "@std/path";
-import { ensureDir } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
+import * as colors from "@std/fmt/colors";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { TaskManifest } from "../tasks/interfaces.ts";
 import type {
@@ -19,7 +20,135 @@ import type {
 } from "./types.ts";
 import { CostTracker } from "./cost-tracker.ts";
 import { BcContainerProvider } from "../container/bc-container-provider.ts";
-import type { ALProject } from "../container/types.ts";
+import type { ALProject, TestResult } from "../container/types.ts";
+
+// =============================================================================
+// Prereq App Types and Helpers
+// =============================================================================
+
+/** Prereq app info with path and app.json content */
+interface PrereqApp {
+  path: string;
+  appJson: Record<string, unknown>;
+  compiledAppPath?: string | undefined;
+}
+
+/**
+ * Extract task ID from test file path.
+ * @example "tests/al/easy/CG-AL-E002.Test.al" -> "CG-AL-E002"
+ */
+function extractTaskIdFromTestPath(testFilePath: string): string | null {
+  const fileName = basename(testFilePath);
+  const match = fileName.match(/^(CG-AL-[A-Z]\d+)/);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Extract project root from test file path.
+ * Looks for "tests/al/" in the path and returns everything before it.
+ */
+function extractProjectRoot(testFilePath: string): string {
+  // Normalize path separators
+  const normalized = testFilePath.replace(/\\/g, "/");
+  const testsAlIndex = normalized.indexOf("tests/al/");
+  if (testsAlIndex > 0) {
+    return normalized.substring(0, testsAlIndex);
+  }
+  // If path starts with "tests/al/" or not found, use cwd
+  return Deno.cwd();
+}
+
+/**
+ * Find prereq app directory for a given task ID.
+ * Checks for tests/al/dependencies/{task-id}/ directory.
+ */
+async function findPrereqApp(
+  taskId: string,
+  projectRoot: string,
+): Promise<PrereqApp | null> {
+  const prereqDir = join(projectRoot, "tests", "al", "dependencies", taskId);
+
+  try {
+    const dirExists = await exists(prereqDir, { isDirectory: true });
+    if (!dirExists) return null;
+
+    const appJsonPath = join(prereqDir, "app.json");
+    const appJsonContent = await Deno.readTextFile(appJsonPath);
+    const appJson = JSON.parse(appJsonContent);
+
+    return { path: prereqDir, appJson };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find prereq app by its app ID (for resolving dependency chains).
+ */
+async function findPrereqAppById(
+  appId: string,
+  projectRoot: string,
+): Promise<PrereqApp | null> {
+  const depsDir = join(projectRoot, "tests", "al", "dependencies");
+
+  try {
+    for await (const entry of Deno.readDir(depsDir)) {
+      if (!entry.isDirectory) continue;
+
+      const appJsonPath = join(depsDir, entry.name, "app.json");
+      try {
+        const content = await Deno.readTextFile(appJsonPath);
+        const appJson = JSON.parse(content);
+        if (appJson["id"] === appId) {
+          return { path: join(depsDir, entry.name), appJson };
+        }
+      } catch {
+        continue;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Find all prereq apps needed for a task, in dependency order.
+ * Returns array with dependencies first, then the main prereq.
+ */
+async function findAllPrereqApps(
+  taskId: string,
+  projectRoot: string,
+): Promise<PrereqApp[]> {
+  const result: PrereqApp[] = [];
+  const visited = new Set<string>();
+
+  async function collectDeps(prereq: PrereqApp): Promise<void> {
+    const appId = prereq.appJson["id"] as string;
+    if (visited.has(appId)) return;
+    visited.add(appId);
+
+    // First, process dependencies
+    const deps = (prereq.appJson["dependencies"] as Array<{ id: string }>) ||
+      [];
+    for (const dep of deps) {
+      const depPrereq = await findPrereqAppById(dep.id, projectRoot);
+      if (depPrereq) {
+        await collectDeps(depPrereq);
+      }
+    }
+
+    // Then add this prereq
+    result.push(prereq);
+  }
+
+  const mainPrereq = await findPrereqApp(taskId, projectRoot);
+  if (mainPrereq) {
+    await collectDeps(mainPrereq);
+  }
+
+  return result;
+}
 
 // =============================================================================
 // SDK Types - Extended for our usage
@@ -245,6 +374,7 @@ export class AgentTaskExecutor {
     terminationReason: TerminationReason,
     startTime: number,
     finalCode?: string,
+    testResult?: TestResult,
   ): AgentExecutionResult {
     const result: AgentExecutionResult = {
       taskId: task.id,
@@ -259,6 +389,9 @@ export class AgentTaskExecutor {
     };
     if (finalCode !== undefined) {
       result.finalCode = finalCode;
+    }
+    if (testResult !== undefined) {
+      result.testResult = testResult;
     }
     return result;
   }
@@ -339,12 +472,14 @@ export class AgentTaskExecutor {
       tracker.endTurn();
 
       // Phase 3: Verify with tests if compilation succeeded
+      let testResult: TestResult | undefined;
       if (success && task.expected?.testApp) {
         const verifyResult = await this.runTestVerification(
           taskWorkingDir,
           task.expected.testApp,
           options.debug,
         );
+        testResult = verifyResult.testResult;
         if (!verifyResult.success) {
           success = false;
           terminationReason = "test_failure";
@@ -360,6 +495,7 @@ export class AgentTaskExecutor {
         terminationReason,
         startTime,
         finalCode,
+        testResult,
       );
     } catch (error) {
       tracker.endTurn();
@@ -487,7 +623,7 @@ export class AgentTaskExecutor {
     taskWorkingDir: string,
     testFilePath: string,
     debug?: boolean,
-  ): Promise<{ success: boolean }> {
+  ): Promise<{ success: boolean; testResult?: TestResult }> {
     if (debug) {
       console.log("[Agent] Verifying with tests...");
     }
@@ -509,13 +645,25 @@ export class AgentTaskExecutor {
           }
         }
       }
-      return { success: false };
+      const result: { success: boolean; testResult?: TestResult } = {
+        success: false,
+      };
+      if (verifyResult.testResult) {
+        result.testResult = verifyResult.testResult;
+      }
+      return result;
     }
 
     if (debug) {
       console.log(`[Agent] Test verification passed: ${verifyResult.message}`);
     }
-    return { success: true };
+    const result: { success: boolean; testResult?: TestResult } = {
+      success: true,
+    };
+    if (verifyResult.testResult) {
+      result.testResult = verifyResult.testResult;
+    }
+    return result;
   }
 
   /**
@@ -787,11 +935,13 @@ export class AgentTaskExecutor {
   }
 
   /**
-   * Prepare app.json with Test Toolkit dependencies for verification
+   * Prepare app.json with Test Toolkit dependencies for verification.
+   * Optionally adds prereq app as a dependency.
    */
   private async prepareAppJsonForTests(
     projectDir: string,
     verifyDir: string,
+    prereqAppJson?: Record<string, unknown>,
   ): Promise<{ success: boolean; error?: string }> {
     const appJsonPath = join(projectDir, "app.json");
 
@@ -804,11 +954,27 @@ export class AgentTaskExecutor {
         appJson.dependencies = [];
       }
       for (const dep of AgentTaskExecutor.TEST_TOOLKIT_DEPS) {
-        const exists = appJson.dependencies.some(
+        const depExists = appJson.dependencies.some(
           (d: { id: string }) => d.id === dep.id,
         );
-        if (!exists) {
+        if (!depExists) {
           appJson.dependencies.push(dep);
+        }
+      }
+
+      // Add prereq app as dependency if provided
+      if (prereqAppJson) {
+        const prereqId = prereqAppJson["id"] as string;
+        const prereqExists = appJson.dependencies.some(
+          (d: { id: string }) => d.id === prereqId,
+        );
+        if (!prereqExists) {
+          appJson.dependencies.push({
+            id: prereqId,
+            name: prereqAppJson["name"] as string,
+            publisher: prereqAppJson["publisher"] as string,
+            version: prereqAppJson["version"] as string,
+          });
         }
       }
 
@@ -866,12 +1032,20 @@ export class AgentTaskExecutor {
   }
 
   /**
-   * Compile and run tests, returning verification result
+   * Compile and run tests, returning verification result.
+   * Optionally publishes prereq apps before the main app.
    */
   private async compileAndRunTests(
     containerName: string,
     project: ALProject,
-  ): Promise<{ success: boolean; message: string; failures?: string[] }> {
+    prereqAppPaths?: string[],
+    debug?: boolean,
+  ): Promise<{
+    success: boolean;
+    message: string;
+    failures?: string[];
+    testResult?: TestResult;
+  }> {
     const compileResult = await this.containerProvider.compileProject(
       containerName,
       project,
@@ -887,16 +1061,34 @@ export class AgentTaskExecutor {
       };
     }
 
+    // Publish prereq apps before running tests
+    if (prereqAppPaths && prereqAppPaths.length > 0) {
+      for (const prereqPath of prereqAppPaths) {
+        if (debug) {
+          console.log(`[Agent] Publishing prereq: ${prereqPath}`);
+        }
+        await this.containerProvider.publishApp(containerName, prereqPath);
+      }
+    }
+
     const testResult = await this.containerProvider.runTests(
       containerName,
       project,
     );
+
+    // Debug: show full test output if enabled
+    if (debug && testResult.output) {
+      console.log(colors.gray("[Agent] --- Test Output ---"));
+      console.log(testResult.output);
+      console.log(colors.gray("[Agent] --- End Test Output ---"));
+    }
 
     if (testResult.success) {
       return {
         success: true,
         message:
           `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
+        testResult,
       };
     }
 
@@ -909,31 +1101,88 @@ export class AgentTaskExecutor {
       message:
         `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
       failures,
+      testResult,
     };
   }
 
   /**
    * Verify agent code by running tests in an isolated directory.
    * This prevents the agent from seeing or modifying test files.
+   * Handles prereq apps: compiles them first and adds them as dependencies.
    */
   private async verifyWithTests(
     projectDir: string,
     testFilePath: string,
     debug?: boolean,
-  ): Promise<{ success: boolean; message: string; failures?: string[] }> {
+  ): Promise<{
+    success: boolean;
+    message: string;
+    failures?: string[];
+    testResult?: TestResult;
+  }> {
     const containerName = "Cronus27";
 
     try {
+      // Check for prereq apps based on task ID
+      const taskId = extractTaskIdFromTestPath(testFilePath);
+      const projectRoot = extractProjectRoot(testFilePath);
+      const compiledPrereqs: PrereqApp[] = [];
+
+      if (debug) {
+        console.log(`[Agent] Test file: ${testFilePath}`);
+        console.log(`[Agent] Task ID: ${taskId}`);
+        console.log(`[Agent] Project root: ${projectRoot}`);
+      }
+
+      if (taskId) {
+        const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
+        if (debug) {
+          console.log(`[Agent] Found ${allPrereqs.length} prereq(s)`);
+        }
+
+        for (const prereq of allPrereqs) {
+          if (debug) {
+            console.log(`[Agent] Compiling prereq: ${prereq.appJson["name"]}`);
+          }
+
+          // Build prereq project
+          const prereqProject = await this.buildALProject(prereq.path);
+          const prereqCompileResult = await this.containerProvider
+            .compileProject(containerName, prereqProject);
+
+          if (!prereqCompileResult.success) {
+            return {
+              success: false,
+              message: `Prereq app compilation failed for ${
+                prereq.appJson["name"]
+              }`,
+              failures: prereqCompileResult.errors.map(
+                (e) =>
+                  `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
+              ),
+            };
+          }
+
+          compiledPrereqs.push({
+            ...prereq,
+            compiledAppPath: prereqCompileResult.artifactPath,
+          });
+        }
+      }
+
       // Create isolated verification directory
       const verifyDir = await this.createVerificationDir(projectDir);
       if (debug) {
         console.log(`[Agent] Verification directory: ${verifyDir}`);
       }
 
-      // Prepare app.json with test dependencies
+      // Prepare app.json with test dependencies (and prereq dependency if exists)
+      // Only add the last prereq as direct dependency - it will chain to others
+      const lastPrereq = compiledPrereqs[compiledPrereqs.length - 1];
       const appResult = await this.prepareAppJsonForTests(
         projectDir,
         verifyDir,
+        lastPrereq?.appJson,
       );
       if (!appResult.success) {
         return { success: false, message: appResult.error! };
@@ -958,7 +1207,17 @@ export class AgentTaskExecutor {
         console.log(`[Agent] Test files: ${project.testFiles.length}`);
       }
 
-      return await this.compileAndRunTests(containerName, project);
+      // Get prereq app paths for runTests
+      const prereqAppPaths = compiledPrereqs
+        .map((p) => p.compiledAppPath)
+        .filter((p): p is string => p !== undefined);
+
+      return await this.compileAndRunTests(
+        containerName,
+        project,
+        prereqAppPaths.length > 0 ? prereqAppPaths : undefined,
+        debug,
+      );
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message

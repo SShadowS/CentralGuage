@@ -7,6 +7,7 @@
  */
 
 import type { TokenUsage } from "../llm/types.ts";
+import type { TestResult } from "../container/types.ts";
 
 // =============================================================================
 // Agent Configuration Types
@@ -189,6 +190,9 @@ export interface AgentExecutionResult {
 
   /** When execution started */
   executedAt: Date;
+
+  /** Test results from final verification (if tests ran) */
+  testResult?: TestResult;
 }
 
 // =============================================================================
