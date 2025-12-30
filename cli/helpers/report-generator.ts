@@ -257,24 +257,34 @@ export function generateChartsHtml(
     const secondPassOnly = m.passedOnAttempt2 - m.passedOnAttempt1;
     const secondPassRate = total > 0 ? secondPassOnly / total : 0;
     const totalPassRate = total > 0 ? m.tasksPassed / total : 0;
-    // Build short name with temperature suffix if available
+    // Build short name with config suffixes
     let shortName = shortVariantName(variantId);
+    const suffixes: string[] = [];
+
+    // Add reasoning effort for OpenAI models (high, med, low)
+    const reasoningEffort = m.variantConfig?.reasoningEffort;
+    if (reasoningEffort && !shortName.includes(reasoningEffort)) {
+      const short = reasoningEffort.length > 4
+        ? reasoningEffort.slice(0, 3)
+        : reasoningEffort;
+      suffixes.push(short);
+    }
+
+    // Add temperature if available
     const temp = tempLookup?.get(variantId);
     if (temp !== undefined) {
-      // Add temperature to the label if not already present from variantId parsing
-      if (
-        !shortName.includes("t" + temp) && !shortName.includes("t0.") &&
-        !shortName.includes("t1")
-      ) {
-        const tempStr = Number.isInteger(temp)
-          ? String(temp)
-          : temp.toFixed(1).replace(/\.0$/, "");
-        // Insert temperature into existing parentheses or add new ones
-        if (shortName.includes("(") && shortName.endsWith(")")) {
-          shortName = shortName.slice(0, -1) + `, t${tempStr})`;
-        } else {
-          shortName = `${shortName} (t${tempStr})`;
-        }
+      const tempStr = Number.isInteger(temp)
+        ? String(temp)
+        : temp.toFixed(1).replace(/\.0$/, "");
+      suffixes.push(`t${tempStr}`);
+    }
+
+    // Append suffixes to name
+    if (suffixes.length > 0) {
+      if (shortName.includes("(") && shortName.endsWith(")")) {
+        shortName = shortName.slice(0, -1) + `, ${suffixes.join(", ")})`;
+      } else {
+        shortName = `${shortName} (${suffixes.join(", ")})`;
       }
     }
     return {
