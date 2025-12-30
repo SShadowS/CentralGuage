@@ -32,8 +32,8 @@ describe("ALProjectManager", () => {
         name: "Test App",
         publisher: "Test Publisher",
         version: "1.0.0.0",
-        platform: "24.0.0.0",
-        application: "24.0.0.0",
+        platform: "27.0.0.0",
+        application: "27.0.0.0",
         idRanges: [{ from: 50100, to: 50199 }],
       };
 
@@ -65,8 +65,8 @@ describe("ALProjectManager", () => {
         name: "Runtime Test",
         publisher: "Test",
         version: "1.0.0.0",
-        platform: "24.0.0.0",
-        application: "24.0.0.0",
+        platform: "27.0.0.0",
+        application: "27.0.0.0",
         idRanges: [{ from: 50000, to: 50099 }],
       };
 
@@ -86,8 +86,8 @@ describe("ALProjectManager", () => {
         name: "Nested Project",
         publisher: "Test",
         version: "1.0.0.0",
-        platform: "24.0.0.0",
-        application: "24.0.0.0",
+        platform: "27.0.0.0",
+        application: "27.0.0.0",
         idRanges: [],
       };
 
@@ -109,8 +109,8 @@ describe("ALProjectManager", () => {
         name: "Test Project",
         publisher: "Test Publisher",
         version: "1.0.0.0",
-        platform: "24.0.0.0",
-        application: "24.0.0.0",
+        platform: "27.0.0.0",
+        application: "27.0.0.0",
       };
       await Deno.writeTextFile(
         join(projectPath, "app.json"),
@@ -215,8 +215,8 @@ describe("ALProjectManager", () => {
           name: "Test",
           publisher: "Publisher",
           version: "1.0.0.0",
-          platform: "24.0.0.0",
-          application: "24.0.0.0",
+          platform: "27.0.0.0",
+          application: "27.0.0.0",
         }),
       );
 
@@ -272,8 +272,8 @@ describe("ALProjectManager", () => {
           name: "Test",
           publisher: "Pub",
           version: "1.0.0.0",
-          platform: "24.0.0.0",
-          application: "24.0.0.0",
+          platform: "27.0.0.0",
+          application: "27.0.0.0",
         },
         sourceFiles: [join(tempDir, "NonExistent.al")],
         testFiles: [],
@@ -292,8 +292,8 @@ describe("ALProjectManager", () => {
           name: "Test",
           publisher: "Pub",
           version: "1.0.0.0",
-          platform: "24.0.0.0",
-          application: "24.0.0.0",
+          platform: "27.0.0.0",
+          application: "27.0.0.0",
         },
         sourceFiles: [],
         testFiles: [join(tempDir, "NonExistentTest.al")],
