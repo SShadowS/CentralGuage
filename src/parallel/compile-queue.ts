@@ -478,6 +478,7 @@ export class CompileQueue {
         this.containerName,
         project,
         compilationResult.artifactPath,
+        item.context.manifest.expected.testCodeunitId,
       );
       testDuration = Date.now() - testStart;
 
@@ -529,15 +530,19 @@ export class CompileQueue {
     const hasTestApp = item.context.manifest.expected.testApp &&
       item.context.manifest.expected.testApp.length > 0;
 
+    // Fixed UUID for benchmark apps - enables ForceSync to update in place
+    // This eliminates the need for PRECLEAN step (~13s savings)
+    const BENCHMARK_APP_ID = "00000000-cafe-0000-0000-be4c00decade";
+
     // Create app.json with test toolkit dependencies if needed
     const appJson: Record<string, unknown> = {
-      id: crypto.randomUUID(),
+      id: BENCHMARK_APP_ID,
       name: `CentralGauge_${item.context.manifest.id}_${item.attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
-      platform: "24.0.0.0",
+      platform: "27.0.0.0",
       runtime: "15.0",
-      application: "24.0.0.0",
+      application: "27.0.0.0",
       idRanges: [{ from: 70000, to: 89999 }],
       features: ["NoImplicitWith"],
     };
@@ -549,13 +554,13 @@ export class CompileQueue {
           id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
           name: "Library Assert",
           publisher: "Microsoft",
-          version: "24.0.0.0",
+          version: "27.0.0.0",
         },
         {
           id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
           name: "Tests-TestLibraries",
           publisher: "Microsoft",
-          version: "24.0.0.0",
+          version: "27.0.0.0",
         },
       ];
     } else {
