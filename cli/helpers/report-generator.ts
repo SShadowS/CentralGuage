@@ -262,7 +262,11 @@ export function generateChartsHtml(
     const suffixes: string[] = [];
 
     // Add reasoning effort for OpenAI models (high, med, low)
-    const reasoningEffort = m.variantConfig?.reasoningEffort;
+    // Check both reasoningEffort (converted) and string thinkingBudget (raw JSON)
+    const reasoningEffort = m.variantConfig?.reasoningEffort ??
+      (typeof m.variantConfig?.thinkingBudget === "string"
+        ? m.variantConfig.thinkingBudget
+        : undefined);
     if (reasoningEffort && !shortName.includes(reasoningEffort)) {
       const short = reasoningEffort.length > 4
         ? reasoningEffort.slice(0, 3)
