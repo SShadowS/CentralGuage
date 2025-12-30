@@ -11,8 +11,16 @@
  * - al_container_status: Check container health
  */
 
-import { basename, join } from "@std/path";
+import { basename, dirname, fromFileUrl, join } from "@std/path";
 import { ensureDir } from "@std/fs";
+import { parse as parseYaml } from "@std/yaml";
+
+/** Get the CentralGauge project root from the script location */
+function getProjectRoot(): string {
+  const scriptPath = fromFileUrl(import.meta.url);
+  // Script is at mcp/al-tools-server.ts, so project root is one level up
+  return dirname(dirname(scriptPath));
+}
 import { BcContainerProvider } from "../src/container/bc-container-provider.ts";
 import type { ALProject } from "../src/container/types.ts";
 
@@ -50,6 +58,39 @@ interface Tool {
 
 const containerProvider = new BcContainerProvider();
 const DEFAULT_CONTAINER = "Cronus27";
+
+/** Log timing for performance analysis - writes to both stderr and a log file */
+function logTiming(label: string, startTime: number): void {
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const message = `[TIMING] ${label}: ${elapsed}s`;
+  console.error(message);
+  // Also append to timing log file for visibility
+  try {
+    Deno.writeTextFileSync("timing.log", message + "\n", { append: true });
+  } catch {
+    // Ignore file write errors
+  }
+}
+
+/**
+ * Cache for compiled prereq apps to avoid recompiling on every al_verify_task call.
+ * Key: taskId, Value: array of compiled prereq app paths
+ */
+const prereqCache = new Map<
+  string,
+  Array<{
+    path: string;
+    appJson: AppJson;
+    compiledAppPath: string;
+  }>
+>();
+
+/**
+ * Cache for published prereq apps to avoid republishing on every al_verify_task call.
+ * Key: "containerName:appId", Value: true (published)
+ * Prereqs never change during a run, so once published they stay published.
+ */
+const publishedPrereqCache = new Set<string>();
 
 // =============================================================================
 // Tool Definitions
@@ -144,6 +185,38 @@ const TOOLS: Tool[] = [
         },
       },
       required: ["projectDir", "testFile"],
+    },
+  },
+  {
+    name: "al_verify_task",
+    description: "Compile AL code and run tests for a benchmark task. " +
+      "Looks up the test file by task ID, so the agent cannot read or modify tests. " +
+      "Returns test results with pass/fail status and error messages.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectDir: {
+          type: "string",
+          description:
+            "Directory containing AL files and app.json. Must be an absolute path.",
+        },
+        taskId: {
+          type: "string",
+          description: "Task ID (e.g., 'CG-AL-E007') to look up the test file.",
+        },
+        containerName: {
+          type: "string",
+          description:
+            `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
+        },
+        target: {
+          type: "string",
+          enum: ["Cloud", "OnPrem"],
+          description:
+            "App target. Use 'OnPrem' for features like HttpClient, NavApp. Default: Cloud.",
+        },
+      },
+      required: ["projectDir", "taskId"],
     },
   },
 ];
@@ -411,6 +484,10 @@ function ensurePrereqDependency(
 /**
  * Prepare app.json for test verification by adding dependencies and ID ranges.
  */
+// Fixed UUID for benchmark apps - enables ForceSync to update in place
+// This eliminates the need for PRECLEAN step (~13s savings per test run)
+const BENCHMARK_APP_ID = "00000000-cafe-0000-0000-be4c00decade";
+
 async function prepareAppJsonForTesting(
   sourceDir: string,
   targetDir: string,
@@ -421,6 +498,9 @@ async function prepareAppJsonForTesting(
   try {
     const appJsonContent = await Deno.readTextFile(appJsonPath);
     const appJson = JSON.parse(appJsonContent) as AppJson;
+
+    // Force fixed app ID for ForceSync optimization
+    appJson["id"] = BENCHMARK_APP_ID;
 
     // Add prereq dependency if provided
     if (prereqAppJson) {
@@ -656,6 +736,197 @@ interface VerifyResult {
 }
 
 /**
+ * Load testCodeunitId from task YAML for targeted test execution.
+ * Returns undefined if task YAML not found or doesn't have testCodeunitId.
+ */
+async function loadTestCodeunitId(
+  taskId: string,
+  projectRoot: string,
+): Promise<number | undefined> {
+  // Parse difficulty from task ID (e.g., CG-AL-E007 -> E -> easy)
+  const match = taskId.match(/^CG-AL-([EMH])\d+$/);
+  if (!match) return undefined;
+
+  const difficultyCode = match[1] as "E" | "M" | "H";
+  const difficultyMap: Record<"E" | "M" | "H", string> = {
+    E: "easy",
+    M: "medium",
+    H: "hard",
+  };
+  const difficulty = difficultyMap[difficultyCode];
+
+  // Find task YAML file (pattern: tasks/{difficulty}/CG-AL-{ID}-*.yml)
+  const tasksDir = join(projectRoot, "tasks", difficulty);
+  try {
+    for await (const entry of Deno.readDir(tasksDir)) {
+      if (
+        entry.isFile && entry.name.startsWith(taskId) &&
+        entry.name.endsWith(".yml")
+      ) {
+        const yamlPath = join(tasksDir, entry.name);
+        const content = await Deno.readTextFile(yamlPath);
+        const manifest = parseYaml(content) as {
+          expected?: { testCodeunitId?: number };
+        };
+        return manifest.expected?.testCodeunitId;
+      }
+    }
+  } catch {
+    // Directory doesn't exist or read error
+  }
+  return undefined;
+}
+
+/**
+ * Load target from task YAML metadata for OnPrem features.
+ * Returns undefined if task YAML not found or doesn't have metadata.target.
+ */
+async function loadTaskTarget(
+  taskId: string,
+  projectRoot: string,
+): Promise<"Cloud" | "OnPrem" | undefined> {
+  // Parse difficulty from task ID (e.g., CG-AL-M022 -> M -> medium)
+  const match = taskId.match(/^CG-AL-([EMH])\d+$/);
+  if (!match) return undefined;
+
+  const difficultyCode = match[1] as "E" | "M" | "H";
+  const difficultyMap: Record<"E" | "M" | "H", string> = {
+    E: "easy",
+    M: "medium",
+    H: "hard",
+  };
+  const difficulty = difficultyMap[difficultyCode];
+
+  // Find task YAML file (pattern: tasks/{difficulty}/CG-AL-{ID}-*.yml)
+  const tasksDir = join(projectRoot, "tasks", difficulty);
+  try {
+    for await (const entry of Deno.readDir(tasksDir)) {
+      if (
+        entry.isFile && entry.name.startsWith(taskId) &&
+        entry.name.endsWith(".yml")
+      ) {
+        const yamlPath = join(tasksDir, entry.name);
+        const content = await Deno.readTextFile(yamlPath);
+        const manifest = parseYaml(content) as {
+          metadata?: { target?: "Cloud" | "OnPrem" };
+        };
+        return manifest.metadata?.target;
+      }
+    }
+  } catch {
+    // Directory doesn't exist or read error
+  }
+  return undefined;
+}
+
+/**
+ * Resolve test file path from task ID.
+ * Maps task ID prefixes to difficulty folders:
+ * - E = easy (e.g., CG-AL-E007 -> tests/al/easy/CG-AL-E007.Test.al)
+ * - M = medium
+ * - H = hard
+ */
+async function resolveTestFileFromTaskId(
+  taskId: string,
+  projectRoot: string,
+): Promise<
+  { success: true; testFile: string } | { success: false; error: string }
+> {
+  // Parse the difficulty from task ID (e.g., CG-AL-E007 -> E -> easy)
+  const match = taskId.match(/^CG-AL-([EMH])\d+$/);
+  if (!match) {
+    return {
+      success: false,
+      error:
+        `Invalid task ID format: ${taskId}. Expected format like 'CG-AL-E007'`,
+    };
+  }
+
+  const difficultyCode = match[1] as "E" | "M" | "H";
+  const difficultyMap: Record<"E" | "M" | "H", string> = {
+    E: "easy",
+    M: "medium",
+    H: "hard",
+  };
+  const difficulty = difficultyMap[difficultyCode];
+
+  // Build the test file path
+  const testFilePath = join(
+    projectRoot,
+    "tests",
+    "al",
+    difficulty,
+    `${taskId}.Test.al`,
+  );
+
+  // Check if the file exists
+  try {
+    const stat = await Deno.stat(testFilePath);
+    if (stat.isFile) {
+      return { success: true, testFile: testFilePath };
+    }
+    return {
+      success: false,
+      error: `Test file is not a regular file: ${testFilePath}`,
+    };
+  } catch {
+    return { success: false, error: `Test file not found: ${testFilePath}` };
+  }
+}
+
+/**
+ * Handle al_verify_task - compile and run tests using task ID to look up test file.
+ * This prevents the agent from seeing or reading the test file directly.
+ */
+async function handleAlVerifyTask(params: {
+  projectDir: string;
+  taskId: string;
+  containerName?: string;
+  target?: "Cloud" | "OnPrem";
+}): Promise<VerifyResult> {
+  // Resolve the test file from the task ID
+  // Use script location to find project root, not CWD (which may be agent workspace)
+  const projectRoot = getProjectRoot();
+  const resolution = await resolveTestFileFromTaskId(
+    params.taskId,
+    projectRoot,
+  );
+
+  if (!resolution.success) {
+    return { success: false, message: resolution.error };
+  }
+
+  // Load testCodeunitId from task YAML for targeted test execution
+  const testCodeunitId = await loadTestCodeunitId(params.taskId, projectRoot);
+
+  // Load target from task YAML if not explicitly provided
+  const target = params.target ??
+    await loadTaskTarget(params.taskId, projectRoot);
+
+  // Delegate to handleAlVerify with the resolved test file path
+  const verifyParams: {
+    projectDir: string;
+    testFile: string;
+    containerName?: string;
+    target?: "Cloud" | "OnPrem";
+    testCodeunitId?: number;
+  } = {
+    projectDir: params.projectDir,
+    testFile: resolution.testFile,
+  };
+  if (params.containerName !== undefined) {
+    verifyParams.containerName = params.containerName;
+  }
+  if (target !== undefined) {
+    verifyParams.target = target;
+  }
+  if (testCodeunitId !== undefined) {
+    verifyParams.testCodeunitId = testCodeunitId;
+  }
+  return handleAlVerify(verifyParams);
+}
+
+/**
  * Verify agent code by running tests in an isolated directory.
  * This prevents the agent from seeing or modifying test files.
  */
@@ -664,54 +935,76 @@ async function handleAlVerify(params: {
   testFile: string;
   containerName?: string;
   target?: "Cloud" | "OnPrem";
+  testCodeunitId?: number;
 }): Promise<VerifyResult> {
   const containerName = params.containerName || DEFAULT_CONTAINER;
+  const totalStart = Date.now();
 
   try {
-    // Check for prereq apps based on task ID (handles dependency chains)
+    // 1. Check for prereq apps based on task ID (handles dependency chains)
+    const prereqStart = Date.now();
     const taskId = extractTaskIdFromTestPath(params.testFile);
     const projectRoot = extractProjectRoot(params.testFile);
-    const prereqApps: Array<{
+    let prereqApps: Array<{
       path: string;
       appJson: AppJson;
-      compiledAppPath: string | undefined;
+      compiledAppPath: string;
     }> = [];
 
     if (taskId) {
-      // Find all prereqs in dependency order
-      const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
-      console.error(
-        `[DEBUG] Found ${allPrereqs.length} prereq(s) for ${taskId} in ${projectRoot}`,
-      );
-
-      for (const prereq of allPrereqs) {
-        // Compile each prereq in order
-        const prereqProject = await buildALProject(prereq.path, false);
-        const prereqCompileResult = await containerProvider.compileProject(
-          containerName,
-          prereqProject,
+      // Check cache first to avoid recompiling prereqs on every call
+      const cachedPrereqs = prereqCache.get(taskId);
+      if (cachedPrereqs) {
+        console.error(`[DEBUG] Using cached prereqs for ${taskId}`);
+        prereqApps = cachedPrereqs;
+      } else {
+        // Find all prereqs in dependency order
+        const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
+        console.error(
+          `[DEBUG] Found ${allPrereqs.length} prereq(s) for ${taskId} in ${projectRoot}`,
         );
-        if (!prereqCompileResult.success) {
-          return {
-            success: false,
-            message: `Prereq app compilation failed for ${
-              prereq.appJson["name"]
-            }`,
-            compileErrors: prereqCompileResult.errors.map(
-              (e) =>
-                `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
-            ),
-          };
+
+        for (const prereq of allPrereqs) {
+          // Compile each prereq in order
+          const prereqProject = await buildALProject(prereq.path, false);
+          const prereqCompileResult = await containerProvider.compileProject(
+            containerName,
+            prereqProject,
+          );
+          if (!prereqCompileResult.success) {
+            return {
+              success: false,
+              message: `Prereq app compilation failed for ${
+                prereq.appJson["name"]
+              }`,
+              compileErrors: prereqCompileResult.errors.map(
+                (e) =>
+                  `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
+              ),
+            };
+          }
+          if (prereqCompileResult.artifactPath) {
+            prereqApps.push({
+              path: prereq.path,
+              appJson: prereq.appJson,
+              compiledAppPath: prereqCompileResult.artifactPath,
+            });
+          }
         }
-        prereqApps.push({
-          path: prereq.path,
-          appJson: prereq.appJson,
-          compiledAppPath: prereqCompileResult.artifactPath,
-        });
+
+        // Cache the compiled prereqs for future calls
+        if (prereqApps.length > 0) {
+          prereqCache.set(taskId, prereqApps);
+          console.error(
+            `[DEBUG] Cached ${prereqApps.length} prereq(s) for ${taskId}`,
+          );
+        }
       }
     }
+    logTiming("Prereq resolution", prereqStart);
 
-    // Create isolated verification directory
+    // 2. Create isolated verification directory and copy files
+    const setupStart = Date.now();
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 8);
     const verifyDir = join(
@@ -741,8 +1034,10 @@ async function handleAlVerify(params: {
     if (!testFileResult.success) {
       return { success: false, message: testFileResult.message };
     }
+    logTiming("Setup & copy files", setupStart);
 
-    // Build and compile
+    // 3. Build and compile
+    const compileStart = Date.now();
     const project = await buildALProject(verifyDir, true);
     const compileResult = await containerProvider.compileProject(
       containerName,
@@ -757,23 +1052,41 @@ async function handleAlVerify(params: {
         ),
       };
     }
+    logTiming("Compile project", compileStart);
 
-    // Publish prereq apps in order before running tests
+    // 4. Publish prereq apps in order before running tests (only if not already published)
+    const publishStart = Date.now();
     for (const prereqApp of prereqApps) {
       if (prereqApp.compiledAppPath) {
-        await containerProvider.publishApp(
-          containerName,
-          prereqApp.compiledAppPath,
-        );
+        const appId = prereqApp.appJson["id"] as string;
+        const cacheKey = `${containerName}:${appId}`;
+        if (!publishedPrereqCache.has(cacheKey)) {
+          console.error(
+            `[DEBUG] Publishing prereq ${appId} to ${containerName}`,
+          );
+          await containerProvider.publishApp(
+            containerName,
+            prereqApp.compiledAppPath,
+          );
+          publishedPrereqCache.add(cacheKey);
+        } else {
+          console.error(`[DEBUG] Prereq ${appId} already published, skipping`);
+        }
       }
     }
+    logTiming("Publish prereqs", publishStart);
 
-    // Run tests
+    // 5. Run tests
+    const testStart = Date.now();
     const testResult = await containerProvider.runTests(
       containerName,
       project,
       compileResult.artifactPath,
+      params.testCodeunitId,
     );
+    logTiming("Run tests", testStart);
+    logTiming("TOTAL", totalStart);
+
     if (testResult.success) {
       return {
         success: true,
@@ -840,6 +1153,15 @@ const TOOL_HANDLERS: Record<
       args as {
         projectDir: string;
         testFile: string;
+        containerName?: string;
+        target?: "Cloud" | "OnPrem";
+      },
+    ),
+  al_verify_task: (args) =>
+    handleAlVerifyTask(
+      args as {
+        projectDir: string;
+        taskId: string;
         containerName?: string;
         target?: "Cloud" | "OnPrem";
       },
@@ -959,3 +1281,6 @@ async function main() {
 if (import.meta.main) {
   main();
 }
+
+// Export for testing
+export { loadTaskTarget, loadTestCodeunitId };
