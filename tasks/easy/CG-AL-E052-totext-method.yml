@@ -21,6 +21,7 @@ description: >-
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E052.Test.al
+  testCodeunitId: 80052
 metrics:
   - compile_pass
   - tests_pass

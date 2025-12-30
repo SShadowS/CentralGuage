@@ -158,8 +158,12 @@ codeunit 80023 "CG-AL-M023 Test"
         // [SCENARIO] SumItemInventory handles existing data
         // [GIVEN] We know total inventory
         Item.Reset();
-        Item.CalcSums(Inventory);
-        ExpectedSum := Item.Inventory;
+        ExpectedSum := 0;
+        if Item.FindSet() then
+            repeat
+                Item.CalcFields(Inventory);
+                ExpectedSum += Item.Inventory;
+            until Item.Next() = 0;
 
         // [WHEN] Summing inventory
         TotalInventory := PartialLoader.SumItemInventory();

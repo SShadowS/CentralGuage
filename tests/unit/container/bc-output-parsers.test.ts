@@ -470,6 +470,27 @@ TEST_END
     assertEquals(results[2]!.name, "TestThree");
     assertEquals(results[2]!.passed, false);
   });
+
+  it("should handle TEST_START/TEST_END with timestamps", () => {
+    // The PowerShell script outputs timestamps: TEST_START:1234567890
+    const output = `
+PUBLISH_START:1735373847123
+PUBLISH_END:1735373862456
+TEST_START:1735373862500
+Testfunction TestCalculator Success (0.033 seconds)
+Testfunction TestValidator Failure (0.016 seconds)
+SOME_TESTS_FAILED
+TEST_END:1735373865789
+`;
+    const { results, allPassed } = parseTestResults(output);
+
+    assertEquals(results.length, 2);
+    assertEquals(results[0]!.name, "TestCalculator");
+    assertEquals(results[0]!.passed, true);
+    assertEquals(results[1]!.name, "TestValidator");
+    assertEquals(results[1]!.passed, false);
+    assertEquals(allPassed, false);
+  });
 });
 
 describe("calculateTestMetrics", () => {

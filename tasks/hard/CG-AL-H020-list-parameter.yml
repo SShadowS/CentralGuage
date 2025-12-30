@@ -30,6 +30,7 @@ description: >-
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H020.Test.al
+  testCodeunitId: 80021
 metrics:
   - compile_pass
   - tests_pass

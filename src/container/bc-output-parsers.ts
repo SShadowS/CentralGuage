@@ -282,12 +282,12 @@ export function parseTestResults(output: string): {
   for (const line of output.split("\n")) {
     const trimmedLine = line.trim();
 
-    // Handle state markers
-    if (trimmedLine === "TEST_START") {
+    // Handle state markers (with optional timestamp suffix like TEST_START:1234567890)
+    if (trimmedLine === "TEST_START" || trimmedLine.startsWith("TEST_START:")) {
       inTest = true;
       continue;
     }
-    if (trimmedLine === "TEST_END") {
+    if (trimmedLine === "TEST_END" || trimmedLine.startsWith("TEST_END:")) {
       inTest = false;
       continue;
     }

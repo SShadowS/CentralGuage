@@ -583,7 +583,7 @@ STATUS_START
 NAME:TestContainer
 RUNNING:True
 HEALTH:healthy
-BCVERSION:24.0.0.0
+BCVERSION:27.0.0.0
 UPTIME:3600
 STATUS_END
 `;
@@ -595,7 +595,7 @@ STATUS_END
       assertEquals(status.name, "TestContainer");
       assertEquals(status.isRunning, true);
       assertEquals(status.health, "healthy");
-      assertEquals(status.bcVersion, "24.0.0.0");
+      assertEquals(status.bcVersion, "27.0.0.0");
       assertEquals(status.uptime, 3600);
     } finally {
       mock.restore();

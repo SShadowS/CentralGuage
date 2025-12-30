@@ -31,6 +31,7 @@ description: >-
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M021.Test.al
+  testCodeunitId: 80021
 metrics:
   - compile_pass
   - tests_pass

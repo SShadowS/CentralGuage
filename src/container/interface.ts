@@ -33,6 +33,7 @@ export interface ContainerProvider {
     containerName: string,
     project: ALProject,
     appFilePath?: string,
+    testCodeunitId?: number,
   ): Promise<TestResult>;
 
   // File operations

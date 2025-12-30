@@ -187,11 +187,11 @@ codeunit 80011 "CG-AL-M001 Test"
     var
         Product: Record Product;
         ProductAPI: TestPage "Product API";
-        CategoryId: Guid;
+        CategoryId: Code[20];
     begin
         // [SCENARIO] Product can have a categoryId for grouping
         // [GIVEN] A product with category ID
-        CategoryId := CreateGuid();
+        CategoryId := 'CAT001';
         CreateTestProduct(Product);
         Product."Category Id" := CategoryId;
         Product.Modify();
@@ -214,12 +214,12 @@ codeunit 80011 "CG-AL-M001 Test"
     var
         Product: Record Product;
         ProductAPI: TestPage "Product API";
-        CategoryId: Guid;
+        CategoryId: Code[20];
     begin
         // [SCENARIO] Category ID can be set via API page
         // [GIVEN] An existing product and a category ID
         CreateTestProduct(Product);
-        CategoryId := CreateGuid();
+        CategoryId := 'CAT002';
 
         // [WHEN] We update the category ID via API
         ProductAPI.OpenEdit();

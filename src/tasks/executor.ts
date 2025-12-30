@@ -248,6 +248,8 @@ export class DefaultTaskExecutor implements TaskExecutor {
       testResult = await containerProvider.runTests(
         config.containerName,
         tempProject,
+        undefined, // appFilePath
+        config.taskManifest.expected.testCodeunitId,
       );
 
       // Log test result if debug is enabled
@@ -340,8 +342,8 @@ export class DefaultTaskExecutor implements TaskExecutor {
       name: `CentralGauge_${config.taskManifest.id}_${attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
-      platform: "24.0.0.0",
-      application: "24.0.0.0",
+      platform: "27.0.0.0",
+      application: "27.0.0.0",
       idRanges: [{ from: 70000, to: 89999 }],
     });
 
@@ -358,13 +360,13 @@ export class DefaultTaskExecutor implements TaskExecutor {
           id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
           name: "Library Assert",
           publisher: "Microsoft",
-          version: "24.0.0.0",
+          version: "27.0.0.0",
         },
         {
           id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
           name: "Tests-TestLibraries",
           publisher: "Microsoft",
-          version: "24.0.0.0",
+          version: "27.0.0.0",
         },
       ];
       await Deno.writeTextFile(appJsonPath, JSON.stringify(appJson, null, 2));

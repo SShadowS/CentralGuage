@@ -32,6 +32,7 @@ metadata:
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M022.Test.al
+  testCodeunitId: 80122
 metrics:
   - compile_pass
   - tests_pass

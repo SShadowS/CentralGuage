@@ -28,6 +28,37 @@ import {
   parseTestResults,
 } from "./bc-output-parsers.ts";
 
+/**
+ * Parse timing markers from PowerShell output and log sub-timings.
+ * Markers format: "PHASE_START:timestamp" and "PHASE_END:timestamp"
+ * Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place
+ */
+function logSubTimings(output: string): void {
+  const lines = output.split("\n");
+  const timestamps: Record<string, number> = {};
+
+  for (const line of lines) {
+    const match = line.match(/^(PUBLISH|TEST)_(START|END):(\d+)/);
+    if (match && match[1] && match[2] && match[3]) {
+      const phase = match[1];
+      const type = match[2];
+      const ts = match[3];
+      timestamps[`${phase}_${type}`] = parseInt(ts, 10);
+    }
+  }
+
+  // Calculate and log durations
+  const phases = ["PUBLISH", "TEST"];
+  for (const phase of phases) {
+    const start = timestamps[`${phase}_START`];
+    const end = timestamps[`${phase}_END`];
+    if (start && end) {
+      const duration = ((end - start) / 1000).toFixed(1);
+      console.log(colors.gray(`  [SubTiming] ${phase}: ${duration}s`));
+    }
+  }
+}
+
 export class BcContainerProvider implements ContainerProvider {
   readonly name = "bccontainer";
   readonly platform = "windows" as const;
@@ -487,19 +518,28 @@ export class BcContainerProvider implements ContainerProvider {
     // Use the host path - bccontainerhelper will translate it to container path internally
     const escapedHostPath = sharedAppPath.replace(/\\/g, "\\\\");
 
-    // Parse app name/publisher from filename pattern: Publisher_Name_Version.app
+    // Parse app name/publisher/version from filename pattern: Publisher_Name_Version.app
     const fileNameParts = appFileName.replace(".app", "").split("_");
     const publisher = fileNameParts[0] || "";
     const appName = fileNameParts.slice(1, -1).join("_") || "";
+    const version = fileNameParts[fileNameParts.length - 1] || "";
 
     const script = `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
 
-      # Try to unpublish any existing version first (by name and publisher)
-      $existingApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" }
+      # Check if exact same version is already published - skip if so
+      $existingApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" -and $_.Version -eq "${version}" }
       if ($existingApp) {
-        Write-Host "Unpublishing existing app: $($existingApp.Name)"
-        Unpublish-BcContainerApp -containerName "${containerName}" -appName $existingApp.Name -publisher $existingApp.Publisher -version $existingApp.Version -uninstall -ErrorAction SilentlyContinue
+        Write-Host "App already published with same version, skipping: $($existingApp.Name) v${version}"
+        Write-Host "PUBLISH_SUCCESS"
+        exit 0
+      }
+
+      # Unpublish any existing different version first
+      $oldApp = Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Name -eq "${appName}" -and $_.Publisher -eq "${publisher}" }
+      if ($oldApp) {
+        Write-Host "Unpublishing existing app: $($oldApp.Name) v$($oldApp.Version)"
+        Unpublish-BcContainerApp -containerName "${containerName}" -appName $oldApp.Name -publisher $oldApp.Publisher -version $oldApp.Version -uninstall -ErrorAction SilentlyContinue
       }
 
       # Publish the new app using the host path (bccontainerhelper translates it)
@@ -529,6 +569,7 @@ export class BcContainerProvider implements ContainerProvider {
     containerName: string,
     project: ALProject,
     appFilePath?: string,
+    testCodeunitId?: number,
   ): Promise<TestResult> {
     console.log(
       colors.cyan(
@@ -572,9 +613,23 @@ export class BcContainerProvider implements ContainerProvider {
       credentials,
       sharedAppPath,
       extensionId,
+      testCodeunitId,
     );
     const result = await this.executePowerShell(script);
     const duration = Date.now() - startTime;
+
+    // Log sub-timings from PowerShell markers
+    logSubTimings(result.output);
+
+    // Debug: Check for marker presence
+    const hasPublishStart = result.output.includes("PUBLISH_START:");
+    const hasPublishEnd = result.output.includes("PUBLISH_END:");
+    const hasTestStart = result.output.includes("TEST_START:");
+    const hasTestEnd = result.output.includes("TEST_END:");
+    console.log(colors.gray(
+      `[Debug] Markers: PUBLISH_START=${hasPublishStart}, PUBLISH_END=${hasPublishEnd}, ` +
+        `TEST_START=${hasTestStart}, TEST_END=${hasTestEnd}`,
+    ));
 
     // Cleanup copied file
     try {
@@ -591,6 +646,14 @@ export class BcContainerProvider implements ContainerProvider {
       calculateTestMetrics(results, allPassed, publishFailed);
 
     this.logTestResult(success, passedTests, totalTests);
+
+    // Debug: Log raw output when no tests are found (helps diagnose parsing issues)
+    if (totalTests === 0) {
+      console.log(colors.yellow("[Debug] No tests detected. Raw output:"));
+      console.log(colors.gray("--- BEGIN TEST OUTPUT ---"));
+      console.log(result.output);
+      console.log(colors.gray("--- END TEST OUTPUT ---"));
+    }
 
     return {
       success,
@@ -702,50 +765,20 @@ export class BcContainerProvider implements ContainerProvider {
     credentials: ContainerCredentials,
     appFilePath: string,
     extensionId: string,
+    testCodeunitId?: number,
   ): string {
     const escapedAppFile = appFilePath.replace(/\\/g, "\\\\");
 
     // Prereqs are already published by publishApp() - just publish main app and run tests
+    // Note: PRECLEAN removed - fixed app ID with ForceSync handles updates in place (~13s savings)
     return `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
 
       $password = ConvertTo-SecureString "${credentials.password}" -AsPlainText -Force
       $credential = New-Object PSCredential("${credentials.username}", $password)
 
-      ${this.buildPreCleanupScript(containerName, extensionId)}
       ${this.buildPublishScript(containerName, escapedAppFile)}
-      ${this.buildRunTestsScript(containerName, extensionId)}
-      ${this.buildPostCleanupScript(containerName)}
-    `;
-  }
-
-  /** Build the pre-publish cleanup script block */
-  private buildPreCleanupScript(
-    containerName: string,
-    extensionId: string,
-  ): string {
-    return `
-      # PRE-PUBLISH CLEANUP: Remove any existing version of this app
-      Write-Output "PRECLEAN_START"
-      try {
-        Invoke-ScriptInBcContainer -containerName "${containerName}" -scriptblock {
-          param($targetAppId)
-          # Clean up apps matching our extension ID (compare as strings)
-          $apps = Get-NAVAppInfo -ServerInstance BC | Where-Object { $_.AppId.ToString() -eq $targetAppId }
-          if ($apps) {
-            Write-Host "Cleaning up $($apps.Count) existing app(s) with AppId=$targetAppId"
-            foreach ($app in $apps) {
-              $version = $app.Version.ToString()
-              Write-Host "  Removing: $($app.Name) v$version"
-              try { Uninstall-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -Force -ErrorAction SilentlyContinue } catch {}
-              try { Unpublish-NAVApp -ServerInstance BC -Name $app.Name -Publisher $app.Publisher -Version $version -ErrorAction SilentlyContinue } catch {}
-            }
-          }
-        } -argumentList "${extensionId}"
-        Write-Output "PRECLEAN_SUCCESS"
-      } catch {
-        Write-Output "PRECLEAN_WARNING:$($_.Exception.Message)"
-      }
+      ${this.buildRunTestsScript(containerName, extensionId, testCodeunitId)}
     `;
   }
 
@@ -755,12 +788,22 @@ export class BcContainerProvider implements ContainerProvider {
     escapedAppFile: string,
   ): string {
     return `
+      # Unpublish existing CentralGauge apps EXCEPT prereqs (which we depend on)
+      # Prereq apps have "Prereq" in their name by convention
+      $cgApps = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Publisher -eq "CentralGauge" -and $_.Name -notlike "*Prereq*" })
+      foreach ($app in $cgApps) {
+        try {
+          Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -ErrorAction SilentlyContinue
+        } catch { }
+      }
+
       # Publish the app (will sync and install)
       try {
-        Write-Output "PUBLISH_START"
+        Write-Output "PUBLISH_START:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
         Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
-        Write-Output "PUBLISH_SUCCESS"
+        Write-Output "PUBLISH_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
       } catch {
+        Write-Output "PUBLISH_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
         Write-Output "PUBLISH_FAILED:$($_.Exception.Message)"
         exit 1
       }
@@ -771,44 +814,52 @@ export class BcContainerProvider implements ContainerProvider {
   private buildRunTestsScript(
     containerName: string,
     extensionId: string,
+    testCodeunitId?: number,
   ): string {
     // Build extensionId parameter if provided
     const extensionIdParam = extensionId ? `-extensionId "${extensionId}"` : "";
+    // Use specific codeunit ID if provided, otherwise scan all with "*"
+    const codeunitFilter = testCodeunitId ? testCodeunitId.toString() : "*";
 
     return `
       # Run tests
-      Write-Output "TEST_START"
+      Write-Output "TEST_START:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
       try {
         # Use -detailed for verbose output
         # The *>&1 captures all streams (including Write-Host) and outputs them
-        # We DON'T re-output the lines to avoid duplicating test results in parsing
-        $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential ${extensionIdParam} -testCodeunit "*" -detailed -ErrorAction Stop *>&1
+        $results = Run-TestsInBcContainer -containerName "${containerName}" -credential $credential ${extensionIdParam} -testCodeunit "${codeunitFilter}" -detailed -ErrorAction Stop *>&1
 
-        # Check if all tests passed by looking at the captured output
-        # Only check actual test result lines (Testfunction ... Failure/Success)
-        $allPassed = $true
+        # Output each line and count test results for accurate pass/fail detection
+        $passedCount = 0
+        $failedCount = 0
         foreach ($line in $results) {
           $lineStr = "$line"
-          # Only match actual test failure lines: "Testfunction <name> Failure"
-          # This avoids false positives from warnings like "can lead to test failures"
-          if ($lineStr -match "Testfunction\s+\S+\s+Failure") {
-            $allPassed = $false
+          Write-Output $lineStr
+          # Match test result lines: "Testfunction <name> Success/Failure"
+          # Use capture group to determine pass/fail status
+          if ($lineStr -match "Testfunction\s+\S+\s+(Success|Failure)") {
+            if ($Matches[1] -eq "Success") {
+              $passedCount++
+            } else {
+              $failedCount++
+            }
           }
         }
 
-        if ($allPassed) {
+        if ($failedCount -eq 0 -and $passedCount -gt 0) {
           Write-Output "ALL_TESTS_PASSED"
-        } else {
+        } elseif ($failedCount -gt 0) {
           Write-Output "SOME_TESTS_FAILED"
         }
       } catch {
         Write-Output "TEST_ERROR:$($_.Exception.Message)"
       }
-      Write-Output "TEST_END"
+      Write-Output "TEST_END:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
     `;
   }
 
   /** Build the post-test cleanup script block */
+  // @ts-ignore: Kept for potential future use - currently disabled for performance
   private buildPostCleanupScript(containerName: string): string {
     return `
       # POST-TEST CLEANUP: Uninstall and unpublish the test app

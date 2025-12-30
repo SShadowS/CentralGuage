@@ -337,6 +337,7 @@ export class DockerContainerProvider implements ContainerProvider {
     containerName: string,
     project: ALProject,
     _appFilePath?: string,
+    _testCodeunitId?: number,
   ): Promise<TestResult> {
     console.log(`🧪 [Docker] Running tests in container: ${containerName}`);
 

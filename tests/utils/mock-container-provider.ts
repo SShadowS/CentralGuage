@@ -88,7 +88,7 @@ export class MockContainerProvider implements ContainerProvider {
   private defaultStatusConfig: MockStatusConfig = {
     isRunning: true,
     health: "healthy",
-    bcVersion: "24.0.0.0",
+    bcVersion: "27.0.0.0",
   };
 
   // Per-container/project overrides
@@ -543,7 +543,7 @@ export function createMockContainerStatus(
   return {
     name: "test-container",
     isRunning: true,
-    bcVersion: "24.0.0.0",
+    bcVersion: "27.0.0.0",
     uptime: 3600,
     health: "healthy",
     ...overrides,

@@ -532,7 +532,7 @@ export class TaskExecutorV2 {
       name: `CentralGauge_${context.manifest.id}_${attemptNumber}`,
       publisher: "CentralGauge",
       version: "1.0.0.0",
-      platform: "24.0.0.0",
+      platform: "27.0.0.0",
       runtime: "11.0",
       idRanges: [{ from: 70000, to: 89999 }],
     };
@@ -549,13 +549,13 @@ export class TaskExecutorV2 {
           id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
           name: "Library Assert",
           publisher: "Microsoft",
-          version: "24.0.0.0",
+          version: "27.0.0.0",
         },
         {
           id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
           name: "Tests-TestLibraries",
           publisher: "Microsoft",
-          version: "24.0.0.0",
+          version: "27.0.0.0",
         },
       ];
     }
@@ -975,6 +975,8 @@ export class TaskExecutorV2 {
       testResult = await containerProvider.runTests(
         context.containerName,
         project,
+        undefined, // appFilePath - not needed, uses compiled app from project
+        context.manifest.expected.testCodeunitId,
       );
 
       // Log test result if debug is enabled

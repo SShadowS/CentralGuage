@@ -15,7 +15,8 @@ description: >-
      Use SetLoadFields to load only "No." and Description fields from Item table.
 
   3. Procedure "SumItemInventory" that returns Decimal.
-     Use SetLoadFields to load only the Inventory field from Item table.
+     Use SetLoadFields to load only the "No." field from Item table for efficient iteration.
+     Use CalcFields to calculate the Inventory FlowField for each item.
      Return the sum of all item inventory quantities.
 
   4. Procedure "CountBlockedCustomers" that returns Integer.
@@ -31,6 +32,7 @@ description: >-
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M023.Test.al
+  testCodeunitId: 80023
 metrics:
   - compile_pass
   - tests_pass

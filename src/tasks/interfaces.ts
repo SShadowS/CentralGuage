@@ -46,6 +46,8 @@ export interface TaskManifest {
     compile: boolean;
     /** Test app name to run (optional - omit if no tests) */
     testApp?: string | undefined;
+    /** Test codeunit ID for targeted test execution (skips discovery, ~2-5s faster) */
+    testCodeunitId?: number | undefined;
     /** Patterns that must appear in generated code */
     mustContain?: string[] | undefined;
     /** Patterns that must NOT appear in generated code */

@@ -123,6 +123,7 @@ export class MockContainerProvider implements ContainerProvider {
     _containerName: string,
     project: ALProject,
     _appFilePath?: string,
+    _testCodeunitId?: number,
   ): Promise<TestResult> {
     console.log(`🧪 [Mock] Running tests for project: ${project.path}`);
     const startTime = Date.now();

@@ -26,6 +26,7 @@ description: >-
 expected:
   compile: true
   testApp: tests/al/hard/CG-AL-H205.Test.al
+  testCodeunitId: 80005
 metrics:
   - compile_pass
   - tests_pass
