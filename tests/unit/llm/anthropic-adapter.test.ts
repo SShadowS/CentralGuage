@@ -190,6 +190,61 @@ Deno.test("AnthropicAdapter - validateConfig", async (t) => {
     );
   });
 
+  await t.step("validates thinkingBudget vs maxTokens constraint", () => {
+    const adapter = new AnthropicAdapter();
+
+    // Invalid: maxTokens < thinkingBudget
+    let errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "claude-sonnet-4-5",
+      maxTokens: 16000,
+      thinkingBudget: 56000,
+    });
+    assertEquals(
+      errors.some((e) => e.includes("must be greater than thinkingBudget")),
+      true,
+    );
+
+    // Invalid: maxTokens === thinkingBudget
+    errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "claude-sonnet-4-5",
+      maxTokens: 10000,
+      thinkingBudget: 10000,
+    });
+    assertEquals(
+      errors.some((e) => e.includes("must be greater than thinkingBudget")),
+      true,
+    );
+
+    // Valid: maxTokens > thinkingBudget
+    errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "claude-sonnet-4-5",
+      maxTokens: 60000,
+      thinkingBudget: 56000,
+    });
+    assertEquals(
+      errors.some((e) => e.includes("thinkingBudget")),
+      false,
+    );
+
+    // Valid: no thinkingBudget set (no constraint applies)
+    errors = adapter.validateConfig({
+      provider: "anthropic",
+      apiKey: "test-key",
+      model: "claude-sonnet-4-5",
+      maxTokens: 4000,
+    });
+    assertEquals(
+      errors.some((e) => e.includes("thinkingBudget")),
+      false,
+    );
+  });
+
   await t.step("accepts custom claude models without error", () => {
     const adapter = new AnthropicAdapter();
     const errors = adapter.validateConfig({

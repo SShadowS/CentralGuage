@@ -30,6 +30,9 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     "gpt-5.1",
     "gpt-5.2",
     "gpt-5-pro",
+    // Codex models
+    "gpt-5.1-codex",
+    "gpt-5.1-codex-max",
     "gpt-5.1-codex-mini",
     // GPT-4 models
     "gpt-4o",
@@ -266,6 +269,9 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
       "gpt-5.1": { input: 0.01, output: 0.03 },
       "gpt-5.2": { input: 0.015, output: 0.045 },
       "gpt-5-pro": { input: 0.03, output: 0.09 },
+      // Codex models (estimated)
+      "gpt-5.1-codex": { input: 0.015, output: 0.06 },
+      "gpt-5.1-codex-max": { input: 0.01, output: 0.04 },
       "gpt-5.1-codex-mini": { input: 0.003, output: 0.012 },
       // GPT-4 pricing
       "gpt-4o": { input: 0.0025, output: 0.01 },

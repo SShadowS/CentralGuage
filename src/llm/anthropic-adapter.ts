@@ -217,6 +217,18 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       errors.push("Max tokens must be between 1 and 200000 for Anthropic");
     }
 
+    // Validate thinking budget constraint: max_tokens must be > thinking_budget
+    if (
+      typeof config.thinkingBudget === "number" &&
+      typeof config.maxTokens === "number" &&
+      config.maxTokens <= config.thinkingBudget
+    ) {
+      errors.push(
+        `maxTokens (${config.maxTokens}) must be greater than thinkingBudget (${config.thinkingBudget}). ` +
+          `Use tokens=${config.thinkingBudget + 1000} or higher.`,
+      );
+    }
+
     return errors;
   }
 
@@ -374,6 +386,14 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       : (request.temperature ?? this.config.temperature ?? 0.1);
 
     const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    // Validate constraint at request time (catches request overrides)
+    if (thinkingBudget !== undefined && maxTokens <= thinkingBudget) {
+      throw new Error(
+        `maxTokens (${maxTokens}) must be greater than thinkingBudget (${thinkingBudget}). ` +
+          `Use tokens=${thinkingBudget + 1000} or higher.`,
+      );
+    }
 
     // deno-lint-ignore no-explicit-any
     const params: any = {

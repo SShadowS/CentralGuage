@@ -22,30 +22,40 @@ export class MockLLMAdapter implements LLMAdapter {
   };
 
   private readonly codeTemplates = {
-    simpleTable: `table 70000 "Test Table"
+    // Valid table for CG-AL-E001 task (Product Category)
+    simpleTable: `table 70000 "Product Category"
 {
+    Caption = 'Product Category';
     DataClassification = CustomerContent;
-    
+
     fields
     {
-        field(1; "Entry No."; Integer)
+        field(1; "Code"; Code[20])
         {
+            Caption = 'Code';
             DataClassification = CustomerContent;
-            AutoIncrement = true;
         }
         field(2; "Description"; Text[100])
         {
+            Caption = 'Description';
             DataClassification = CustomerContent;
         }
-        field(3; "Amount"; Decimal)
+        field(3; "Active"; Boolean)
         {
+            Caption = 'Active';
+            DataClassification = CustomerContent;
+            InitValue = true;
+        }
+        field(4; "Created Date"; Date)
+        {
+            Caption = 'Created Date';
             DataClassification = CustomerContent;
         }
     }
-    
+
     keys
     {
-        key(PK; "Entry No.")
+        key(PK; "Code")
         {
             Clustered = true;
         }
