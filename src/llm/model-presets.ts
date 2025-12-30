@@ -44,6 +44,28 @@ export const MODEL_PRESETS: Record<string, ModelPreset> = {
     category: ["flagship", "quality", "2025"],
     maxOutputTokens: 16384,
   },
+  "codex": {
+    alias: "codex",
+    provider: "openai",
+    model: "gpt-5.1-codex",
+    displayName: "GPT-5.1 Codex",
+    description: "Most advanced agentic coding model",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["flagship", "coding", "2025"],
+    maxOutputTokens: 16384,
+  },
+  "codex-max": {
+    alias: "codex-max",
+    provider: "openai",
+    model: "gpt-5.1-codex-max",
+    displayName: "GPT-5.1 Codex Max",
+    description: "Extended agentic coding tasks",
+    costTier: "premium",
+    performanceTier: "quality",
+    category: ["coding", "2025"],
+    maxOutputTokens: 16384,
+  },
   "codex-mini": {
     alias: "codex-mini",
     provider: "openai",
@@ -376,6 +398,8 @@ export const MODEL_GROUPS: Record<string, string[]> = {
   // Use case groups
   "coding": [
     "gpt-5",
+    "codex",
+    "codex-max",
     "codex-mini",
     "sonnet-4.5",
     "gpt-4o",
@@ -392,6 +416,8 @@ export const MODEL_GROUPS: Record<string, string[]> = {
   "2025": [
     "gpt-5",
     "gpt-5-pro",
+    "codex",
+    "codex-max",
     "codex-mini",
     "claude-4.5",
     "sonnet-4.5",
