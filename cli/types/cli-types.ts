@@ -23,6 +23,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   stream?: boolean;
   // JSON events mode (for TUI/machine parsing)
   jsonEvents?: boolean;
+  // Retry mode: path to previous results file
+  retry?: string;
 }
 
 /**

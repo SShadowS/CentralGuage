@@ -44,11 +44,13 @@ import {
   parseProviderAndModel,
   statusText,
 } from "../helpers/mod.ts";
+import { BenchTui, isTuiSupported } from "../tui/bench-tui.ts";
 import { loadTaskManifestsWithHashes } from "../helpers/task-loader.ts";
 import type { ExtendedBenchmarkOptions } from "../types/cli-types.ts";
 import { AgentRegistry } from "../../src/agents/registry.ts";
 import { AgentTaskExecutor } from "../../src/agents/executor.ts";
 import type { AgentExecutionResult } from "../../src/agents/types.ts";
+import type { TaskExecutionResult } from "../../src/tasks/interfaces.ts";
 import { join } from "@std/path";
 
 /**
@@ -154,6 +156,82 @@ function outputJsonEvent(
 }
 
 /**
+ * Check if a failure is transient (worth retrying) vs model output quality issue
+ * Transient failures: API errors, timeouts, rate limits, network issues
+ * Model failures: Compilation failed, tests failed, missing patterns
+ */
+function isTransientFailure(result: TaskExecutionResult): boolean {
+  const lastAttempt = result.attempts[result.attempts.length - 1];
+  if (!lastAttempt) return false;
+
+  const reasons = lastAttempt.failureReasons.join(" ").toLowerCase();
+
+  // Model output failures - NOT worth retrying
+  const modelFailurePatterns = [
+    "compilation failed",
+    "tests failed",
+    "code did not compile",
+    "missing required patterns",
+    "contains forbidden patterns",
+    "custom check",
+  ];
+
+  // If it's clearly a model output failure, don't retry
+  if (modelFailurePatterns.some((pattern) => reasons.includes(pattern))) {
+    return false;
+  }
+
+  // Transient failures - worth retrying
+  const transientPatterns = [
+    "llm call failed",
+    "timeout",
+    "rate limit",
+    "429",
+    "503",
+    "502",
+    "500",
+    "connection",
+    "network",
+    "econnreset",
+    "enotfound",
+    "container error",
+    "failed to",
+  ];
+
+  return transientPatterns.some((pattern) => reasons.includes(pattern));
+}
+
+/**
+ * Prompt user to retry failed tasks interactively
+ */
+async function promptRetryFailed(
+  transientCount: number,
+  modelFailureCount: number,
+): Promise<boolean> {
+  // Show model failures info (not retryable)
+  if (modelFailureCount > 0) {
+    console.log(
+      colors.dim(
+        `[Info] ${modelFailureCount} model output failures (compilation/test) - not retryable`,
+      ),
+    );
+  }
+
+  const prompt = `${
+    colors.yellow("[Retry]")
+  } ${transientCount} transient failures (timeout, API errors). Retry now? [y/N] `;
+  await Deno.stdout.write(new TextEncoder().encode(prompt));
+
+  const buf = new Uint8Array(10);
+  const n = await Deno.stdin.read(buf);
+  if (n === null) return false;
+
+  const input = new TextDecoder().decode(buf.subarray(0, n)).trim()
+    .toLowerCase();
+  return input === "y" || input === "yes";
+}
+
+/**
  * Run benchmark in parallel mode (default)
  */
 async function runParallelBenchmark(
@@ -162,6 +240,7 @@ async function runParallelBenchmark(
   containerProviderName?: string,
   outputFormat: OutputFormat = "verbose",
   jsonEvents = false,
+  tuiMode = false,
 ): Promise<void> {
   if (!quiet) {
     await EnvLoader.loadEnvironment();
@@ -205,7 +284,7 @@ async function runParallelBenchmark(
     await Deno.mkdir(options.outputDir, { recursive: true });
 
     // Load task manifests with comprehensive hashing
-    const { manifests: taskManifests, hashResult } =
+    let { manifests: taskManifests, hashResult } =
       await loadTaskManifestsWithHashes(
         options.tasks,
         options.outputDir,
@@ -221,7 +300,7 @@ async function runParallelBenchmark(
     const containerConfig = appConfig.container || {};
 
     // Resolve all models with variant support
-    const variants: ModelVariant[] = ModelPresetRegistry.resolveWithVariants(
+    let variants: ModelVariant[] = ModelPresetRegistry.resolveWithVariants(
       options.llms,
       appConfig,
     );
@@ -231,6 +310,67 @@ async function runParallelBenchmark(
         variants.map((v) => getVariantDisplayName(v)).join(", ")
       }`,
     );
+
+    // Handle retry mode: load previous results and filter to missing combinations
+    // deno-lint-ignore no-explicit-any
+    let previousResults: any[] = [];
+    if (options.retry) {
+      try {
+        const retryContent = await Deno.readTextFile(options.retry);
+        const retryData = JSON.parse(retryContent);
+        const existingResults = Array.isArray(retryData)
+          ? retryData
+          : retryData.results;
+
+        previousResults = existingResults;
+
+        // Build set of completed task|variantId pairs
+        const completedPairs = new Set(
+          existingResults.map((
+            r: {
+              taskId: string;
+              context?: { variantId?: string; llmModel?: string };
+            },
+          ) => `${r.taskId}|${r.context?.variantId || r.context?.llmModel}`),
+        );
+
+        log.info(
+          `[Retry] Loaded ${existingResults.length} existing results from ${options.retry}`,
+        );
+
+        // Build all expected pairs and find missing ones
+        const allPairs = taskManifests.flatMap((t) =>
+          variants.map((v) => `${t.id}|${v.variantId}`)
+        );
+        const missingPairs = allPairs.filter((p) => !completedPairs.has(p));
+
+        if (missingPairs.length === 0) {
+          log.summary("[Retry] No missing combinations - all tasks completed!");
+          return;
+        }
+
+        // Extract unique task and variant IDs from missing pairs
+        const missingTaskIds = new Set(
+          missingPairs.map((p) => p.split("|")[0]),
+        );
+        const missingVariantIds = new Set(
+          missingPairs.map((p) => p.split("|")[1]),
+        );
+
+        // Filter to only needed items
+        taskManifests = taskManifests.filter((t) => missingTaskIds.has(t.id));
+        variants = variants.filter((v) => missingVariantIds.has(v.variantId));
+
+        log.info(
+          `[Retry] Running ${missingPairs.length} missing combinations ` +
+            `(${taskManifests.length} tasks × ${variants.length} models)`,
+        );
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : String(e);
+        log.fail(`Failed to load retry file: ${errorMessage}`);
+        throw e;
+      }
+    }
 
     // Setup container
     const containerName = containerConfig.name || "centralgauge-benchmark";
@@ -324,11 +464,86 @@ async function runParallelBenchmark(
       return "red";
     };
 
+    // Initialize TUI if enabled and supported
+    let tui: BenchTui | null = null;
+    if (tuiMode) {
+      if (!isTuiSupported()) {
+        console.warn(
+          colors.yellow(
+            "[WARN] TUI mode requires a terminal. Falling back to console output.",
+          ),
+        );
+      } else {
+        tui = new BenchTui();
+        tui.start();
+
+        // Set initial progress
+        const totalTasks = taskManifests.length * options.llms.length;
+        tui.updateProgress({
+          completedTasks: 0,
+          totalTasks,
+          activeLLMCalls: 0,
+          compileQueueLength: 0,
+          errors: [],
+          startTime: new Date(),
+          elapsedTime: 0,
+        });
+
+        // Add initial status lines
+        tui.addLine("[CentralGauge] LLM Benchmark Mode");
+        tui.addLine(`Models: ${options.llms.join(", ")}`);
+        tui.addLine(`Tasks: ${taskManifests.length} task(s)`);
+        tui.addLine(`Container: ${containerName}`);
+        tui.addLine("");
+
+        // Intercept console.log to route through TUI
+        const originalConsoleLog = console.log;
+        console.log = (...args: unknown[]) => {
+          const line = args.map((a) =>
+            typeof a === "string" ? a : JSON.stringify(a)
+          ).join(" ");
+          tui!.addLine(line);
+        };
+
+        // Restore on destroy
+        const originalDestroy = tui.destroy.bind(tui);
+        tui.destroy = () => {
+          console.log = originalConsoleLog;
+          originalDestroy();
+        };
+      }
+    }
+
     // Subscribe to events
     orchestrator.on((event: ParallelExecutionEvent) => {
       // JSON events mode: output machine-readable JSON lines
       if (jsonEvents) {
         outputJsonEvent(event, modelPassRates);
+        return;
+      }
+
+      // TUI mode: delegate to TUI handler
+      if (tui) {
+        tui.handleEvent(event);
+        // Still track pass rates for summary display after TUI closes
+        if (event.type === "result") {
+          const variantId = event.result.context.variantId ||
+            event.result.context.llmModel;
+          if (!modelPassRates.has(variantId)) {
+            modelPassRates.set(variantId, {
+              total: 0,
+              attempt1: 0,
+              attempt2: 0,
+            });
+          }
+          const stats = modelPassRates.get(variantId)!;
+          stats.total++;
+          if (event.result.passedAttemptNumber === 1) {
+            stats.attempt1++;
+          } else if (event.result.passedAttemptNumber === 2) {
+            stats.attempt2++;
+          }
+        }
         return;
       }
 
@@ -468,12 +683,89 @@ async function runParallelBenchmark(
       parallelOptions.promptOverrides = options.promptOverrides;
     }
 
-    // Run parallel benchmark
-    const { results, summary } = await orchestrator.runParallel(
-      taskManifests,
-      variants,
-      parallelOptions,
-    );
+    // Run parallel benchmark with interactive retry loop
+    let allResults = [...previousResults];
+    let tasksToRun = taskManifests;
+    let variantsToRun = variants;
+    let lastSummary: Awaited<
+      ReturnType<typeof orchestrator.runParallel>
+    >["summary"];
+    let retryCount = 0;
+
+    while (true) {
+      const { results, summary } = await orchestrator.runParallel(
+        tasksToRun,
+        variantsToRun,
+        parallelOptions,
+      );
+      lastSummary = summary;
+
+      // Merge results: remove any old results for task+model pairs we just re-ran
+      const newResultKeys = new Set(
+        results.map((r) =>
+          `${r.taskId}|${r.context.variantId || r.context.llmModel}`
+        ),
+      );
+      allResults = [
+        ...allResults.filter((r) =>
+          !newResultKeys.has(
+            `${r.taskId}|${r.context?.variantId || r.context?.llmModel}`,
+          )
+        ),
+        ...results,
+      ];
+
+      // Check for failures - distinguish transient vs model output failures
+      const failedResults = results.filter((r) => !r.success);
+      const transientFailures = failedResults.filter(isTransientFailure);
+      const modelFailureCount = failedResults.length - transientFailures.length;
+      const isInteractive = !quiet && !jsonEvents && !tuiMode;
+
+      // Only offer retry if there are transient failures worth retrying
+      if (transientFailures.length === 0 || !isInteractive) {
+        if (modelFailureCount > 0 && isInteractive) {
+          console.log(
+            colors.dim(
+              `\n[Info] ${modelFailureCount} model output failures (compilation/test) - not retryable`,
+            ),
+          );
+        }
+        break;
+      }
+
+      const shouldRetry = await promptRetryFailed(
+        transientFailures.length,
+        modelFailureCount,
+      );
+      if (!shouldRetry) {
+        break;
+      }
+
+      retryCount++;
+
+      // Filter to only transient failed combinations for next iteration
+      const failedTaskIds = new Set(transientFailures.map((r) => r.taskId));
+      const failedVariantIds = new Set(
+        transientFailures.map((r) => r.context.variantId || r.context.llmModel),
+      );
+
+      tasksToRun = taskManifests.filter((t) => failedTaskIds.has(t.id));
+      variantsToRun = variants.filter((v) => failedVariantIds.has(v.variantId));
+
+      log.info(
+        `[Retry #${retryCount}] Re-running ${transientFailures.length} transient failures...`,
+      );
+    }
+
+    // Clean up TUI before outputting results
+    if (tui) {
+      tui.destroy();
+      tui = null;
+    }
+
+    // Use all accumulated results
+    const finalResults = allResults;
+    const summary = lastSummary!;
 
     // Save results
     const timestamp = Date.now();
@@ -483,7 +775,7 @@ async function runParallelBenchmark(
       resultsFile,
       JSON.stringify(
         {
-          results,
+          results: finalResults,
           stats: {
             totalTokens: summary.stats.totalTokens,
             totalCost: summary.stats.totalCost,
@@ -525,8 +817,8 @@ async function runParallelBenchmark(
       `# Aggregate Stats`,
       `pass_rate_1: ${(summary.stats.passRate1 * 100).toFixed(1)}%`,
       `pass_rate_2: ${(summary.stats.passRate2 * 100).toFixed(1)}%`,
-      `pass_num_1: ${summary.stats.passNum1}/${results.length}`,
-      `pass_num_2: ${summary.stats.passNum2}/${results.length}`,
+      `pass_num_1: ${summary.stats.passNum1}/${finalResults.length}`,
+      `pass_num_2: ${summary.stats.passNum2}/${finalResults.length}`,
       `compile_errors: ${summary.stats.totalCompileErrors}`,
       `test_failures: ${summary.stats.totalTestFailures}`,
       `malformed: ${summary.stats.totalMalformed}`,
@@ -567,7 +859,7 @@ async function runParallelBenchmark(
     // Print summary
     console.log("");
     log.summary("Benchmark Summary:");
-    console.log(`   Total results: ${results.length}`);
+    console.log(`   Total results: ${finalResults.length}`);
     console.log(
       `   Pass rate: ${(summary.stats.overallPassRate * 100).toFixed(1)}%`,
     );
@@ -858,6 +1150,7 @@ interface AgentBenchmarkOptions {
   outputDir: string;
   debug?: boolean;
   stream?: boolean;
+  tui?: boolean;
   containerName: string;
 }
 
@@ -925,6 +1218,68 @@ async function runAgentBenchmark(
   // Create output directory
   await Deno.mkdir(options.outputDir, { recursive: true });
 
+  const startTime = Date.now();
+  const totalTasks = taskManifests.length * agentConfigs.length;
+  let completedTasks = 0;
+
+  // Initialize TUI if enabled and supported
+  let tui: BenchTui | null = null;
+  if (options.tui) {
+    if (!isTuiSupported()) {
+      console.warn(
+        colors.yellow(
+          "[WARN] TUI mode requires a terminal. Falling back to console output.",
+        ),
+      );
+    } else {
+      tui = new BenchTui();
+      tui.start();
+
+      // Set initial progress
+      tui.updateProgress({
+        completedTasks: 0,
+        totalTasks,
+        activeLLMCalls: 0,
+        compileQueueLength: 0,
+        errors: [],
+        startTime: new Date(startTime),
+        elapsedTime: 0,
+      });
+
+      // Add initial status lines
+      tui.addLine("[CentralGauge] Agent Benchmark Mode");
+      tui.addLine(`Agents: ${options.agents.join(", ")}`);
+      tui.addLine(`Tasks: ${taskManifests.length} task(s)`);
+      tui.addLine(`Container: ${options.containerName}`);
+      tui.addLine("");
+
+      // Intercept console.log to route through TUI
+      const originalConsoleLog = console.log;
+      console.log = (...args: unknown[]) => {
+        const line = args.map((a) =>
+          typeof a === "string" ? a : JSON.stringify(a)
+        ).join(" ");
+        tui!.addLine(line);
+      };
+
+      // Restore on destroy (store for cleanup)
+      const originalDestroy = tui.destroy.bind(tui);
+      tui.destroy = () => {
+        console.log = originalConsoleLog;
+        originalDestroy();
+      };
+    }
+  }
+
+  // Helper to output either to TUI or console
+  const output = (line: string) => {
+    if (tui) {
+      tui.addLine(line);
+    } else {
+      console.log(line);
+    }
+  };
+
   // Execute each agent on each task
   const executor = new AgentTaskExecutor();
   const allResults: Array<{
@@ -933,11 +1288,11 @@ async function runAgentBenchmark(
     result: AgentExecutionResult;
   }> = [];
 
-  const startTime = Date.now();
+  // Track agent stats for TUI
+  const agentPassRates = new Map<string, { total: number; passed: number }>();
 
   for (const task of taskManifests) {
-    console.log("");
-    log.task(`${task.id}: Running with ${agentConfigs.length} agent(s)`);
+    output(`[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`);
 
     for (const agentConfig of agentConfigs) {
       // Create a unique workspace for this agent+task
@@ -948,7 +1303,7 @@ async function runAgentBenchmark(
         `${agentConfig.id}_${task.id}_${Date.now()}`,
       );
 
-      log.llm(agentConfig.id, `Starting...`);
+      output(`[${agentConfig.id}] Starting...`);
 
       try {
         const result = await executor.execute(agentConfig, task, {
@@ -964,24 +1319,61 @@ async function runAgentBenchmark(
           result,
         });
 
-        const status = result.success
-          ? colors.green("pass")
-          : colors.red("fail");
+        const status = result.success ? "pass" : "fail";
+        const testResult = result.testResult;
+        const testInfo = testResult
+          ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
+          : "";
 
-        log.llm(
-          agentConfig.id,
-          `${status} (turns: ${result.metrics.turns}, cost: $${
+        output(
+          `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
             result.metrics.estimatedCost.toFixed(4)
-          })`,
+          }`,
         );
+
+        // Update TUI model stats
+        if (tui) {
+          tui.updateModelStats(agentConfig.id, result.success);
+        }
+
+        // Track for summary
+        if (!agentPassRates.has(agentConfig.id)) {
+          agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
+        }
+        const stats = agentPassRates.get(agentConfig.id)!;
+        stats.total++;
+        if (result.success) stats.passed++;
       } catch (error) {
-        log.fail(
-          `${agentConfig.id}: ${
+        output(
+          `[FAIL] ${agentConfig.id}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
       }
+
+      // Update TUI progress
+      completedTasks++;
+      if (tui) {
+        const elapsed = Date.now() - startTime;
+        const avgTimePerTask = elapsed / completedTasks;
+        const remaining = totalTasks - completedTasks;
+        tui.updateProgress({
+          completedTasks,
+          totalTasks,
+          activeLLMCalls: remaining > 0 ? 1 : 0,
+          compileQueueLength: 0,
+          estimatedTimeRemaining: remaining * avgTimePerTask,
+          errors: [],
+          startTime: new Date(startTime),
+          elapsedTime: elapsed,
+        });
+      }
     }
+  }
+
+  // Destroy TUI before printing summary
+  if (tui) {
+    tui.destroy();
   }
 
   const totalDuration = Date.now() - startTime;
@@ -1190,6 +1582,15 @@ export function registerBenchCommand(cli: Command): void {
       "Output progress as JSON lines (for TUI/machine parsing)",
       { default: false },
     )
+    .option(
+      "--tui",
+      "Enable TUI mode with split-pane progress display",
+      { default: false },
+    )
+    .option(
+      "--retry <file:string>",
+      "Retry missing task+model combinations from a previous results file",
+    )
     .action(async (options) => {
       // Validate that at least one of --llms or --agents is provided
       if (
@@ -1212,6 +1613,7 @@ export function registerBenchCommand(cli: Command): void {
           outputDir: options.output,
           debug: options.debug,
           stream: options.stream,
+          tui: options.tui,
           containerName: "Cronus27", // Default container
         };
         await runAgentBenchmark(agentBenchOptions, options.quiet);
@@ -1265,6 +1667,9 @@ export function registerBenchCommand(cli: Command): void {
           : parseInt(String(options.maxConcurrency), 10),
         stream: options.stream,
       };
+      if (options.retry) {
+        benchOptions.retry = options.retry;
+      }
       if (promptOverrides) {
         benchOptions.promptOverrides = promptOverrides;
       }
@@ -1303,10 +1708,11 @@ export function registerBenchCommand(cli: Command): void {
         const outputFormat = (options.format || "verbose") as OutputFormat;
         await runParallelBenchmark(
           benchOptions,
-          options.quiet || options.jsonEvents, // Quiet mode for JSON output
+          options.quiet || options.jsonEvents || options.tui, // Quiet mode for JSON/TUI output
           options.containerProvider,
           outputFormat,
           options.jsonEvents ?? false,
+          options.tui ?? false,
         );
       }
       // Explicitly exit to close any lingering connections
