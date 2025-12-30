@@ -249,6 +249,7 @@ export function sanitizeModelNameForUrl(modelName: string): string {
  */
 export function generateChartsHtml(
   sortedModels: Array<[string, PerModelStats]>,
+  tempLookup?: Map<string, number | undefined>,
 ): string {
   const chartData = sortedModels.map(([variantId, m]) => {
     const total = m.tasksPassed + m.tasksFailed;
@@ -256,7 +257,26 @@ export function generateChartsHtml(
     const secondPassOnly = m.passedOnAttempt2 - m.passedOnAttempt1;
     const secondPassRate = total > 0 ? secondPassOnly / total : 0;
     const totalPassRate = total > 0 ? m.tasksPassed / total : 0;
-    const shortName = variantId.split("/").pop()?.split("@")[0] || variantId;
+    // Build short name with temperature suffix if available
+    let shortName = shortVariantName(variantId);
+    const temp = tempLookup?.get(variantId);
+    if (temp !== undefined) {
+      // Add temperature to the label if not already present from variantId parsing
+      if (
+        !shortName.includes("t" + temp) && !shortName.includes("t0.") &&
+        !shortName.includes("t1")
+      ) {
+        const tempStr = Number.isInteger(temp)
+          ? String(temp)
+          : temp.toFixed(1).replace(/\.0$/, "");
+        // Insert temperature into existing parentheses or add new ones
+        if (shortName.includes("(") && shortName.endsWith(")")) {
+          shortName = shortName.slice(0, -1) + `, t${tempStr})`;
+        } else {
+          shortName = `${shortName} (t${tempStr})`;
+        }
+      }
+    }
     return {
       variantId,
       shortName,
@@ -581,7 +601,7 @@ export function generateHtmlTemplate(params: {
     .chart-legend .legend-dot.bar-first { background: #22c55e; }
     .chart-legend .legend-dot.bar-second { background: #3b82f6; }
     .h-bar-chart .bar-row { display: flex; align-items: center; margin-bottom: 0.5rem; }
-    .h-bar-chart .bar-label { width: 140px; font-size: 0.8rem; color: #374151; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex-shrink: 0; }
+    .h-bar-chart .bar-label { width: 180px; font-size: 0.8rem; color: #374151; text-overflow: ellipsis; overflow: hidden; white-space: nowrap; flex-shrink: 0; }
     .h-bar-chart .bar-container { flex: 1; height: 24px; background: #f3f4f6; border-radius: 4px; margin: 0 0.75rem; overflow: hidden; display: flex; }
     .h-bar-chart .bar-fill { height: 100%; transition: width 0.3s; display: flex; align-items: center; justify-content: center; position: relative; }
     .h-bar-chart .bar-fill.bar-first { background: #22c55e; border-radius: 4px 0 0 4px; }
@@ -966,7 +986,7 @@ export async function generateCompleteReport(
   }
 
   // Generate HTML components
-  const chartsHtml = generateChartsHtml(sortedModels);
+  const chartsHtml = generateChartsHtml(sortedModels, tempLookup);
   const modelCardsHtml = generateModelCardsHtml(
     sortedModels,
     tempLookup,

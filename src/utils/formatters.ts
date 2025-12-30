@@ -899,9 +899,38 @@ export function shortVariantName(variantId: string): string {
   const configStr = configParts.join("@");
   if (!configStr) return baseName;
 
-  // Add thinking indicator if present
-  if (configStr.includes("thinking=") || configStr.includes("reasoning=")) {
-    return `${baseName} (think)`;
+  const suffixes: string[] = [];
+
+  // Extract thinking budget value
+  const thinkingMatch = configStr.match(/thinking=(\d+)/);
+  if (thinkingMatch && thinkingMatch[1]) {
+    const budget = parseInt(thinkingMatch[1], 10);
+    suffixes.push(
+      budget >= 1000 ? `${Math.round(budget / 1000)}K` : String(budget),
+    );
+  }
+
+  // Extract reasoning effort level (shorten to 3 chars)
+  const reasoningMatch = configStr.match(/reasoning=(\w+)/);
+  if (reasoningMatch && reasoningMatch[1]) {
+    const level = reasoningMatch[1];
+    const short = level.length > 4 ? level.slice(0, 3) : level;
+    suffixes.push(short);
+  }
+
+  // Extract temperature value
+  const tempMatch = configStr.match(/temperature=([\d.]+)/);
+  if (tempMatch && tempMatch[1]) {
+    const temp = parseFloat(tempMatch[1]);
+    // Format: t0.5, t1, t0 (drop trailing .0)
+    const formatted = Number.isInteger(temp)
+      ? String(temp)
+      : temp.toFixed(1).replace(/\.0$/, "");
+    suffixes.push(`t${formatted}`);
+  }
+
+  if (suffixes.length > 0) {
+    return `${baseName} (${suffixes.join(", ")})`;
   }
 
   return baseName;
