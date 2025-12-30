@@ -169,6 +169,19 @@ interface SDKAssistantMessage {
 }
 
 /**
+ * SDK User message with tool results
+ */
+interface SDKUserMessage {
+  type: "user";
+  uuid: string;
+  session_id: string;
+  message: {
+    role: "user";
+    content: ContentBlock[];
+  };
+}
+
+/**
  * SDK Result message at end of session
  */
 interface SDKResultMessage {
@@ -262,6 +275,15 @@ interface ExecutionPrepResult {
 export class AgentTaskExecutor {
   private containerProvider: BcContainerProvider;
 
+  /** Track pending tool calls with start times for duration calculation */
+  private pendingToolCalls = new Map<
+    string,
+    { name: string; startTime: number }
+  >();
+
+  /** Aggregate tool timing data for summary */
+  private toolTimings = new Map<string, { calls: number; totalMs: number }>();
+
   constructor() {
     // No configuration needed - MCP servers come from agent config
     this.containerProvider = new BcContainerProvider();
@@ -275,6 +297,103 @@ export class AgentTaskExecutor {
       username,
       password,
     });
+  }
+
+  /**
+   * Format current time as HH:MM:SS.mmm for debug logging
+   */
+  private formatTimestamp(): string {
+    return new Date().toISOString().substring(11, 23);
+  }
+
+  /**
+   * Reset tool timing data for a new execution
+   */
+  private resetToolTimings(): void {
+    this.pendingToolCalls.clear();
+    this.toolTimings.clear();
+  }
+
+  /**
+   * Log tool timing summary (called at end of execution)
+   */
+  private logToolTimingSummary(): void {
+    if (this.toolTimings.size === 0) return;
+
+    console.log("\n[Agent] Tool Timing Summary:");
+    const entries = Array.from(this.toolTimings.entries())
+      .sort((a, b) => b[1].totalMs - a[1].totalMs);
+
+    for (const [name, data] of entries) {
+      const avgMs = Math.round(data.totalMs / data.calls);
+      const totalSec = (data.totalMs / 1000).toFixed(1);
+      if (data.calls === 1) {
+        console.log(`  ${name}: ${totalSec}s`);
+      } else {
+        console.log(
+          `  ${name}: ${data.calls} calls, avg ${avgMs}ms, total ${totalSec}s`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Process user message to capture tool result timings and detect success
+   * Returns success status based on tool result content
+   */
+  private processUserMessage(
+    userMsg: SDKUserMessage,
+    requiresTests: boolean,
+    debug?: boolean,
+  ): { success: boolean } {
+    let success = false;
+
+    for (const block of userMsg.message.content) {
+      if (block.type === "tool_result") {
+        const resultBlock = block as ToolResultBlock;
+
+        // Calculate and log tool duration
+        const pending = this.pendingToolCalls.get(resultBlock.tool_use_id);
+        if (pending) {
+          const durationMs = Date.now() - pending.startTime;
+          this.pendingToolCalls.delete(resultBlock.tool_use_id);
+
+          // Aggregate timing data
+          const existing = this.toolTimings.get(pending.name) || {
+            calls: 0,
+            totalMs: 0,
+          };
+          existing.calls++;
+          existing.totalMs += durationMs;
+          this.toolTimings.set(pending.name, existing);
+
+          if (debug) {
+            const durationSec = (durationMs / 1000).toFixed(1);
+            console.log(
+              `[${this.formatTimestamp()}] [Agent] Tool result: ${pending.name} (${durationSec}s)`,
+            );
+          }
+        }
+
+        // Check for success in tool result content
+        const resultText = typeof resultBlock.content === "string"
+          ? resultBlock.content
+          : JSON.stringify(resultBlock.content);
+        const resultLower = resultText.toLowerCase();
+
+        if (requiresTests) {
+          if (resultLower.includes("all tests passed")) {
+            success = true;
+          }
+        } else {
+          if (resultLower.includes("compilation successful")) {
+            success = true;
+          }
+        }
+      }
+    }
+
+    return { success };
   }
 
   /**
@@ -405,6 +524,7 @@ export class AgentTaskExecutor {
     options: AgentExecutionOptions,
   ): Promise<AgentExecutionResult> {
     const startTime = Date.now();
+    this.resetToolTimings();
 
     // Phase 1: Setup execution environment
     const { taskWorkingDir, queryOptions, tracker, executionId } = await this
@@ -423,6 +543,7 @@ export class AgentTaskExecutor {
       let success = false;
       let finalCode: string | undefined;
       let terminationReason: TerminationReason = "error";
+      const requiresTests = !!task.expected?.testApp;
 
       // Phase 2: Process agent messages
       for await (const msg of q) {
@@ -431,29 +552,39 @@ export class AgentTaskExecutor {
         }
 
         if (msg.type === "assistant") {
-          const result = await this.processAssistantMessage(
+          this.processAssistantMessage(
             msg as SDKAssistantMessage,
             tracker,
-            taskWorkingDir,
             options.debug,
           );
-          if (result.success) {
-            success = true;
-            finalCode = result.finalCode;
-            terminationReason = "success";
-          }
           tracker.endTurn();
           tracker.startTurn();
         }
 
-        if (msg.type === "result") {
-          const resultMsg = msg as SDKResultMessage;
-          if (resultMsg.subtype === "success") {
+        // Process user messages to capture tool result timings and detect success
+        if (msg.type === "user") {
+          const userMsg = msg as SDKUserMessage;
+          const userResult = this.processUserMessage(
+            userMsg,
+            requiresTests,
+            options.debug,
+          );
+          if (userResult.success) {
             success = true;
             terminationReason = "success";
             finalCode = await this.extractFinalCode(taskWorkingDir);
-          } else if (resultMsg.subtype === "error_max_turns") {
+          }
+        }
+
+        if (msg.type === "result") {
+          const resultMsg = msg as SDKResultMessage;
+          // Don't trust SDK success - we determine success based on tool results
+          // (compilation successful or all tests passed, depending on requiresTests)
+          if (resultMsg.subtype === "error_max_turns") {
             terminationReason = "max_turns";
+          } else if (!success) {
+            // Agent finished but we didn't detect success from tool results
+            terminationReason = "error";
           }
           break;
         }
@@ -471,19 +602,12 @@ export class AgentTaskExecutor {
 
       tracker.endTurn();
 
-      // Phase 3: Verify with tests if compilation succeeded
-      let testResult: TestResult | undefined;
-      if (success && task.expected?.testApp) {
-        const verifyResult = await this.runTestVerification(
-          taskWorkingDir,
-          task.expected.testApp,
-          options.debug,
-        );
-        testResult = verifyResult.testResult;
-        if (!verifyResult.success) {
-          success = false;
-          terminationReason = "test_failure";
-        }
+      // Note: When requiresTests=true, the agent runs tests via al_verify_task
+      // and success is only set when "All tests passed" is returned.
+      // No post-loop verification needed as tests run during agent execution.
+
+      if (options.debug) {
+        this.logToolTimingSummary();
       }
 
       return this.buildExecutionResult(
@@ -495,12 +619,13 @@ export class AgentTaskExecutor {
         terminationReason,
         startTime,
         finalCode,
-        testResult,
+        undefined, // testResult - captured during agent execution
       );
     } catch (error) {
       tracker.endTurn();
       if (options.debug) {
         console.error("[Agent Executor] Error:", error);
+        this.logToolTimingSummary();
       }
       return this.buildExecutionResult(
         task,
@@ -548,15 +673,15 @@ export class AgentTaskExecutor {
 
   /**
    * Process an assistant message and track tokens/tools
+   * Note: Success detection is handled in processUserMessage()
    */
-  private async processAssistantMessage(
+  private processAssistantMessage(
     assistantMsg: SDKAssistantMessage,
     tracker: CostTracker,
-    taskWorkingDir: string,
     debug?: boolean,
-  ): Promise<{ success: boolean; finalCode?: string }> {
+  ): void {
     if (!assistantMsg.message) {
-      return { success: false };
+      return;
     }
 
     // Extract usage from API message if available
@@ -573,15 +698,21 @@ export class AgentTaskExecutor {
       tracker.recordTokenUsage(tokenUsage);
     }
 
-    let success = false;
-    let finalCode: string | undefined;
-
     // Process content blocks
     for (const block of assistantMsg.message.content) {
       if (block.type === "tool_use") {
         const toolBlock = block as ToolUseBlock;
+
+        // Track tool start time for duration calculation
+        this.pendingToolCalls.set(toolBlock.id, {
+          name: toolBlock.name,
+          startTime: Date.now(),
+        });
+
         if (debug) {
-          console.log(`[Agent] Tool call: ${toolBlock.name}`);
+          console.log(
+            `[${this.formatTimestamp()}] [Agent] Tool call: ${toolBlock.name}`,
+          );
         }
         const toolRecord: ToolCallRecord = {
           name: toolBlock.name,
@@ -591,35 +722,16 @@ export class AgentTaskExecutor {
         };
         tracker.recordToolCall(toolRecord);
       }
-
-      if (block.type === "tool_result") {
-        const resultBlock = block as ToolResultBlock;
-        const resultText = typeof resultBlock.content === "string"
-          ? resultBlock.content
-          : JSON.stringify(resultBlock.content);
-        const resultLower = resultText.toLowerCase();
-
-        if (
-          resultLower.includes("compilation successful") ||
-          resultLower.includes("all tests passed")
-        ) {
-          finalCode = await this.extractFinalCode(taskWorkingDir);
-          success = true;
-        }
-      }
+      // Note: tool_result blocks are handled in processUserMessage()
     }
-
-    const result: { success: boolean; finalCode?: string } = { success };
-    if (finalCode !== undefined) {
-      result.finalCode = finalCode;
-    }
-    return result;
   }
 
   /**
    * Run test verification and log results
+   * @deprecated No longer used - agents now run tests via al_verify_task MCP tool
    */
-  private async runTestVerification(
+  // @ts-ignore: Kept for potential future use or debugging
+  private async _runTestVerification(
     taskWorkingDir: string,
     testFilePath: string,
     debug?: boolean,
@@ -775,20 +887,52 @@ export class AgentTaskExecutor {
     parts.push(
       "2. Create an app.json manifest file with your app details (id, name, publisher, version, idRanges, runtime, etc.)",
     );
-    parts.push(
-      `3. Use the mcp__al-tools__al_compile tool with projectDir: "${absWorkingDir}"`,
-    );
-    parts.push(
-      "4. If compilation fails, read the errors, fix the code, and recompile",
-    );
-    parts.push("5. Once compilation succeeds, your task is complete");
-    parts.push("");
-    parts.push(
-      "IMPORTANT: Use the MCP tool mcp__al-tools__al_compile for compilation, NOT Bash.",
-    );
-    parts.push(
-      "SUCCESS: When you see 'Compilation successful' in the tool response, the task is done.",
-    );
+
+    // Different instructions depending on whether tests are required
+    if (task.expected?.testApp) {
+      // Tests required - two-phase approach for efficiency
+      parts.push(
+        `3. First, use mcp__al-tools__al_compile with projectDir: "${absWorkingDir}" to check compilation`,
+      );
+      parts.push(
+        "4. If compilation fails, fix the errors and recompile until it succeeds",
+      );
+      parts.push(
+        "5. Once compilation succeeds, use mcp__al-tools__al_verify_task to run tests:",
+      );
+      parts.push(`   - projectDir: "${absWorkingDir}"`);
+      parts.push(`   - taskId: "${task.id}"`);
+      parts.push(
+        "6. If tests fail, read the error messages carefully, fix your code, use al_compile to verify it compiles, then run al_verify_task again",
+      );
+      parts.push("7. Once all tests pass, your task is complete");
+      parts.push("");
+      parts.push(
+        "IMPORTANT: al_verify_task takes ~60-90 seconds because it runs tests in a BC container.",
+      );
+      parts.push(
+        "Use al_compile (~5s) for fast iteration. Only call al_verify_task when you believe tests should pass.",
+      );
+      parts.push(
+        "SUCCESS: When you see 'All tests passed' in the tool response, the task is done.",
+      );
+    } else {
+      // Compile-only - use al_compile
+      parts.push(
+        `3. Use the mcp__al-tools__al_compile tool with projectDir: "${absWorkingDir}"`,
+      );
+      parts.push(
+        "4. If compilation fails, read the errors, fix the code, and recompile",
+      );
+      parts.push("5. Once compilation succeeds, your task is complete");
+      parts.push("");
+      parts.push(
+        "IMPORTANT: Use the MCP tool mcp__al-tools__al_compile for compilation, NOT Bash.",
+      );
+      parts.push(
+        "SUCCESS: When you see 'Compilation successful' in the tool response, the task is done.",
+      );
+    }
 
     return parts.join("\n");
   }
@@ -1040,6 +1184,7 @@ export class AgentTaskExecutor {
     project: ALProject,
     prereqAppPaths?: string[],
     debug?: boolean,
+    testCodeunitId?: number,
   ): Promise<{
     success: boolean;
     message: string;
@@ -1074,6 +1219,8 @@ export class AgentTaskExecutor {
     const testResult = await this.containerProvider.runTests(
       containerName,
       project,
+      undefined, // appFilePath
+      testCodeunitId,
     );
 
     // Debug: show full test output if enabled
