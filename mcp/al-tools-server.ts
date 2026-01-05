@@ -59,6 +59,53 @@ interface Tool {
 const containerProvider = new BcContainerProvider();
 const DEFAULT_CONTAINER = "Cronus27";
 
+// Initialize credentials from environment variables
+const containerUsername = Deno.env.get("CENTRALGAUGE_CONTAINER_USERNAME");
+const containerPassword = Deno.env.get("CENTRALGAUGE_CONTAINER_PASSWORD");
+if (containerUsername && containerPassword) {
+  containerProvider.setCredentials(DEFAULT_CONTAINER, {
+    username: containerUsername,
+    password: containerPassword,
+  });
+  console.error(
+    `[MCP] Credentials configured for container: ${DEFAULT_CONTAINER}`,
+  );
+} else {
+  console.error(
+    `[MCP] Warning: No credentials found in environment. Using defaults.`,
+  );
+}
+
+/**
+ * Workspace path mapping for sandbox mode.
+ * Maps container paths (e.g., C:\workspace) to host paths.
+ */
+let workspaceMapping: { containerPath: string; hostPath: string } | null = null;
+
+/**
+ * Translate a path from container format to host format.
+ * Used in sandbox mode where the container uses C:\workspace but the host
+ * needs the actual path to access files.
+ */
+function translatePath(inputPath: string): string {
+  if (!workspaceMapping) return inputPath;
+
+  // Handle various path formats from container (forward/back slashes)
+  const normalized = inputPath.replace(/\//g, "\\");
+  const containerNormalized = workspaceMapping.containerPath.replace(
+    /\//g,
+    "\\",
+  );
+
+  if (normalized.toLowerCase().startsWith(containerNormalized.toLowerCase())) {
+    const relativePart = normalized.substring(containerNormalized.length);
+    const translated = workspaceMapping.hostPath + relativePart;
+    console.error(`[MCP] Path translation: ${inputPath} → ${translated}`);
+    return translated;
+  }
+  return inputPath;
+}
+
 /** Log timing for performance analysis - writes to both stderr and a log file */
 function logTiming(label: string, startTime: number): void {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -67,6 +114,28 @@ function logTiming(label: string, startTime: number): void {
   // Also append to timing log file for visibility
   try {
     Deno.writeTextFileSync("timing.log", message + "\n", { append: true });
+  } catch {
+    // Ignore file write errors
+  }
+}
+
+/** Debug log file for sandbox mode diagnostics */
+const DEBUG_LOG_FILE = "sandbox-debug.log";
+
+/** Write debug message to file for sandbox diagnostics */
+function debugLog(context: string, message: string, data?: unknown): void {
+  const timestamp = new Date().toISOString();
+  let logEntry = `[${timestamp}] [${context}] ${message}`;
+  if (data !== undefined) {
+    logEntry += `\n  Data: ${
+      JSON.stringify(data, null, 2).replace(/\n/g, "\n  ")
+    }`;
+  }
+  logEntry += "\n";
+
+  console.error(logEntry.trim()); // Also to stderr
+  try {
+    Deno.writeTextFileSync(DEBUG_LOG_FILE, logEntry, { append: true });
   } catch {
     // Ignore file write errors
   }
@@ -561,6 +630,40 @@ async function copyTestFile(
 // Tool Handlers
 // =============================================================================
 
+/**
+ * Find app.json in directory or immediate subdirectories.
+ * Returns the directory containing app.json, or null if not found.
+ */
+async function findProjectDir(baseDir: string): Promise<string | null> {
+  // First check if app.json exists directly in baseDir
+  const directPath = join(baseDir, "app.json");
+  try {
+    await Deno.stat(directPath);
+    return baseDir;
+  } catch {
+    // Not in root, search subdirectories
+  }
+
+  // Search immediate subdirectories
+  try {
+    for await (const entry of Deno.readDir(baseDir)) {
+      if (entry.isDirectory) {
+        const subPath = join(baseDir, entry.name, "app.json");
+        try {
+          await Deno.stat(subPath);
+          return join(baseDir, entry.name);
+        } catch {
+          // Not here, continue
+        }
+      }
+    }
+  } catch {
+    // Directory doesn't exist or can't be read
+  }
+
+  return null;
+}
+
 async function handleAlCompile(params: {
   projectDir: string;
   containerName?: string;
@@ -572,23 +675,26 @@ async function handleAlCompile(params: {
   artifactPath?: string;
 }> {
   const containerName = params.containerName || DEFAULT_CONTAINER;
+  // Translate path for sandbox mode (e.g., C:\workspace → host path)
+  const inputDir = translatePath(params.projectDir);
 
   try {
-    // Check if projectDir has app.json
-    const appJsonPath = join(params.projectDir, "app.json");
-    try {
-      await Deno.stat(appJsonPath);
-    } catch {
+    // Find project directory (checks subdirectories if needed)
+    const projectDir = await findProjectDir(inputDir);
+    if (!projectDir) {
+      const pathInfo = inputDir !== params.projectDir
+        ? ` (translated from ${params.projectDir})`
+        : "";
       return {
         success: false,
         message:
-          `No app.json found in ${params.projectDir}. Create an app.json manifest first.`,
+          `No app.json found in ${inputDir}${pathInfo} or its subdirectories. Create an app.json manifest first.`,
       };
     }
 
     // Build ALProject (exclude test files from compilation)
     // Test files require Test Toolkit dependencies that the app may not have
-    const project = await buildALProject(params.projectDir, false);
+    const project = await buildALProject(projectDir, false);
 
     // Compile
     const result = await containerProvider.compileProject(
@@ -647,22 +753,25 @@ async function handleAlTest(params: {
   failures?: string[];
 }> {
   const containerName = params.containerName || DEFAULT_CONTAINER;
+  // Translate path for sandbox mode (e.g., C:\workspace → host path)
+  const inputDir = translatePath(params.projectDir);
 
   try {
-    // Check if projectDir has app.json
-    const appJsonPath = join(params.projectDir, "app.json");
-    try {
-      await Deno.stat(appJsonPath);
-    } catch {
+    // Find project directory (checks subdirectories if needed)
+    const projectDir = await findProjectDir(inputDir);
+    if (!projectDir) {
+      const pathInfo = inputDir !== params.projectDir
+        ? ` (translated from ${params.projectDir})`
+        : "";
       return {
         success: false,
         message:
-          `No app.json found in ${params.projectDir}. Create an app.json manifest first.`,
+          `No app.json found in ${inputDir}${pathInfo} or its subdirectories. Create an app.json manifest first.`,
       };
     }
 
     // Build ALProject
-    const project = await buildALProject(params.projectDir);
+    const project = await buildALProject(projectDir);
 
     // Run tests
     const result = await containerProvider.runTests(containerName, project);
@@ -884,20 +993,38 @@ async function handleAlVerifyTask(params: {
   containerName?: string;
   target?: "Cloud" | "OnPrem";
 }): Promise<VerifyResult> {
+  debugLog("al_verify_task", "Called with params", {
+    projectDir: params.projectDir,
+    taskId: params.taskId,
+    containerName: params.containerName,
+  });
+
+  // Translate path for sandbox mode (e.g., C:\workspace → host path)
+  const inputDir = translatePath(params.projectDir);
+  debugLog("al_verify_task", "Path translation", {
+    original: params.projectDir,
+    translated: inputDir,
+  });
+
   // Resolve the test file from the task ID
   // Use script location to find project root, not CWD (which may be agent workspace)
   const projectRoot = getProjectRoot();
+  debugLog("al_verify_task", "Project root resolved", { projectRoot });
+
   const resolution = await resolveTestFileFromTaskId(
     params.taskId,
     projectRoot,
   );
+  debugLog("al_verify_task", "Test file resolution", resolution);
 
   if (!resolution.success) {
+    debugLog("al_verify_task", "FAILED: Test file not found");
     return { success: false, message: resolution.error };
   }
 
   // Load testCodeunitId from task YAML for targeted test execution
   const testCodeunitId = await loadTestCodeunitId(params.taskId, projectRoot);
+  debugLog("al_verify_task", "Test codeunit ID loaded", { testCodeunitId });
 
   // Load target from task YAML if not explicitly provided
   const target = params.target ??
@@ -911,7 +1038,7 @@ async function handleAlVerifyTask(params: {
     target?: "Cloud" | "OnPrem";
     testCodeunitId?: number;
   } = {
-    projectDir: params.projectDir,
+    projectDir: inputDir, // Use translated path
     testFile: resolution.testFile,
   };
   if (params.containerName !== undefined) {
@@ -937,10 +1064,38 @@ async function handleAlVerify(params: {
   target?: "Cloud" | "OnPrem";
   testCodeunitId?: number;
 }): Promise<VerifyResult> {
+  debugLog("al_verify", "Starting verification", {
+    projectDir: params.projectDir,
+    testFile: params.testFile,
+    testCodeunitId: params.testCodeunitId,
+  });
+
   const containerName = params.containerName || DEFAULT_CONTAINER;
   const totalStart = Date.now();
+  // Translate path for sandbox mode (e.g., C:\workspace → host path)
+  // Note: handleAlVerifyTask already translates, but this handles direct calls
+  const inputDir = translatePath(params.projectDir);
 
   try {
+    // Find project directory (checks subdirectories if needed)
+    const projectDir = await findProjectDir(inputDir);
+    debugLog("al_verify", "Project directory lookup", {
+      inputDir,
+      projectDir: projectDir ?? "NOT FOUND",
+    });
+
+    if (!projectDir) {
+      const pathInfo = inputDir !== params.projectDir
+        ? ` (translated from ${params.projectDir})`
+        : "";
+      debugLog("al_verify", "FAILED: No app.json found");
+      return {
+        success: false,
+        message:
+          `No app.json found in ${inputDir}${pathInfo} or its subdirectories. Create an app.json manifest first.`,
+      };
+    }
+
     // 1. Check for prereq apps based on task ID (handles dependency chains)
     const prereqStart = Date.now();
     const taskId = extractTaskIdFromTestPath(params.testFile);
@@ -952,26 +1107,53 @@ async function handleAlVerify(params: {
     }> = [];
 
     if (taskId) {
+      debugLog("al_verify", "Checking for prereqs", { taskId, projectRoot });
       // Check cache first to avoid recompiling prereqs on every call
       const cachedPrereqs = prereqCache.get(taskId);
       if (cachedPrereqs) {
-        console.error(`[DEBUG] Using cached prereqs for ${taskId}`);
+        debugLog("al_verify", "Using cached prereqs", {
+          taskId,
+          count: cachedPrereqs.length,
+        });
         prereqApps = cachedPrereqs;
       } else {
         // Find all prereqs in dependency order
         const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
-        console.error(
-          `[DEBUG] Found ${allPrereqs.length} prereq(s) for ${taskId} in ${projectRoot}`,
-        );
+        debugLog("al_verify", "Found prereqs", {
+          taskId,
+          count: allPrereqs.length,
+          prereqs: allPrereqs.map((p) => ({
+            path: p.path,
+            name: p.appJson["name"],
+          })),
+        });
 
         for (const prereq of allPrereqs) {
           // Compile each prereq in order
+          debugLog("al_verify", "Compiling prereq", {
+            name: prereq.appJson["name"],
+            path: prereq.path,
+          });
           const prereqProject = await buildALProject(prereq.path, false);
+          debugLog("al_verify", "Prereq project built", {
+            name: prereq.appJson["name"],
+            sourceFiles: prereqProject.sourceFiles.length,
+          });
           const prereqCompileResult = await containerProvider.compileProject(
             containerName,
             prereqProject,
           );
+          debugLog("al_verify", "Prereq compilation result", {
+            name: prereq.appJson["name"],
+            success: prereqCompileResult.success,
+            artifactPath: prereqCompileResult.artifactPath,
+            errorCount: prereqCompileResult.errors.length,
+          });
           if (!prereqCompileResult.success) {
+            debugLog("al_verify", "Prereq compilation FAILED", {
+              name: prereq.appJson["name"],
+              errors: prereqCompileResult.errors,
+            });
             return {
               success: false,
               message: `Prereq app compilation failed for ${
@@ -995,9 +1177,10 @@ async function handleAlVerify(params: {
         // Cache the compiled prereqs for future calls
         if (prereqApps.length > 0) {
           prereqCache.set(taskId, prereqApps);
-          console.error(
-            `[DEBUG] Cached ${prereqApps.length} prereq(s) for ${taskId}`,
-          );
+          debugLog("al_verify", "Prereqs cached", {
+            taskId,
+            count: prereqApps.length,
+          });
         }
       }
     }
@@ -1008,42 +1191,89 @@ async function handleAlVerify(params: {
     const timestamp = Date.now().toString(36);
     const random = Math.random().toString(36).substring(2, 8);
     const verifyDir = join(
-      params.projectDir,
+      projectDir,
       "..",
       `verify-${timestamp}-${random}`,
     );
     await ensureDir(verifyDir);
+    debugLog("al_verify", "Verify directory created", { verifyDir });
 
     // Prepare app.json with test dependencies (and prereq dependencies if exist)
     // Only add the last prereq as direct dependency - it will chain to others
     const lastPrereq = prereqApps[prereqApps.length - 1];
     const mainPrereqAppJson = lastPrereq?.appJson;
     const appJsonResult = await prepareAppJsonForTesting(
-      params.projectDir,
+      projectDir,
       verifyDir,
       mainPrereqAppJson,
       params.target,
     );
     if (!appJsonResult.success) {
+      debugLog("al_verify", "FAILED: app.json preparation failed", {
+        message: appJsonResult.message,
+      });
       return { success: false, message: appJsonResult.message };
     }
 
     // Copy source files and test file
-    await copyAlFilesToDir(params.projectDir, verifyDir);
+    await copyAlFilesToDir(projectDir, verifyDir);
+    debugLog("al_verify", "Source files copied to verify dir");
+
     const testFileResult = await copyTestFile(params.testFile, verifyDir);
+    debugLog("al_verify", "Test file copy result", {
+      testFile: params.testFile,
+      targetDir: verifyDir,
+      success: testFileResult.success,
+      message: testFileResult.success ? "OK" : testFileResult.message,
+    });
     if (!testFileResult.success) {
+      debugLog("al_verify", "FAILED: Test file copy failed");
       return { success: false, message: testFileResult.message };
+    }
+
+    // Copy prereq app files to .alpackages so the compiler can find dependency symbols
+    if (prereqApps.length > 0) {
+      const alpackagesDir = join(verifyDir, ".alpackages");
+      await ensureDir(alpackagesDir);
+      for (const prereqApp of prereqApps) {
+        if (prereqApp.compiledAppPath) {
+          const appFileName = prereqApp.compiledAppPath.split(/[/\\]/).pop()!;
+          const targetPath = join(alpackagesDir, appFileName);
+          await Deno.copyFile(prereqApp.compiledAppPath, targetPath);
+          debugLog("al_verify", "Copied prereq app to .alpackages", {
+            name: prereqApp.appJson["name"],
+            source: prereqApp.compiledAppPath,
+            target: targetPath,
+          });
+        }
+      }
     }
     logTiming("Setup & copy files", setupStart);
 
     // 3. Build and compile
     const compileStart = Date.now();
     const project = await buildALProject(verifyDir, true);
+    debugLog("al_verify", "Project built from verify dir", {
+      path: project.path,
+      sourceFiles: project.sourceFiles.length,
+      testFiles: project.testFiles.length,
+      testFileNames: project.testFiles.map((f) => f.split(/[/\\]/).pop()),
+    });
+
     const compileResult = await containerProvider.compileProject(
       containerName,
       project,
     );
+    debugLog("al_verify", "Compilation result", {
+      success: compileResult.success,
+      artifactPath: compileResult.artifactPath,
+      errorCount: compileResult.errors.length,
+    });
+
     if (!compileResult.success) {
+      debugLog("al_verify", "FAILED: Compilation failed", {
+        errors: compileResult.errors.slice(0, 5),
+      });
       return {
         success: false,
         message: "Verification compilation failed",
@@ -1078,6 +1308,13 @@ async function handleAlVerify(params: {
 
     // 5. Run tests
     const testStart = Date.now();
+    debugLog("al_verify", "Running tests", {
+      containerName,
+      extensionId: (project.appJson as { id?: string }).id,
+      testCodeunitId: params.testCodeunitId,
+      artifactPath: compileResult.artifactPath,
+    });
+
     const testResult = await containerProvider.runTests(
       containerName,
       project,
@@ -1086,6 +1323,24 @@ async function handleAlVerify(params: {
     );
     logTiming("Run tests", testStart);
     logTiming("TOTAL", totalStart);
+
+    // Log detailed test result for debugging
+    debugLog("al_verify", "Test execution result", {
+      success: testResult.success,
+      totalTests: testResult.totalTests,
+      passedTests: testResult.passedTests,
+      failedTests: testResult.failedTests,
+      resultCount: testResult.results.length,
+      results: testResult.results.slice(0, 10),
+    });
+
+    // If no tests were found, log the raw output for debugging
+    if (testResult.totalTests === 0) {
+      debugLog("al_verify", "WARNING: Zero tests detected!", {
+        rawOutputLength: testResult.output?.length ?? 0,
+        rawOutputSample: testResult.output?.substring(0, 2000) ?? "N/A",
+      });
+    }
 
     if (testResult.success) {
       return {
@@ -1111,6 +1366,7 @@ async function handleAlVerify(params: {
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    debugLog("al_verify", "EXCEPTION", { error: errorMessage });
     return { success: false, message: `Verification error: ${errorMessage}` };
   }
 }
@@ -1230,7 +1486,7 @@ async function handleRequest(
 // Main Entry Point - stdio transport
 // =============================================================================
 
-async function main() {
+async function runStdioTransport() {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
 
@@ -1277,9 +1533,247 @@ async function main() {
   }
 }
 
+// =============================================================================
+// HTTP Transport with SSE Support
+// =============================================================================
+
+const DEFAULT_HTTP_PORT = 3100;
+
+/**
+ * Handle CORS preflight and add CORS headers to responses.
+ */
+function addCorsHeaders(headers: Headers): void {
+  headers.set("Access-Control-Allow-Origin", "*");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type");
+}
+
+/**
+ * Run MCP server with HTTP/SSE transport.
+ * Endpoints:
+ * - POST /rpc - JSON-RPC requests
+ * - GET /health - Health check
+ * - GET /tools - List available tools
+ */
+function runHttpTransport(port: number): void {
+  console.error(`[MCP HTTP] Starting HTTP server on port ${port}`);
+
+  Deno.serve({ port }, async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    const headers = new Headers();
+    addCorsHeaders(headers);
+
+    // Handle CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers });
+    }
+
+    // Health check endpoint
+    if (url.pathname === "/health" && request.method === "GET") {
+      headers.set("Content-Type", "application/json");
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          server: "al-tools-server",
+          version: "1.0.0",
+          transport: "http",
+        }),
+        { status: 200, headers },
+      );
+    }
+
+    // List tools endpoint (convenience)
+    if (url.pathname === "/tools" && request.method === "GET") {
+      headers.set("Content-Type", "application/json");
+      return new Response(JSON.stringify({ tools: TOOLS }, null, 2), {
+        status: 200,
+        headers,
+      });
+    }
+
+    // JSON-RPC endpoint (supports both /mcp and /rpc for compatibility)
+    if (
+      (url.pathname === "/mcp" || url.pathname === "/rpc") &&
+      request.method === "POST"
+    ) {
+      headers.set("Content-Type", "application/json");
+
+      try {
+        const body = await request.text();
+        const jsonRpcRequest = JSON.parse(body) as JsonRpcRequest;
+
+        const response = await handleRequest(jsonRpcRequest);
+
+        if (response === null) {
+          // Notification - no response expected
+          return new Response(null, { status: 204, headers });
+        }
+
+        return new Response(JSON.stringify(response), {
+          status: 200,
+          headers,
+        });
+      } catch (error) {
+        const errorResponse: JsonRpcResponse = {
+          jsonrpc: "2.0",
+          id: 0,
+          error: {
+            code: -32700,
+            message: `Parse error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+        };
+        return new Response(JSON.stringify(errorResponse), {
+          status: 400,
+          headers,
+        });
+      }
+    }
+
+    // SSE endpoint for streaming (future use)
+    if (url.pathname === "/sse" && request.method === "GET") {
+      headers.set("Content-Type", "text/event-stream");
+      headers.set("Cache-Control", "no-cache");
+      headers.set("Connection", "keep-alive");
+
+      // For now, just send a heartbeat stream
+      // Tool results will be sent via this channel when streaming is implemented
+      const stream = new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ type: "connected" })}\n\n`,
+            ),
+          );
+
+          // Send heartbeat every 30 seconds
+          const interval = setInterval(() => {
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${
+                    JSON.stringify({ type: "heartbeat", timestamp: Date.now() })
+                  }\n\n`,
+                ),
+              );
+            } catch {
+              clearInterval(interval);
+            }
+          }, 30000);
+
+          // Clean up on close (handled by request abort)
+          request.signal.addEventListener("abort", () => {
+            clearInterval(interval);
+            controller.close();
+          });
+        },
+      });
+
+      return new Response(stream, { headers });
+    }
+
+    // 404 for unknown paths
+    headers.set("Content-Type", "application/json");
+    return new Response(
+      JSON.stringify({ error: "Not found", path: url.pathname }),
+      { status: 404, headers },
+    );
+  });
+
+  console.error(`[MCP HTTP] Server listening at http://localhost:${port}`);
+  console.error(`[MCP HTTP] Endpoints:`);
+  console.error(`  POST /rpc    - JSON-RPC requests`);
+  console.error(`  GET  /health - Health check`);
+  console.error(`  GET  /tools  - List available tools`);
+  console.error(`  GET  /sse    - Server-Sent Events stream`);
+}
+
+// =============================================================================
+// CLI Entry Point
+// =============================================================================
+
+function printUsage(): void {
+  console.error(`
+AL Tools MCP Server
+
+Usage:
+  al-tools-server.ts [options]
+
+Options:
+  --http         Run HTTP transport instead of stdio
+  --port <port>  HTTP port (default: ${DEFAULT_HTTP_PORT}, env: MCP_HTTP_PORT)
+  --help         Show this help message
+
+Environment Variables:
+  MCP_HTTP_PORT  HTTP server port (default: ${DEFAULT_HTTP_PORT})
+
+Examples:
+  # Run with stdio transport (default, for MCP clients)
+  deno run --allow-all al-tools-server.ts
+
+  # Run with HTTP transport (for sandbox mode)
+  deno run --allow-all al-tools-server.ts --http
+
+  # Run with HTTP on custom port
+  deno run --allow-all al-tools-server.ts --http --port 8080
+`);
+}
+
 // Run if executed directly
 if (import.meta.main) {
-  main();
+  const args = Deno.args;
+
+  if (args.includes("--help") || args.includes("-h")) {
+    printUsage();
+    Deno.exit(0);
+  }
+
+  const useHttp = args.includes("--http");
+
+  // Parse --workspace-map for sandbox mode path translation
+  // Format: --workspace-map "C:\workspace=U:\Git\CentralGuage\results\..."
+  const mapIndex = args.indexOf("--workspace-map");
+  const mapArg = mapIndex !== -1 ? args[mapIndex + 1] : undefined;
+  if (mapArg) {
+    const separatorIndex = mapArg.indexOf("=");
+    if (separatorIndex > 0) {
+      const containerPath = mapArg.substring(0, separatorIndex);
+      const hostPath = mapArg.substring(separatorIndex + 1);
+      workspaceMapping = { containerPath, hostPath };
+      console.error(
+        `[MCP] Workspace mapping configured: ${containerPath} → ${hostPath}`,
+      );
+    } else {
+      console.error(`[MCP] Warning: Invalid --workspace-map format: ${mapArg}`);
+      console.error(`[MCP] Expected format: "C:\\workspace=U:\\host\\path"`);
+    }
+  }
+
+  if (useHttp) {
+    // Determine port from args or environment
+    let port = DEFAULT_HTTP_PORT;
+    const portIndex = args.indexOf("--port");
+    const portArg = portIndex !== -1 ? args[portIndex + 1] : undefined;
+    if (portArg) {
+      port = parseInt(portArg, 10);
+    } else {
+      const envPort = Deno.env.get("MCP_HTTP_PORT");
+      if (envPort) {
+        port = parseInt(envPort, 10);
+      }
+    }
+
+    if (isNaN(port) || port < 1 || port > 65535) {
+      console.error(`[ERROR] Invalid port: ${port}`);
+      Deno.exit(1);
+    }
+
+    runHttpTransport(port);
+  } else {
+    runStdioTransport();
+  }
 }
 
 // Export for testing
