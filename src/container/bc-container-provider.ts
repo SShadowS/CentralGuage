@@ -788,16 +788,26 @@ export class BcContainerProvider implements ContainerProvider {
     escapedAppFile: string,
   ): string {
     return `
-      # Unpublish existing CentralGauge apps EXCEPT prereqs (which we depend on)
+      # Unpublish existing apps that might conflict, EXCEPT prereqs (which we depend on)
       # Prereq apps have "Prereq" in their name by convention
-      $cgApps = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object { $_.Publisher -eq "CentralGauge" -and $_.Name -notlike "*Prereq*" })
-      foreach ($app in $cgApps) {
+      # Clean up:
+      # 1. CentralGauge apps (from our benchmarks)
+      # 2. Apps with common default publishers that agents might use
+      # 3. Apps with task-related names like "Task App"
+      $publishersToClean = @("CentralGauge", "Default Publisher", "Default", "")
+      $conflictApps = @(Get-BcContainerAppInfo -containerName "${containerName}" | Where-Object {
+        ($publishersToClean -contains $_.Publisher -or $_.Name -like "*Task*") -and
+        $_.Name -notlike "*Prereq*" -and
+        $_.Publisher -ne "Microsoft"
+      })
+      foreach ($app in $conflictApps) {
         try {
+          Write-Output "CLEANUP:Removing $($app.Name) by $($app.Publisher)"
           Unpublish-BcContainerApp -containerName "${containerName}" -appName $app.Name -publisher $app.Publisher -version $app.Version -unInstall -ErrorAction SilentlyContinue
         } catch { }
       }
 
-      # Publish the app (will sync and install)
+      # Publish the app with ForceSync for destructive schema changes
       try {
         Write-Output "PUBLISH_START:$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())"
         Publish-BcContainerApp -containerName "${containerName}" -appFile "${escapedAppFile}" -skipVerification -sync -syncMode ForceSync -install -ErrorAction Stop
