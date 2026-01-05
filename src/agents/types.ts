@@ -44,6 +44,20 @@ export interface AgentLimits {
 }
 
 /**
+ * Sandbox configuration for running agent in an isolated container
+ */
+export interface SandboxModeConfig {
+  /** Enable sandbox mode */
+  enabled: boolean;
+  /** Sandbox provider to use (windows, linux in future) */
+  provider?: "windows" | "linux";
+  /** Docker image for the sandbox container */
+  image?: string;
+  /** MCP server URL (auto-configured if not set) */
+  mcpServerUrl?: string;
+}
+
+/**
  * Complete agent configuration as loaded from YAML
  */
 export interface AgentConfig {
@@ -81,8 +95,17 @@ export interface AgentConfig {
   /** System prompt configuration */
   systemPrompt?: SystemPromptConfig;
 
+  /** Prompt template to use: "universal" for provider-agnostic, "legacy" for current */
+  promptTemplate?: "universal" | "legacy";
+
+  /** Tool naming style: "generic" for al_compile, "mcp" for mcp__al-tools__al_compile */
+  toolNaming?: "generic" | "mcp";
+
   /** Execution limits */
   limits?: AgentLimits;
+
+  /** Sandbox mode configuration */
+  sandbox?: SandboxModeConfig;
 
   /** Parent agent to inherit from */
   extends?: string;
@@ -146,6 +169,22 @@ export interface AgentCostMetrics {
 }
 
 /**
+ * Parsed task result extracted from tool responses
+ */
+export interface ParsedTaskResult {
+  /** Whether compilation succeeded */
+  compileSuccess: boolean;
+  /** Number of tests that passed */
+  testsPassed?: number;
+  /** Total number of tests */
+  testsTotal?: number;
+  /** Overall result */
+  result: "pass" | "fail";
+  /** Formatted plain-text summary */
+  formatted: string;
+}
+
+/**
  * Why the agent execution terminated
  */
 export type TerminationReason =
@@ -156,6 +195,120 @@ export type TerminationReason =
   | "test_failure" // Tests failed during verification
   | "timeout" // Execution timed out
   | "error"; // Unrecoverable error occurred
+
+/**
+ * Phase of execution where failure occurred
+ */
+export type FailurePhase =
+  | "container_startup" // Container failed to start or initialize
+  | "mcp_connection" // MCP server connection failed
+  | "agent_execution" // Agent SDK/API error during execution
+  | "compilation" // AL compilation failed
+  | "test_execution" // Tests ran but some/all failed
+  | "timeout" // Execution timed out (with phase context)
+  | "unknown"; // Catch-all for unexpected failures
+
+/**
+ * Structured compilation error from AL compiler
+ */
+export interface CompilationFailureDetails {
+  /** Error messages from compiler */
+  errors: Array<{
+    code: string;
+    message: string;
+    file?: string;
+    line?: number;
+    column?: number;
+  }>;
+  /** Warning messages (may still have failed) */
+  warnings?: Array<{
+    code: string;
+    message: string;
+    file?: string;
+    line?: number;
+  }>;
+  /** Raw compiler output for debugging */
+  rawOutput?: string;
+}
+
+/**
+ * Structured test failure details
+ */
+export interface TestFailureDetails {
+  /** Total tests run */
+  totalTests: number;
+  /** Tests that passed */
+  passedTests: number;
+  /** Tests that failed */
+  failedTests: number;
+  /** Individual test failures */
+  failures: Array<{
+    testName: string;
+    codeunitId?: number;
+    errorMessage: string;
+  }>;
+  /** Raw test output for debugging */
+  rawOutput?: string;
+}
+
+/**
+ * Timeout failure context
+ */
+export interface TimeoutDetails {
+  /** What phase timed out */
+  timedOutPhase:
+    | "container_startup"
+    | "agent_execution"
+    | "compilation"
+    | "test_execution";
+  /** Configured timeout in ms */
+  configuredTimeoutMs: number;
+  /** Actual elapsed time in ms */
+  elapsedMs: number;
+}
+
+/**
+ * Container/sandbox error context
+ */
+export interface ContainerFailureDetails {
+  /** Exit code from container */
+  exitCode?: number;
+  /** Error output from container */
+  errorOutput?: string;
+  /** Container name if applicable */
+  containerName?: string;
+  /** Specific operation that failed */
+  failedOperation?: string;
+}
+
+/**
+ * Comprehensive failure reason with full context
+ */
+export interface DetailedFailureReason {
+  /** High-level termination reason (backward compatible) */
+  terminationReason: TerminationReason;
+
+  /** Phase where failure occurred */
+  phase: FailurePhase;
+
+  /** Human-readable summary of the failure */
+  summary: string;
+
+  /** Detailed compilation errors if applicable */
+  compilation?: CompilationFailureDetails;
+
+  /** Detailed test failures if applicable */
+  tests?: TestFailureDetails;
+
+  /** Timeout context if applicable */
+  timeout?: TimeoutDetails;
+
+  /** Container/sandbox errors if applicable */
+  container?: ContainerFailureDetails;
+
+  /** Timestamp when failure was detected */
+  failedAt: Date;
+}
 
 /**
  * Result of executing a single task with an agent
@@ -193,6 +346,12 @@ export interface AgentExecutionResult {
 
   /** Test results from final verification (if tests ran) */
   testResult?: TestResult;
+
+  /** Parsed result summary for easy extraction */
+  resultSummary?: ParsedTaskResult;
+
+  /** Detailed failure information (only set when success=false) */
+  failureDetails?: DetailedFailureReason;
 }
 
 // =============================================================================
@@ -217,6 +376,12 @@ export interface AgentExecutionOptions {
 
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;
+
+  /** Run agent in sandbox container (overrides agent config) */
+  sandbox?: boolean;
+
+  /** MCP HTTP server port for sandbox mode */
+  mcpHttpPort?: number;
 }
 
 // =============================================================================
