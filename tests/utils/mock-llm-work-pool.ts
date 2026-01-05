@@ -120,9 +120,16 @@ export class MockLLMWorkPool {
   }
 
   /**
-   * Reset all configuration and calls
+   * Reset shutdown state only - matches real LLMWorkPool.reset() behavior
    */
   reset(): void {
+    this.shuttingDown = false;
+  }
+
+  /**
+   * Reset all configuration and calls for test setup
+   */
+  resetAll(): void {
     this.calls = [];
     this.modelOverrides.clear();
     this.taskOverrides.clear();

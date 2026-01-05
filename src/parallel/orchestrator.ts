@@ -170,6 +170,9 @@ export class ParallelBenchmarkOrchestrator {
     this.errors = [];
     this.streamEnabled = options.stream ?? false;
 
+    // Reset pool state from any previous run (enables retry after drain)
+    this.llmPool.reset();
+
     // Initialize container (using injected factories for testability)
     this.containerProvider = this.containerProviderFactory(
       options.containerProvider,
