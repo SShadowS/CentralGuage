@@ -36,5 +36,13 @@ export {
 // Executor
 export { AgentTaskExecutor } from "./executor.ts";
 
+// MCP Server Manager
+export { McpServerManager } from "./mcp-manager.ts";
+export type { McpServerConfig } from "./mcp-manager.ts";
+
+// Verification Engine
+export { VerificationEngine } from "./verification-engine.ts";
+export type { VerificationResult } from "./verification-engine.ts";
+
 // Cost Tracker
 export { CostTracker } from "./cost-tracker.ts";

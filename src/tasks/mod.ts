@@ -1,0 +1,31 @@
+/**
+ * Tasks Module
+ *
+ * Provides task execution infrastructure including manifest loading,
+ * transformation, and execution with retry logic.
+ */
+
+// Types
+export type {
+  AttemptResult,
+  BenchmarkProgress,
+  ExecutionAttempt,
+  LegacyTaskExecutionResult,
+  TaskExecutionConfig,
+  TaskExecutionContext,
+  TaskExecutionRequest,
+  TaskExecutionResult,
+  TaskExecutor,
+  TaskManifest,
+  TaskType,
+  TaskValidationResult,
+} from "./interfaces.ts";
+
+// Loader
+export { loadTaskManifest } from "./loader.ts";
+
+// Transformer
+export { TaskTransformer } from "./transformer.ts";
+
+// Executor
+export { TaskExecutorV2 } from "./executor-v2.ts";
