@@ -4,6 +4,7 @@
 
 import { basename, dirname, join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
+import { ValidationError } from "../errors.ts";
 import type {
   ExecutionAttempt,
   TaskExecutionContext,
@@ -28,104 +29,10 @@ import {
 } from "../errors.ts";
 import { PromptInjectionResolver } from "../prompts/mod.ts";
 import type { InjectionStage } from "../prompts/mod.ts";
+import { Logger } from "../logger/mod.ts";
 
-/**
- * Prereq app information
- */
-interface PrereqApp {
-  path: string;
-  appJson: Record<string, unknown>;
-  compiledAppPath?: string | undefined;
-}
-
-/**
- * Find prereq app directory for a given task ID.
- */
-async function findPrereqApp(
-  taskId: string,
-  projectRoot: string,
-): Promise<PrereqApp | null> {
-  const prereqDir = join(projectRoot, "tests", "al", "dependencies", taskId);
-
-  try {
-    const stat = await Deno.stat(prereqDir);
-    if (!stat.isDirectory) return null;
-
-    const appJsonPath = join(prereqDir, "app.json");
-    const appJsonContent = await Deno.readTextFile(appJsonPath);
-    const appJson = JSON.parse(appJsonContent) as Record<string, unknown>;
-
-    return { path: prereqDir, appJson };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Find prereq app by its app ID (used for resolving dependencies).
- */
-async function findPrereqAppById(
-  appId: string,
-  projectRoot: string,
-): Promise<PrereqApp | null> {
-  const depsDir = join(projectRoot, "tests", "al", "dependencies");
-
-  try {
-    for await (const entry of Deno.readDir(depsDir)) {
-      if (!entry.isDirectory) continue;
-
-      const appJsonPath = join(depsDir, entry.name, "app.json");
-      try {
-        const content = await Deno.readTextFile(appJsonPath);
-        const appJson = JSON.parse(content) as Record<string, unknown>;
-        if (appJson["id"] === appId) {
-          return { path: join(depsDir, entry.name), appJson };
-        }
-      } catch {
-        continue;
-      }
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-/**
- * Find all prereq apps needed for a task, in dependency order.
- */
-async function findAllPrereqApps(
-  taskId: string,
-  projectRoot: string,
-): Promise<PrereqApp[]> {
-  const result: PrereqApp[] = [];
-  const visited = new Set<string>();
-
-  async function collectDeps(prereq: PrereqApp): Promise<void> {
-    const appId = prereq.appJson["id"] as string;
-    if (visited.has(appId)) return;
-    visited.add(appId);
-
-    const deps = prereq.appJson["dependencies"] as
-      | Array<{ id: string }>
-      | undefined || [];
-    for (const dep of deps) {
-      const depPrereq = await findPrereqAppById(dep.id, projectRoot);
-      if (depPrereq) {
-        await collectDeps(depPrereq);
-      }
-    }
-
-    result.push(prereq);
-  }
-
-  const mainPrereq = await findPrereqApp(taskId, projectRoot);
-  if (mainPrereq) {
-    await collectDeps(mainPrereq);
-  }
-
-  return result;
-}
+const log = Logger.create("task");
+import { findAllPrereqApps, type PrereqApp } from "./prereq-resolver.ts";
 
 export class TaskExecutorV2 {
   private templateRenderer: TemplateRenderer | null = null;
@@ -151,21 +58,25 @@ export class TaskExecutorV2 {
 
     // Transform request into execution context
     const context = await TaskTransformer.createExecutionContext(request);
-    console.log(
-      `🚀 Executing task: ${context.manifest.id} with ${context.llmModel}`,
-    );
+    log.info("Executing task", {
+      taskId: context.manifest.id,
+      model: context.llmModel,
+    });
 
     // Validate the manifest
     const validation = await TaskTransformer.validateManifest(context.manifest);
     if (!validation.valid) {
-      throw new Error(
+      throw new ValidationError(
         `Task validation failed: ${validation.errors.join(", ")}`,
+        validation.errors,
+        validation.warnings,
+        { taskId: context.manifest.id },
       );
     }
 
     // Show warnings if any
     if (validation.warnings.length > 0) {
-      console.warn(`⚠️  Warnings: ${validation.warnings.join(", ")}`);
+      log.warn("Validation warnings", { warnings: validation.warnings });
     }
 
     // Initialize providers
@@ -270,7 +181,10 @@ export class TaskExecutorV2 {
     llmAdapter: LLMAdapter,
   ): Promise<ExecutionAttempt> {
     const attemptStart = Date.now();
-    console.log(`\n📝 Attempt ${attemptNumber}/${context.attemptLimit}`);
+    log.info("Starting attempt", {
+      attempt: attemptNumber,
+      limit: context.attemptLimit,
+    });
 
     // Generate prompt with injection support
     const { prompt, systemPrompt } = await this.generatePrompt(
@@ -593,9 +507,7 @@ export class TaskExecutorV2 {
           }
         }
       } else {
-        console.warn(
-          `[Executor] Test directory not found: ${testDir}`,
-        );
+        log.warn("Test directory not found", { path: testDir });
       }
     }
 
@@ -787,7 +699,7 @@ export class TaskExecutorV2 {
       }
     }
 
-    console.log(`💾 Results saved to: ${outputDir}`);
+    log.info("Results saved", { path: outputDir });
   }
 
   /**
@@ -810,12 +722,12 @@ export class TaskExecutorV2 {
 
         if (retry < maxRetries && isRetryableError(error)) {
           const delayMs = getRetryDelay(error, 1000 * (retry + 1));
-          console.warn(
-            `⚠️  LLM call failed (retry ${
-              retry + 1
-            }/${maxRetries}): ${lastError.message}. ` +
-              `Retrying in ${delayMs}ms...`,
-          );
+          log.warn("LLM call failed, retrying", {
+            retry: retry + 1,
+            maxRetries,
+            error: lastError.message,
+            delayMs,
+          });
           await new Promise((resolve) => setTimeout(resolve, delayMs));
           continue;
         }
@@ -867,11 +779,9 @@ export class TaskExecutorV2 {
     // Find and compile prereq apps
     const taskId = context.manifest.id;
     const projectRoot = Deno.cwd();
-    console.log(
-      `[Prereq] Looking for prereqs for task ${taskId} in ${projectRoot}`,
-    );
+    log.debug("Looking for prereqs", { taskId, projectRoot });
     const prereqApps = await findAllPrereqApps(taskId, projectRoot);
-    console.log(`[Prereq] Found ${prereqApps.length} prereq app(s)`);
+    log.debug("Found prereq apps", { count: prereqApps.length });
     const compiledPrereqs: PrereqApp[] = [];
 
     for (const prereq of prereqApps) {
@@ -881,11 +791,10 @@ export class TaskExecutorV2 {
         prereqProject,
       );
       if (!prereqCompileResult.success) {
-        console.error(
-          `[Prereq] Compilation failed for ${prereq.appJson["name"]}: ${
-            prereqCompileResult.errors.map((e) => e.message).join(", ")
-          }`,
-        );
+        log.error("Prereq compilation failed", {
+          name: prereq.appJson["name"],
+          errors: prereqCompileResult.errors.map((e) => e.message),
+        });
         // Continue without prereq - will likely fail later
       } else {
         compiledPrereqs.push({
@@ -911,7 +820,7 @@ export class TaskExecutorV2 {
             const appFileName = basename(prereq.compiledAppPath);
             const destPath = join(alpackagesDir, appFileName);
             await Deno.copyFile(prereq.compiledAppPath, destPath);
-            console.log(`[Prereq] Copied ${appFileName} to .alpackages`);
+            log.debug("Copied prereq to .alpackages", { file: appFileName });
           }
         }
 
@@ -936,7 +845,7 @@ export class TaskExecutorV2 {
           );
         }
       } catch (e) {
-        console.error(`[Prereq] Failed to inject dependency: ${e}`);
+        log.error("Failed to inject prereq dependency", { error: String(e) });
       }
     }
 
