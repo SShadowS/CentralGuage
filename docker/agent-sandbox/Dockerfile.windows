@@ -1,0 +1,69 @@
+# Windows Agent Sandbox for CentralGauge
+#
+# This container provides an isolated environment for running AI coding agents
+# (like Claude Code) for benchmark reproducibility.
+#
+# Prerequisites:
+#   Docker daemon.json must have DNS configured:
+#   "dns": ["1.1.1.1", "8.8.8.8"]
+#
+# Build:
+#   docker build -f Dockerfile.windows -t centralgauge/agent-sandbox:windows-latest .
+#
+# Run:
+#   docker run -it --rm -v C:\workspace:C:\workspace centralgauge/agent-sandbox:windows-latest
+
+# Use Windows Server Core 2025 as base
+FROM mcr.microsoft.com/windows/servercore:ltsc2025
+
+# Set shell to PowerShell
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Install Node.js 20 LTS
+RUN Invoke-WebRequest -Uri 'https://nodejs.org/dist/v20.18.0/node-v20.18.0-x64.msi' -OutFile 'nodejs.msi'; \
+    Start-Process msiexec.exe -ArgumentList '/i', 'nodejs.msi', '/quiet', '/norestart' -Wait; \
+    Remove-Item -Force nodejs.msi; \
+    $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
+    [Environment]::SetEnvironmentVariable('PATH', $env:PATH, [EnvironmentVariableTarget]::Machine)
+
+# Install Git for Windows (full version with bash.exe - required by Claude Code)
+# PortableGit is a self-extracting 7z archive
+RUN Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/download/v2.47.1.windows.1/PortableGit-2.47.1-64-bit.7z.exe' -OutFile 'git-portable.exe'; \
+    Start-Process -FilePath '.\git-portable.exe' -ArgumentList '-o', 'C:\Git', '-y' -Wait; \
+    Remove-Item -Force git-portable.exe; \
+    $env:PATH = 'C:\Git\cmd;C:\Git\bin;C:\Git\usr\bin;' + $env:PATH; \
+    [Environment]::SetEnvironmentVariable('PATH', $env:PATH, [EnvironmentVariableTarget]::Machine)
+
+# Install jq and ripgrep
+RUN Invoke-WebRequest -Uri 'https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-windows-amd64.exe' -OutFile 'C:\Windows\System32\jq.exe'; \
+    Invoke-WebRequest -Uri 'https://github.com/BurntSushi/ripgrep/releases/download/14.1.1/ripgrep-14.1.1-x86_64-pc-windows-msvc.zip' -OutFile 'rg.zip'; \
+    Expand-Archive -Path 'rg.zip' -DestinationPath 'C:\rg' -Force; \
+    Copy-Item 'C:\rg\ripgrep-14.1.1-x86_64-pc-windows-msvc\rg.exe' 'C:\Windows\System32\rg.exe'; \
+    Remove-Item -Recurse -Force 'C:\rg', 'rg.zip'
+
+# Install Claude Code CLI via npm
+RUN $env:PATH = 'C:\Program Files\nodejs;' + $env:PATH; \
+    npm install -g @anthropic-ai/claude-code; \
+    $npmPath = npm root -g; \
+    $binPath = (npm config get prefix) + '\'; \
+    [Environment]::SetEnvironmentVariable('PATH', $binPath + ';' + $env:PATH, [EnvironmentVariableTarget]::Machine)
+
+# CLAUDE_CODE_GIT_BASH_PATH is set at runtime by the executor
+# (Dockerfile ENV escapes backslashes incorrectly on Windows)
+
+# Create workspace directory
+RUN New-Item -ItemType Directory -Path C:\workspace -Force
+
+# Set working directory
+WORKDIR C:/workspace
+
+# Environment variables
+ENV NODE_ENV=production
+ENV CLAUDE_CODE_HEADLESS=1
+
+# Copy entrypoint script
+COPY entrypoint.ps1 C:/entrypoint.ps1
+
+# Default command - run Claude Code in headless mode
+# Uses CMD so it can be overridden when container is started with a different command
+CMD ["powershell", "-File", "C:\\entrypoint.ps1"]
