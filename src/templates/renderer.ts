@@ -1,5 +1,9 @@
 import { exists } from "@std/fs";
 import { join } from "@std/path";
+import { ResourceNotFoundError } from "../errors.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("template");
 
 export interface TemplateContext {
   [key: string]:
@@ -27,7 +31,12 @@ export class TemplateRenderer {
 
     const templatePath = join(this.templateDir, templateName);
     if (!await exists(templatePath)) {
-      throw new Error(`Template not found: ${templatePath}`);
+      throw new ResourceNotFoundError(
+        `Template not found: ${templatePath}`,
+        "template",
+        templateName,
+        { templateDir: this.templateDir },
+      );
     }
 
     const content = await Deno.readTextFile(templatePath);
@@ -47,9 +56,7 @@ export class TemplateRenderer {
     return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
       const value = context[key];
       if (value === undefined || value === null) {
-        console.warn(
-          `Template variable '${key}' is undefined, leaving placeholder`,
-        );
+        log.warn("Template variable undefined, leaving placeholder", { key });
         return match; // Keep the placeholder if variable is missing
       }
       return String(value);
@@ -111,9 +118,6 @@ export class TemplateRenderer {
   // Validate template syntax
   validateTemplate(template: string): string[] {
     const errors: string[] = [];
-    // const variables = template.match(/\{\{(\w+)\}\}/g) || [];
-    // const conditionals = template.match(/\{\{#(if|unless)\s+\w+\}\}/g) || [];
-    // const loops = template.match(/\{\{#each\s+\w+\}\}/g) || [];
 
     // Check for unmatched conditionals
     const ifCount = (template.match(/\{\{#if\s+\w+\}\}/g) || []).length;

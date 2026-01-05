@@ -3,6 +3,11 @@
  * Used by LLM adapters that need to parse streaming responses.
  */
 
+import { LLMProviderError } from "../errors.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("utils:stream");
+
 /**
  * Parsed SSE event from a Server-Sent Events stream.
  */
@@ -131,7 +136,7 @@ export async function* parseNDJSONStream(
           }
         } catch {
           // Skip malformed JSON lines
-          console.warn("[NDJSON] Failed to parse line:", trimmed);
+          log.warn("NDJSON failed to parse line", { line: trimmed });
         }
       }
     }
@@ -142,7 +147,7 @@ export async function* parseNDJSONStream(
         const data = JSON.parse(buffer.trim()) as Record<string, unknown>;
         yield data;
       } catch {
-        console.warn("[NDJSON] Failed to parse remaining buffer:", buffer);
+        log.warn("NDJSON failed to parse remaining buffer", { buffer });
       }
     }
   } finally {
@@ -161,7 +166,11 @@ export function getStreamReader(
   response: Response,
 ): ReadableStreamDefaultReader<Uint8Array> {
   if (!response.body) {
-    throw new Error("Response body is null - streaming not supported");
+    throw new LLMProviderError(
+      "Response body is null - streaming not supported",
+      "unknown",
+      false,
+    );
   }
   return response.body.getReader();
 }

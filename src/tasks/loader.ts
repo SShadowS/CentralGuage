@@ -1,5 +1,6 @@
 import { exists } from "@std/fs";
 import { parse } from "@std/yaml";
+import { ResourceNotFoundError } from "../errors.ts";
 import type { TaskManifest } from "./interfaces.ts";
 
 /**
@@ -9,7 +10,11 @@ export async function loadTaskManifest(
   manifestPath: string,
 ): Promise<TaskManifest> {
   if (!await exists(manifestPath)) {
-    throw new Error(`Task manifest not found: ${manifestPath}`);
+    throw new ResourceNotFoundError(
+      `Task manifest not found: ${manifestPath}`,
+      "task-manifest",
+      manifestPath,
+    );
   }
 
   const content = await Deno.readTextFile(manifestPath);

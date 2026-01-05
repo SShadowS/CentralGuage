@@ -1,5 +1,6 @@
 import { exists } from "@std/fs";
 import { extname, join } from "@std/path";
+import { ResourceNotFoundError } from "../errors.ts";
 import type { ALProject } from "../container/types.ts";
 
 export class ALProjectManager {
@@ -7,7 +8,12 @@ export class ALProjectManager {
     const appJsonPath = join(projectPath, "app.json");
 
     if (!await exists(appJsonPath)) {
-      throw new Error(`No app.json found in ${projectPath}`);
+      throw new ResourceNotFoundError(
+        `No app.json found in ${projectPath}`,
+        "file",
+        "app.json",
+        { projectPath },
+      );
     }
 
     const appJsonContent = await Deno.readTextFile(appJsonPath);

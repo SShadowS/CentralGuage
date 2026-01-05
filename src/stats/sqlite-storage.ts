@@ -3,6 +3,7 @@
  */
 
 import { Database } from "@db/sqlite";
+import { StateError } from "../errors.ts";
 import type { StatsStorage } from "./interfaces.ts";
 import {
   CREATE_SCHEMA,
@@ -80,7 +81,11 @@ export class SqliteStorage implements StatsStorage {
 
   private getDb(): Database {
     if (!this.db) {
-      throw new Error("Database not open. Call open() first.");
+      throw new StateError(
+        "Database not open. Call open() first.",
+        "closed",
+        "open",
+      );
     }
     return this.db;
   }

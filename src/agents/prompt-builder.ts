@@ -6,6 +6,7 @@
  */
 
 import { dirname, fromFileUrl, join } from "@std/path";
+import { ResourceNotFoundError } from "../errors.ts";
 
 /**
  * Context for rendering the universal prompt template.
@@ -104,8 +105,11 @@ async function loadTemplate(): Promise<string> {
     }
   }
 
-  throw new Error(
+  throw new ResourceNotFoundError(
     `Universal agent template not found. Searched: ${possiblePaths.join(", ")}`,
+    "template",
+    "universal-agent.md",
+    { searchedPaths: possiblePaths },
   );
 }
 

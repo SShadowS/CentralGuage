@@ -5,6 +5,11 @@
 import type { StatsStorage, StorageConfig } from "./interfaces.ts";
 import { DEFAULT_STORAGE_CONFIG } from "./interfaces.ts";
 import { SqliteStorage } from "./sqlite-storage.ts";
+import {
+  ConfigurationError,
+  NotImplementedError,
+  ValidationError,
+} from "../errors.ts";
 
 /**
  * In-memory storage for testing
@@ -35,7 +40,12 @@ export class InMemoryStorage implements StatsStorage {
 
   async persistRun(run: import("./types.ts").RunRecord): Promise<void> {
     if (this.runs.has(run.runId)) {
-      throw new Error(`Run ${run.runId} already exists`);
+      throw new ValidationError(
+        `Run ${run.runId} already exists`,
+        ["Duplicate run ID"],
+        [],
+        { runId: run.runId },
+      );
     }
     this.runs.set(run.runId, run);
     await Promise.resolve();
@@ -459,11 +469,16 @@ export function createStorage(
       return new InMemoryStorage();
 
     case "postgres":
-      throw new Error("PostgreSQL storage not yet implemented");
+      throw new NotImplementedError(
+        "PostgreSQL storage not yet implemented",
+        "postgres-storage",
+      );
 
     default:
-      throw new Error(
+      throw new ConfigurationError(
         `Unknown storage type: ${(config as StorageConfig).type}`,
+        undefined,
+        { storageType: (config as StorageConfig).type },
       );
   }
 }

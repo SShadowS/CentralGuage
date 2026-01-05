@@ -7,11 +7,15 @@
 import { exists, walk } from "@std/fs";
 import { parse } from "@std/yaml";
 import { basename, extname } from "@std/path";
+import { ResourceNotFoundError, ValidationError } from "../errors.ts";
 import type {
   AgentConfig,
   AgentValidationResult,
   ResolvedAgentConfig,
 } from "./types.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("agent:loader");
 
 /**
  * Load a single agent configuration from a YAML file
@@ -20,7 +24,11 @@ export async function loadAgentConfig(
   configPath: string,
 ): Promise<AgentConfig> {
   if (!await exists(configPath)) {
-    throw new Error(`Agent config not found: ${configPath}`);
+    throw new ResourceNotFoundError(
+      `Agent config not found: ${configPath}`,
+      "agent-config",
+      configPath,
+    );
   }
 
   const content = await Deno.readTextFile(configPath);
@@ -28,7 +36,12 @@ export async function loadAgentConfig(
 
   // Validate required fields
   if (!config.id) {
-    throw new Error(`Agent config missing 'id' field: ${configPath}`);
+    throw new ValidationError(
+      `Agent config missing 'id' field: ${configPath}`,
+      ["Missing required 'id' field"],
+      [],
+      { configPath },
+    );
   }
 
   return config;
@@ -58,11 +71,10 @@ export async function loadAgentConfigs(
       const config = await loadAgentConfig(entry.path);
       configs.set(config.id, config);
     } catch (error) {
-      console.warn(
-        `Failed to load agent config ${entry.path}: ${
-          error instanceof Error ? error.message : error
-        }`,
-      );
+      log.warn("Failed to load agent config", {
+        path: entry.path,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -79,13 +91,20 @@ export function resolveAgentInheritance(
 ): ResolvedAgentConfig {
   const config = configs.get(agentId);
   if (!config) {
-    throw new Error(`Agent config not found: ${agentId}`);
+    throw new ResourceNotFoundError(
+      `Agent config not found: ${agentId}`,
+      "agent-config",
+      agentId,
+    );
   }
 
   // Detect circular inheritance
   if (visited.has(agentId)) {
-    throw new Error(
+    throw new ValidationError(
       `Circular inheritance detected: ${[...visited, agentId].join(" -> ")}`,
+      ["Circular inheritance in agent configuration"],
+      [],
+      { inheritanceChain: [...visited, agentId] },
     );
   }
   visited.add(agentId);

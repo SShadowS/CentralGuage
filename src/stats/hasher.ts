@@ -9,6 +9,7 @@
 
 import { expandGlob } from "@std/fs";
 import { basename, join, relative } from "@std/path";
+import { ValidationError } from "../errors.ts";
 import type {
   ConfigHashInput,
   HashedFileInfo,
@@ -174,7 +175,12 @@ export function extractTaskId(manifestPath: string): string {
   // Match pattern: CG-AL-{letter}{number(s)}
   const match = filename.match(/^(CG-AL-[A-Z]\d+)/);
   if (!match || !match[1]) {
-    throw new Error(`Cannot extract task ID from: ${manifestPath}`);
+    throw new ValidationError(
+      `Cannot extract task ID from: ${manifestPath}`,
+      ["Invalid task manifest filename format"],
+      [],
+      { manifestPath, filename },
+    );
   }
   return match[1];
 }
@@ -196,7 +202,12 @@ export function extractDifficulty(
   if (normalized.includes("/hard/")) {
     return "hard";
   }
-  throw new Error(`Cannot determine difficulty from: ${manifestPath}`);
+  throw new ValidationError(
+    `Cannot determine difficulty from: ${manifestPath}`,
+    ["Manifest path must contain /easy/, /medium/, or /hard/"],
+    [],
+    { manifestPath },
+  );
 }
 
 /**

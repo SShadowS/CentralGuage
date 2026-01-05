@@ -6,11 +6,15 @@
  */
 
 import { exists } from "@std/fs";
+import { ResourceNotFoundError } from "../errors.ts";
 import type {
   AgentConfig,
   AgentValidationResult,
   ResolvedAgentConfig,
 } from "./types.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("agent:registry");
 import {
   loadAgentConfig,
   loadAgentConfigs,
@@ -38,7 +42,7 @@ export class AgentRegistry {
     }
 
     if (!await exists(directory)) {
-      console.warn(`Agents directory not found: ${directory}`);
+      log.warn("Agents directory not found", { directory });
       return;
     }
 
@@ -95,7 +99,7 @@ export class AgentRegistry {
       this.resolvedCache.set(id, resolved);
       return resolved;
     } catch (error) {
-      console.error(`Failed to resolve agent ${id}: ${error}`);
+      log.error("Failed to resolve agent", { id, error: String(error) });
       return undefined;
     }
   }
@@ -106,10 +110,13 @@ export class AgentRegistry {
   static getOrThrow(id: string): ResolvedAgentConfig {
     const config = this.get(id);
     if (!config) {
-      throw new Error(
+      throw new ResourceNotFoundError(
         `Agent not found: ${id}. Available: ${
           this.list().join(", ") || "(none)"
         }`,
+        "agent",
+        id,
+        { availableAgents: this.list() },
       );
     }
     return config;

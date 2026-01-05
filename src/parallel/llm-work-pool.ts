@@ -8,6 +8,7 @@ import type {
   LLMWorkResult,
   ParallelExecutionConfig,
 } from "./types.ts";
+import { LLMProviderError, StateError } from "../errors.ts";
 import {
   type ContinuationConfig,
   DEFAULT_CONTINUATION_CONFIG,
@@ -65,7 +66,11 @@ export class LLMWorkPool {
    */
   async submit(item: LLMWorkItem): Promise<LLMWorkResult> {
     if (this.shuttingDown) {
-      throw new Error("Work pool is shutting down");
+      throw new StateError(
+        "Work pool is shutting down",
+        "shutting_down",
+        "running",
+      );
     }
 
     // Wait for global concurrency slot
@@ -88,7 +93,11 @@ export class LLMWorkPool {
    */
   async submitBatch(items: LLMWorkItem[]): Promise<Map<string, LLMWorkResult>> {
     if (this.shuttingDown) {
-      throw new Error("Work pool is shutting down");
+      throw new StateError(
+        "Work pool is shutting down",
+        "shutting_down",
+        "running",
+      );
     }
 
     const results = new Map<string, LLMWorkResult>();
@@ -357,7 +366,11 @@ export class LLMWorkPool {
     const result: StreamingContinuationResult | undefined = iterResult.value;
 
     if (!result) {
-      throw new Error("Streaming completed without result");
+      throw new LLMProviderError(
+        "Streaming completed without result",
+        "unknown",
+        false,
+      );
     }
 
     // Convert StreamingContinuationResult to ContinuationResult

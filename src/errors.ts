@@ -201,6 +201,58 @@ export class RateLimitError extends CentralGaugeError {
 }
 
 /**
+ * Error when a required resource is not found (file, config, session, etc.)
+ */
+export class ResourceNotFoundError extends CentralGaugeError {
+  constructor(
+    message: string,
+    public readonly resourceType: string,
+    public readonly resourceId: string,
+    context?: Record<string, unknown>,
+  ) {
+    super(message, "RESOURCE_NOT_FOUND", {
+      resourceType,
+      resourceId,
+      ...context,
+    });
+    this.name = "ResourceNotFoundError";
+  }
+}
+
+/**
+ * Error when operation attempted in invalid state
+ */
+export class StateError extends CentralGaugeError {
+  constructor(
+    message: string,
+    public readonly currentState: string,
+    public readonly expectedState?: string,
+    context?: Record<string, unknown>,
+  ) {
+    super(message, "STATE_ERROR", {
+      currentState,
+      expectedState,
+      ...context,
+    });
+    this.name = "StateError";
+  }
+}
+
+/**
+ * Error when a feature is not implemented
+ */
+export class NotImplementedError extends CentralGaugeError {
+  constructor(
+    message: string,
+    public readonly feature: string,
+    context?: Record<string, unknown>,
+  ) {
+    super(message, "NOT_IMPLEMENTED", { feature, ...context });
+    this.name = "NotImplementedError";
+  }
+}
+
+/**
  * Check if an error is retryable (rate limits, transient network issues)
  */
 export function isRetryableError(error: unknown): boolean {

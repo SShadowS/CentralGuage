@@ -4,6 +4,7 @@
  */
 
 import { exists, expandGlob } from "@std/fs";
+import { ResourceNotFoundError } from "../errors.ts";
 import type {
   CompilationLogEntry,
   TestLogEntry,
@@ -260,19 +261,31 @@ async function validateAndGetSession(
   sessionId?: string,
 ): Promise<{ session: SessionInfo; targetSessionId: string }> {
   if (!await exists(debugDir)) {
-    throw new Error(`Debug directory does not exist: ${debugDir}`);
+    throw new ResourceNotFoundError(
+      `Debug directory does not exist: ${debugDir}`,
+      "directory",
+      debugDir,
+    );
   }
 
   const targetSessionId = sessionId ?? await findLatestSession(debugDir);
   if (!targetSessionId) {
-    throw new Error("No sessions found in debug directory");
+    throw new ResourceNotFoundError(
+      "No sessions found in debug directory",
+      "session",
+      debugDir,
+    );
   }
 
   const sessions = await findSessions(debugDir);
   const session = sessions.find((s) => s.sessionId === targetSessionId);
 
   if (!session) {
-    throw new Error(`Session not found: ${targetSessionId}`);
+    throw new ResourceNotFoundError(
+      `Session not found: ${targetSessionId}`,
+      "session",
+      targetSessionId,
+    );
   }
 
   return { session, targetSessionId };

@@ -5,10 +5,13 @@
  * Agents run autonomously until success or resource limits are reached.
  */
 
-import { basename, dirname, fromFileUrl, join } from "@std/path";
-import { ensureDir, exists } from "@std/fs";
-import * as colors from "@std/fmt/colors";
+import { join } from "@std/path";
+import { ensureDir } from "@std/fs";
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { ContainerError } from "../errors.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("agent");
 import type { TaskManifest } from "../tasks/interfaces.ts";
 import type {
   AgentExecutionOptions,
@@ -27,138 +30,11 @@ import {
 } from "./failure-parser.ts";
 import { CostTracker } from "./cost-tracker.ts";
 import { BcContainerProvider } from "../container/bc-container-provider.ts";
-import type { ALProject, TestResult } from "../container/types.ts";
+import type { TestResult } from "../container/types.ts";
 import { WindowsSandboxProvider } from "../sandbox/windows-provider.ts";
 import type { Sandbox } from "../sandbox/types.ts";
 import { buildUniversalPromptSync, preloadTemplate } from "./prompt-builder.ts";
-
-// =============================================================================
-// Prereq App Types and Helpers
-// =============================================================================
-
-/** Prereq app info with path and app.json content */
-interface PrereqApp {
-  path: string;
-  appJson: Record<string, unknown>;
-  compiledAppPath?: string | undefined;
-}
-
-/**
- * Extract task ID from test file path.
- * @example "tests/al/easy/CG-AL-E002.Test.al" -> "CG-AL-E002"
- */
-function extractTaskIdFromTestPath(testFilePath: string): string | null {
-  const fileName = basename(testFilePath);
-  const match = fileName.match(/^(CG-AL-[A-Z]\d+)/);
-  return match?.[1] ?? null;
-}
-
-/**
- * Extract project root from test file path.
- * Looks for "tests/al/" in the path and returns everything before it.
- */
-function extractProjectRoot(testFilePath: string): string {
-  // Normalize path separators
-  const normalized = testFilePath.replace(/\\/g, "/");
-  const testsAlIndex = normalized.indexOf("tests/al/");
-  if (testsAlIndex > 0) {
-    return normalized.substring(0, testsAlIndex);
-  }
-  // If path starts with "tests/al/" or not found, use cwd
-  return Deno.cwd();
-}
-
-/**
- * Find prereq app directory for a given task ID.
- * Checks for tests/al/dependencies/{task-id}/ directory.
- */
-async function findPrereqApp(
-  taskId: string,
-  projectRoot: string,
-): Promise<PrereqApp | null> {
-  const prereqDir = join(projectRoot, "tests", "al", "dependencies", taskId);
-
-  try {
-    const dirExists = await exists(prereqDir, { isDirectory: true });
-    if (!dirExists) return null;
-
-    const appJsonPath = join(prereqDir, "app.json");
-    const appJsonContent = await Deno.readTextFile(appJsonPath);
-    const appJson = JSON.parse(appJsonContent);
-
-    return { path: prereqDir, appJson };
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Find prereq app by its app ID (for resolving dependency chains).
- */
-async function findPrereqAppById(
-  appId: string,
-  projectRoot: string,
-): Promise<PrereqApp | null> {
-  const depsDir = join(projectRoot, "tests", "al", "dependencies");
-
-  try {
-    for await (const entry of Deno.readDir(depsDir)) {
-      if (!entry.isDirectory) continue;
-
-      const appJsonPath = join(depsDir, entry.name, "app.json");
-      try {
-        const content = await Deno.readTextFile(appJsonPath);
-        const appJson = JSON.parse(content);
-        if (appJson["id"] === appId) {
-          return { path: join(depsDir, entry.name), appJson };
-        }
-      } catch {
-        continue;
-      }
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-
-/**
- * Find all prereq apps needed for a task, in dependency order.
- * Returns array with dependencies first, then the main prereq.
- */
-async function findAllPrereqApps(
-  taskId: string,
-  projectRoot: string,
-): Promise<PrereqApp[]> {
-  const result: PrereqApp[] = [];
-  const visited = new Set<string>();
-
-  async function collectDeps(prereq: PrereqApp): Promise<void> {
-    const appId = prereq.appJson["id"] as string;
-    if (visited.has(appId)) return;
-    visited.add(appId);
-
-    // First, process dependencies
-    const deps = (prereq.appJson["dependencies"] as Array<{ id: string }>) ||
-      [];
-    for (const dep of deps) {
-      const depPrereq = await findPrereqAppById(dep.id, projectRoot);
-      if (depPrereq) {
-        await collectDeps(depPrereq);
-      }
-    }
-
-    // Then add this prereq
-    result.push(prereq);
-  }
-
-  const mainPrereq = await findPrereqApp(taskId, projectRoot);
-  if (mainPrereq) {
-    await collectDeps(mainPrereq);
-  }
-
-  return result;
-}
+import { McpServerManager } from "./mcp-manager.ts";
 
 // =============================================================================
 // SDK Types - Extended for our usage
@@ -361,6 +237,7 @@ interface ExecutionPrepResult {
 
 export class AgentTaskExecutor {
   private containerProvider: BcContainerProvider;
+  private mcpManager: McpServerManager;
 
   /** Track pending tool calls with start times for duration calculation */
   private pendingToolCalls = new Map<
@@ -374,6 +251,7 @@ export class AgentTaskExecutor {
   constructor() {
     // No configuration needed - MCP servers come from agent config
     this.containerProvider = new BcContainerProvider();
+    this.mcpManager = new McpServerManager();
 
     // Configure container credentials from environment
     const containerName = Deno.env.get("CENTRALGAUGE_CONTAINER_NAME") ||
@@ -384,13 +262,6 @@ export class AgentTaskExecutor {
       username,
       password,
     });
-  }
-
-  /**
-   * Format current time as HH:MM:SS.mmm for debug logging
-   */
-  private formatTimestamp(): string {
-    return new Date().toISOString().substring(11, 23);
   }
 
   /**
@@ -407,21 +278,21 @@ export class AgentTaskExecutor {
   private logToolTimingSummary(): void {
     if (this.toolTimings.size === 0) return;
 
-    console.log("\n[Agent] Tool Timing Summary:");
     const entries = Array.from(this.toolTimings.entries())
       .sort((a, b) => b[1].totalMs - a[1].totalMs);
 
+    const timings: Record<string, string> = {};
     for (const [name, data] of entries) {
       const avgMs = Math.round(data.totalMs / data.calls);
       const totalSec = (data.totalMs / 1000).toFixed(1);
       if (data.calls === 1) {
-        console.log(`  ${name}: ${totalSec}s`);
+        timings[name] = `${totalSec}s`;
       } else {
-        console.log(
-          `  ${name}: ${data.calls} calls, avg ${avgMs}ms, total ${totalSec}s`,
-        );
+        timings[name] =
+          `${data.calls} calls, avg ${avgMs}ms, total ${totalSec}s`;
       }
     }
+    log.debug("Tool timing summary", timings);
   }
 
   /**
@@ -459,9 +330,9 @@ export class AgentTaskExecutor {
 
           if (debug) {
             const durationSec = (durationMs / 1000).toFixed(1);
-            console.log(
-              `[${this.formatTimestamp()}] [Agent] Tool result: ${pending.name} (${durationSec}s)`,
-            );
+            log.debug(`Tool result: ${pending.name}`, {
+              duration: `${durationSec}s`,
+            });
           }
         }
 
@@ -538,7 +409,7 @@ export class AgentTaskExecutor {
     const systemPrompt = this.resolveSystemPrompt(agentConfig.systemPrompt);
 
     // Build MCP server configuration
-    const mcpServers = this.buildMcpServers(agentConfig);
+    const mcpServers = McpServerManager.buildServersConfig(agentConfig);
 
     // Create SDK query options
     const queryOptions: QueryOptions = {
@@ -559,19 +430,19 @@ export class AgentTaskExecutor {
    * Log query configuration for debugging
    */
   private logQueryConfig(queryOptions: QueryOptions): void {
-    console.log("[Agent] Query config:");
-    console.log(`  Model: ${queryOptions.model}`);
-    console.log(`  CWD: ${queryOptions.cwd}`);
-    console.log(`  Max turns: ${queryOptions.maxTurns}`);
-    console.log(`  Allowed tools: ${queryOptions.allowedTools?.join(", ")}`);
-    console.log(
-      `  MCP servers: ${Object.keys(queryOptions.mcpServers ?? {}).join(", ")}`,
-    );
+    const mcpServers: Record<string, string> = {};
     if (queryOptions.mcpServers) {
       for (const [name, cfg] of Object.entries(queryOptions.mcpServers)) {
-        console.log(`    ${name}: ${cfg.command} ${cfg.args?.join(" ") ?? ""}`);
+        mcpServers[name] = `${cfg.command} ${cfg.args?.join(" ") ?? ""}`;
       }
     }
+    log.debug("Query config", {
+      model: queryOptions.model,
+      cwd: queryOptions.cwd,
+      maxTurns: queryOptions.maxTurns,
+      allowedTools: queryOptions.allowedTools?.join(", ") ?? "all",
+      mcpServers: Object.keys(mcpServers).join(", ") || "none",
+    });
   }
 
   /**
@@ -648,7 +519,7 @@ export class AgentTaskExecutor {
   ): Promise<AgentExecutionResult> {
     // Check if sandbox mode should be used
     if (this.shouldUseSandbox(agentConfig, options)) {
-      console.log(colors.cyan("[Agent] Running in sandbox mode"));
+      log.info("Running in sandbox mode");
       return this.executeSandboxed(agentConfig, task, options);
     }
 
@@ -660,11 +531,7 @@ export class AgentTaskExecutor {
       try {
         this.universalTemplate = await preloadTemplate();
       } catch (e) {
-        console.warn(
-          colors.yellow(
-            `[Agent] Failed to load universal template, using legacy: ${e}`,
-          ),
-        );
+        log.warn(`Failed to load universal template, using legacy: ${e}`);
       }
     }
 
@@ -774,7 +641,7 @@ export class AgentTaskExecutor {
     } catch (error) {
       tracker.endTurn();
       if (options.debug) {
-        console.error("[Agent Executor] Error:", error);
+        log.error("Executor error", { error: String(error) });
         this.logToolTimingSummary();
       }
       return this.buildExecutionResult(
@@ -797,9 +664,7 @@ export class AgentTaskExecutor {
    */
   private logMessage(msg: { type: string; subtype?: string }): void {
     const subtype = (msg as { subtype?: string }).subtype;
-    console.log(
-      `[Agent] Message: ${msg.type}${subtype ? ` (${subtype})` : ""}`,
-    );
+    log.debug(`Message: ${msg.type}${subtype ? ` (${subtype})` : ""}`);
 
     if (msg.type === "system" && subtype === "init") {
       const sysMsg = msg as {
@@ -807,19 +672,20 @@ export class AgentTaskExecutor {
         mcp_servers?: Array<{ name: string; status: string }>;
       };
       if (sysMsg.tools) {
-        console.log(`[Agent] Available tools: ${sysMsg.tools.length}`);
         const mcpTools = sysMsg.tools.filter((t: string) =>
           t.startsWith("mcp__")
         );
-        if (mcpTools.length > 0) {
-          console.log(`[Agent] MCP tools: ${mcpTools.join(", ")}`);
-        }
+        log.debug("Tools available", {
+          total: sysMsg.tools.length,
+          mcpTools: mcpTools.length > 0 ? mcpTools.join(", ") : "none",
+        });
       }
       if (sysMsg.mcp_servers) {
-        console.log("[Agent] MCP server status:");
+        const serverStatus: Record<string, string> = {};
         for (const srv of sysMsg.mcp_servers) {
-          console.log(`  ${srv.name}: ${srv.status}`);
+          serverStatus[srv.name] = srv.status;
         }
+        log.debug("MCP server status", serverStatus);
       }
     }
   }
@@ -863,9 +729,7 @@ export class AgentTaskExecutor {
         });
 
         if (debug) {
-          console.log(
-            `[${this.formatTimestamp()}] [Agent] Tool call: ${toolBlock.name}`,
-          );
+          log.debug(`Tool call: ${toolBlock.name}`);
         }
         const toolRecord: ToolCallRecord = {
           name: toolBlock.name,
@@ -877,58 +741,6 @@ export class AgentTaskExecutor {
       }
       // Note: tool_result blocks are handled in processUserMessage()
     }
-  }
-
-  /**
-   * Run test verification and log results
-   * @deprecated No longer used - agents now run tests via al_verify_task MCP tool
-   */
-  // @ts-ignore: Kept for potential future use or debugging
-  private async _runTestVerification(
-    taskWorkingDir: string,
-    testFilePath: string,
-    debug?: boolean,
-  ): Promise<{ success: boolean; testResult?: TestResult }> {
-    if (debug) {
-      console.log("[Agent] Verifying with tests...");
-    }
-
-    const verifyResult = await this.verifyWithTests(
-      taskWorkingDir,
-      testFilePath,
-      debug,
-    );
-
-    if (!verifyResult.success) {
-      if (debug) {
-        console.log(
-          `[Agent] Test verification failed: ${verifyResult.message}`,
-        );
-        if (verifyResult.failures) {
-          for (const f of verifyResult.failures) {
-            console.log(`  - ${f}`);
-          }
-        }
-      }
-      const result: { success: boolean; testResult?: TestResult } = {
-        success: false,
-      };
-      if (verifyResult.testResult) {
-        result.testResult = verifyResult.testResult;
-      }
-      return result;
-    }
-
-    if (debug) {
-      console.log(`[Agent] Test verification passed: ${verifyResult.message}`);
-    }
-    const result: { success: boolean; testResult?: TestResult } = {
-      success: true,
-    };
-    if (verifyResult.testResult) {
-      result.testResult = verifyResult.testResult;
-    }
-    return result;
   }
 
   /**
@@ -954,47 +766,6 @@ export class AgentTaskExecutor {
       result.append = config.append;
     }
     return result;
-  }
-
-  /**
-   * Build MCP server configuration from agent config
-   * Returns only agent-defined MCP servers (no built-in servers)
-   */
-  private buildMcpServers(
-    agentConfig: ResolvedAgentConfig,
-  ):
-    | Record<
-      string,
-      { command: string; args?: string[]; env?: Record<string, string> }
-    >
-    | undefined {
-    if (!agentConfig.mcpServers) {
-      return undefined;
-    }
-
-    const servers: Record<
-      string,
-      { command: string; args?: string[]; env?: Record<string, string> }
-    > = {};
-
-    for (const [name, mcpConfig] of Object.entries(agentConfig.mcpServers)) {
-      const serverEntry: {
-        command: string;
-        args?: string[];
-        env?: Record<string, string>;
-      } = {
-        command: mcpConfig.command,
-      };
-      if (mcpConfig.args) {
-        serverEntry.args = mcpConfig.args;
-      }
-      if (mcpConfig.env) {
-        serverEntry.env = mcpConfig.env;
-      }
-      servers[name] = serverEntry;
-    }
-
-    return Object.keys(servers).length > 0 ? servers : undefined;
   }
 
   /** Cached universal template for reuse */
@@ -1244,480 +1015,11 @@ export class AgentTaskExecutor {
     }
   }
 
-  /**
-   * Test Toolkit dependencies for BC 27
-   */
-  private static readonly TEST_TOOLKIT_DEPS = [
-    {
-      id: "dd0be2ea-f733-4d65-bb34-a28f4624fb14",
-      name: "Library Assert",
-      publisher: "Microsoft",
-      version: "27.0.0.0",
-    },
-    {
-      id: "e7320ebb-08b3-4406-b1ec-b4927d3e280b",
-      name: "Any",
-      publisher: "Microsoft",
-      version: "27.0.0.0",
-    },
-    {
-      id: "5d86850b-0d76-4eca-bd7b-951ad998e997",
-      name: "Tests-TestLibraries",
-      publisher: "Microsoft",
-      version: "27.0.0.0",
-    },
-  ];
-
-  /**
-   * Create an isolated verification directory with absolute path
-   */
-  private async createVerificationDir(projectDir: string): Promise<string> {
-    const timestamp = Date.now().toString(36);
-    const random = Math.random().toString(36).substring(2, 8);
-    const relativeVerifyDir = join(
-      projectDir,
-      "..",
-      `verify-${timestamp}-${random}`,
-    );
-
-    // Ensure absolute path for PowerShell compilation
-    const verifyDir =
-      relativeVerifyDir.match(/^[A-Z]:/i) || relativeVerifyDir.startsWith("/")
-        ? relativeVerifyDir
-        : join(Deno.cwd(), relativeVerifyDir);
-
-    await ensureDir(verifyDir);
-    return verifyDir;
-  }
-
-  /**
-   * Prepare app.json with Test Toolkit dependencies for verification.
-   * Optionally adds prereq app as a dependency.
-   */
-  private async prepareAppJsonForTests(
-    projectDir: string,
-    verifyDir: string,
-    prereqAppJson?: Record<string, unknown>,
-  ): Promise<{ success: boolean; error?: string }> {
-    const appJsonPath = join(projectDir, "app.json");
-
-    try {
-      const appJsonContent = await Deno.readTextFile(appJsonPath);
-      const appJson = JSON.parse(appJsonContent);
-
-      // Add Test Toolkit dependencies if not present
-      if (!appJson.dependencies) {
-        appJson.dependencies = [];
-      }
-      for (const dep of AgentTaskExecutor.TEST_TOOLKIT_DEPS) {
-        const depExists = appJson.dependencies.some(
-          (d: { id: string }) => d.id === dep.id,
-        );
-        if (!depExists) {
-          appJson.dependencies.push(dep);
-        }
-      }
-
-      // Add prereq app as dependency if provided
-      if (prereqAppJson) {
-        const prereqId = prereqAppJson["id"] as string;
-        const prereqExists = appJson.dependencies.some(
-          (d: { id: string }) => d.id === prereqId,
-        );
-        if (!prereqExists) {
-          appJson.dependencies.push({
-            id: prereqId,
-            name: prereqAppJson["name"] as string,
-            publisher: prereqAppJson["publisher"] as string,
-            version: prereqAppJson["version"] as string,
-          });
-        }
-      }
-
-      // Extend idRanges to include test codeunit range (80000-89999)
-      if (!appJson.idRanges) {
-        appJson.idRanges = [];
-      }
-      const hasTestRange = appJson.idRanges.some(
-        (r: { from: number; to: number }) => r.from <= 80001 && r.to >= 80001,
-      );
-      if (!hasTestRange) {
-        appJson.idRanges.push({ from: 80000, to: 89999 });
-      }
-
-      await Deno.writeTextFile(
-        join(verifyDir, "app.json"),
-        JSON.stringify(appJson, null, 2),
-      );
-      return { success: true };
-    } catch {
-      return { success: false, error: `No app.json found in ${projectDir}` };
-    }
-  }
-
-  /**
-   * Copy AL source files from project to verification directory
-   */
-  private async copyAlFiles(
-    projectDir: string,
-    verifyDir: string,
-  ): Promise<void> {
-    for await (const entry of Deno.readDir(projectDir)) {
-      if (entry.isFile && entry.name.endsWith(".al")) {
-        const content = await Deno.readTextFile(join(projectDir, entry.name));
-        await Deno.writeTextFile(join(verifyDir, entry.name), content);
-      }
-    }
-  }
-
-  /**
-   * Copy test file to verification directory
-   */
-  private async copyTestFile(
-    testFilePath: string,
-    verifyDir: string,
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      const testContent = await Deno.readTextFile(testFilePath);
-      const testFileName = basename(testFilePath);
-      await Deno.writeTextFile(join(verifyDir, testFileName), testContent);
-      return { success: true };
-    } catch {
-      return { success: false, error: `Test file not found: ${testFilePath}` };
-    }
-  }
-
-  /**
-   * Compile and run tests, returning verification result.
-   * Optionally publishes prereq apps before the main app.
-   */
-  private async compileAndRunTests(
-    containerName: string,
-    project: ALProject,
-    prereqAppPaths?: string[],
-    debug?: boolean,
-    testCodeunitId?: number,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    failures?: string[];
-    testResult?: TestResult;
-  }> {
-    const compileResult = await this.containerProvider.compileProject(
-      containerName,
-      project,
-    );
-
-    if (!compileResult.success) {
-      return {
-        success: false,
-        message: "Verification compilation failed",
-        failures: compileResult.errors.map(
-          (e) => `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
-        ),
-      };
-    }
-
-    // Publish prereq apps before running tests
-    if (prereqAppPaths && prereqAppPaths.length > 0) {
-      for (const prereqPath of prereqAppPaths) {
-        if (debug) {
-          console.log(`[Agent] Publishing prereq: ${prereqPath}`);
-        }
-        await this.containerProvider.publishApp(containerName, prereqPath);
-      }
-    }
-
-    const testResult = await this.containerProvider.runTests(
-      containerName,
-      project,
-      undefined, // appFilePath
-      testCodeunitId,
-    );
-
-    // Debug: show full test output if enabled
-    if (debug && testResult.output) {
-      console.log(colors.gray("[Agent] --- Test Output ---"));
-      console.log(testResult.output);
-      console.log(colors.gray("[Agent] --- End Test Output ---"));
-    }
-
-    if (testResult.success) {
-      return {
-        success: true,
-        message:
-          `All tests passed! (${testResult.passedTests}/${testResult.totalTests})`,
-        testResult,
-      };
-    }
-
-    const failures = testResult.results
-      .filter((r) => !r.passed)
-      .map((r) => `${r.name}: ${r.error || "Failed"}`);
-
-    return {
-      success: false,
-      message:
-        `Tests failed: ${testResult.failedTests} of ${testResult.totalTests} tests failed`,
-      failures,
-      testResult,
-    };
-  }
-
-  /**
-   * Verify agent code by running tests in an isolated directory.
-   * This prevents the agent from seeing or modifying test files.
-   * Handles prereq apps: compiles them first and adds them as dependencies.
-   */
-  private async verifyWithTests(
-    projectDir: string,
-    testFilePath: string,
-    debug?: boolean,
-  ): Promise<{
-    success: boolean;
-    message: string;
-    failures?: string[];
-    testResult?: TestResult;
-  }> {
-    const containerName = "Cronus27";
-
-    try {
-      // Check for prereq apps based on task ID
-      const taskId = extractTaskIdFromTestPath(testFilePath);
-      const projectRoot = extractProjectRoot(testFilePath);
-      const compiledPrereqs: PrereqApp[] = [];
-
-      if (debug) {
-        console.log(`[Agent] Test file: ${testFilePath}`);
-        console.log(`[Agent] Task ID: ${taskId}`);
-        console.log(`[Agent] Project root: ${projectRoot}`);
-      }
-
-      if (taskId) {
-        const allPrereqs = await findAllPrereqApps(taskId, projectRoot);
-        if (debug) {
-          console.log(`[Agent] Found ${allPrereqs.length} prereq(s)`);
-        }
-
-        for (const prereq of allPrereqs) {
-          if (debug) {
-            console.log(`[Agent] Compiling prereq: ${prereq.appJson["name"]}`);
-          }
-
-          // Build prereq project
-          const prereqProject = await this.buildALProject(prereq.path);
-          const prereqCompileResult = await this.containerProvider
-            .compileProject(containerName, prereqProject);
-
-          if (!prereqCompileResult.success) {
-            return {
-              success: false,
-              message: `Prereq app compilation failed for ${
-                prereq.appJson["name"]
-              }`,
-              failures: prereqCompileResult.errors.map(
-                (e) =>
-                  `${e.file}(${e.line},${e.column}): ${e.code} - ${e.message}`,
-              ),
-            };
-          }
-
-          compiledPrereqs.push({
-            ...prereq,
-            compiledAppPath: prereqCompileResult.artifactPath,
-          });
-        }
-      }
-
-      // Create isolated verification directory
-      const verifyDir = await this.createVerificationDir(projectDir);
-      if (debug) {
-        console.log(`[Agent] Verification directory: ${verifyDir}`);
-      }
-
-      // Prepare app.json with test dependencies (and prereq dependency if exists)
-      // Only add the last prereq as direct dependency - it will chain to others
-      const lastPrereq = compiledPrereqs[compiledPrereqs.length - 1];
-      const appResult = await this.prepareAppJsonForTests(
-        projectDir,
-        verifyDir,
-        lastPrereq?.appJson,
-      );
-      if (!appResult.success) {
-        return { success: false, message: appResult.error! };
-      }
-
-      // Copy source files
-      await this.copyAlFiles(projectDir, verifyDir);
-
-      // Copy test file
-      const testResult = await this.copyTestFile(testFilePath, verifyDir);
-      if (!testResult.success) {
-        return { success: false, message: testResult.error! };
-      }
-      if (debug) {
-        console.log(`[Agent] Copied test file: ${basename(testFilePath)}`);
-      }
-
-      // Build and verify project
-      const project = await this.buildALProject(verifyDir);
-      if (debug) {
-        console.log(`[Agent] Source files: ${project.sourceFiles.length}`);
-        console.log(`[Agent] Test files: ${project.testFiles.length}`);
-      }
-
-      // Get prereq app paths for runTests
-      const prereqAppPaths = compiledPrereqs
-        .map((p) => p.compiledAppPath)
-        .filter((p): p is string => p !== undefined);
-
-      return await this.compileAndRunTests(
-        containerName,
-        project,
-        prereqAppPaths.length > 0 ? prereqAppPaths : undefined,
-        debug,
-      );
-    } catch (error) {
-      const errorMessage = error instanceof Error
-        ? error.message
-        : String(error);
-      return { success: false, message: `Verification error: ${errorMessage}` };
-    }
-  }
-
-  /**
-   * Build ALProject from a directory path
-   */
-  private async buildALProject(projectDir: string): Promise<ALProject> {
-    const appJsonPath = join(projectDir, "app.json");
-    const appJsonContent = await Deno.readTextFile(appJsonPath);
-    const appJson = JSON.parse(appJsonContent);
-
-    // Find all .al files in the directory
-    const sourceFiles: string[] = [];
-    const testFiles: string[] = [];
-
-    for await (const entry of Deno.readDir(projectDir)) {
-      if (entry.isFile && entry.name.endsWith(".al")) {
-        const filePath = join(projectDir, entry.name);
-        // Test files typically have "Test" in the name
-        const isTestFile = entry.name.toLowerCase().includes("test") ||
-          entry.name.toLowerCase().includes(".test.");
-
-        if (isTestFile) {
-          testFiles.push(filePath);
-        } else {
-          sourceFiles.push(filePath);
-        }
-      }
-    }
-
-    return {
-      path: projectDir,
-      appJson,
-      sourceFiles,
-      testFiles,
-    };
-  }
-
   // ===========================================================================
   // Sandbox Execution Methods
   // ===========================================================================
 
-  /** MCP HTTP server process (started on demand for sandbox mode) */
-  private mcpServerProcess: Deno.ChildProcess | null = null;
   private sandboxProvider?: WindowsSandboxProvider;
-
-  /**
-   * Start the MCP HTTP server for sandbox mode.
-   * The server runs on the host and is accessible by sandbox containers.
-   *
-   * @param port - HTTP port to listen on
-   * @param workspaceMap - Optional workspace path mapping for sandbox mode (e.g., "C:\workspace=U:\host\path")
-   */
-  private async startMcpHttpServer(
-    port: number,
-    workspaceMap?: string,
-  ): Promise<void> {
-    if (this.mcpServerProcess !== null) {
-      // Already running
-      return;
-    }
-
-    console.log(
-      colors.gray(`[Sandbox] Starting MCP HTTP server on port ${port}...`),
-    );
-
-    // Find the MCP server script path
-    const scriptPath = join(
-      dirname(fromFileUrl(import.meta.url)),
-      "..",
-      "..",
-      "mcp",
-      "al-tools-server.ts",
-    );
-
-    const args = [
-      "run",
-      "--allow-all",
-      scriptPath,
-      "--http",
-      "--port",
-      port.toString(),
-    ];
-
-    // Add workspace mapping for path translation in sandbox mode
-    if (workspaceMap) {
-      args.push("--workspace-map", workspaceMap);
-      console.log(colors.gray(`[Sandbox] Workspace mapping: ${workspaceMap}`));
-    }
-
-    const command = new Deno.Command("deno", {
-      args,
-      // Use "null" to discard output - prevents buffer blocking if server logs too much
-      stdout: "null",
-      stderr: "null",
-    });
-
-    this.mcpServerProcess = command.spawn();
-
-    // Wait for server to be ready
-    const maxRetries = 30;
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        const response = await fetch(`http://localhost:${port}/health`);
-        if (response.ok) {
-          console.log(
-            colors.green(`[Sandbox] MCP HTTP server ready on port ${port}`),
-          );
-          return;
-        }
-      } catch {
-        // Server not ready yet
-      }
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    throw new Error(
-      `MCP HTTP server failed to start after ${maxRetries} attempts`,
-    );
-  }
-
-  /**
-   * Stop the MCP HTTP server.
-   * @internal Reserved for future use when implementing cleanup on shutdown.
-   */
-  // @ts-ignore: Reserved for future cleanup implementation
-  private stopMcpHttpServer(): void {
-    if (this.mcpServerProcess !== null) {
-      try {
-        this.mcpServerProcess.kill("SIGTERM");
-      } catch {
-        // Process may already be dead
-      }
-      this.mcpServerProcess = null;
-    }
-  }
 
   /**
    * Check if sandbox mode should be used for this execution.
@@ -1768,7 +1070,7 @@ export class AgentTaskExecutor {
       // Start MCP HTTP server with workspace mapping for path translation
       // Maps container path C:\workspace to host path taskWorkingDir
       const workspaceMap = `C:\\workspace=${taskWorkingDir}`;
-      await this.startMcpHttpServer(mcpPort, workspaceMap);
+      await this.mcpManager.start(mcpPort, workspaceMap);
 
       // Initialize sandbox provider
       if (!this.sandboxProvider) {
@@ -1778,17 +1080,17 @@ export class AgentTaskExecutor {
       // Check if Windows containers are available
       const isAvailable = await this.sandboxProvider.isAvailable();
       if (!isAvailable) {
-        throw new Error(
+        throw new ContainerError(
           "Windows containers not available. Ensure Docker is running in Windows container mode.",
+          "docker",
+          "setup",
         );
       }
 
       // Prune stale containers from previous interrupted runs
       const pruned = await WindowsSandboxProvider.pruneStaleContainers();
       if (pruned > 0) {
-        console.log(
-          colors.gray(`[Sandbox] Cleaned up ${pruned} stale container(s)`),
-        );
+        log.debug(`Cleaned up ${pruned} stale container(s)`);
       }
 
       // Preload universal template if configured
@@ -1796,11 +1098,7 @@ export class AgentTaskExecutor {
         try {
           this.universalTemplate = await preloadTemplate();
         } catch (e) {
-          console.warn(
-            colors.yellow(
-              `[Sandbox] Failed to load universal template, using legacy: ${e}`,
-            ),
-          );
+          log.warn(`Failed to load universal template, using legacy: ${e}`);
         }
       }
 
@@ -1814,19 +1112,14 @@ export class AgentTaskExecutor {
       const promptFile = join(taskWorkingDir, ".agent-prompt.txt");
       await Deno.writeTextFile(promptFile, prompt);
 
-      console.log(
-        colors.cyan(`[Sandbox] Creating container for task ${task.id}...`),
-      );
+      log.info(`Creating container for task ${task.id}...`);
 
       // Debug: Check API key availability
       const apiKey = Deno.env.get("ANTHROPIC_API_KEY") || "";
-      console.log(
-        colors.gray(
-          `[Sandbox] API key available: ${
-            apiKey.length > 0 ? `yes (${apiKey.length} chars)` : "NO"
-          }`,
-        ),
-      );
+      log.debug("API key available", {
+        available: apiKey.length > 0 ? "yes" : "NO",
+        length: apiKey.length,
+      });
 
       // Create sandbox container
       // Note: Prompt is read from file instead of env var for reliability
@@ -1847,7 +1140,7 @@ export class AgentTaskExecutor {
         timeout: agentConfig.limits?.timeoutMs ?? 300000,
       });
 
-      console.log(colors.cyan(`[Sandbox] Container ${sandbox.name} created`));
+      log.info(`Container ${sandbox.name} created`);
 
       // Execute Claude Code in the sandbox
       const result = await sandbox.execStream(
@@ -1874,20 +1167,12 @@ export class AgentTaskExecutor {
 
       // Debug: Log output for failed tasks to help diagnose issues
       if (result.exitCode !== 0 || result.timedOut) {
-        console.log(
-          colors.yellow(
-            `[Sandbox] Container exit code: ${result.exitCode}, timedOut: ${result.timedOut}`,
-          ),
-        );
-        console.log(
-          colors.yellow("[Sandbox] --- Container Output (stdout) ---"),
-        );
-        console.log(result.stdout || "(empty)");
-        console.log(
-          colors.yellow("[Sandbox] --- Container Output (stderr) ---"),
-        );
-        console.log(result.stderr || "(empty)");
-        console.log(colors.yellow("[Sandbox] --- End Container Output ---"));
+        log.warn("Container execution failed", {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+        });
+        log.debug("Container stdout", { output: result.stdout || "(empty)" });
+        log.debug("Container stderr", { output: result.stderr || "(empty)" });
       }
       const outputLower = combinedOutput.toLowerCase();
       const requiresTests = !!task.expected?.testApp;
@@ -1960,17 +1245,11 @@ export class AgentTaskExecutor {
 
       // Log output when no success pattern matched (helps debug why task failed)
       if (!success && result.exitCode === 0) {
-        console.log(
-          colors.yellow(
-            `[Sandbox] No success pattern found in output (exit code 0)`,
-          ),
-        );
-        console.log(
-          colors.yellow("[Sandbox] --- Container Output (last 2000 chars) ---"),
-        );
+        log.warn("No success pattern found in output (exit code 0)");
         const lastOutput = combinedOutput.slice(-2000);
-        console.log(lastOutput || "(empty)");
-        console.log(colors.yellow("[Sandbox] --- End Container Output ---"));
+        log.debug("Container output (last 2000 chars)", {
+          output: lastOutput || "(empty)",
+        });
       }
 
       // Extract structured result from output
@@ -1994,8 +1273,7 @@ export class AgentTaskExecutor {
 
       // Log formatted result for easy parsing
       if (options.debug) {
-        console.log(colors.cyan("[Sandbox] Result Summary:"));
-        console.log(resultSummary.formatted);
+        log.debug("Result summary", { formatted: resultSummary.formatted });
       }
 
       // Analyze sandbox output for detailed failure information
@@ -2022,7 +1300,10 @@ export class AgentTaskExecutor {
         if (agentConfig.limits?.timeoutMs) {
           analysisOptions.timeoutMs = agentConfig.limits.timeoutMs;
         }
-        failureDetails = buildFailureReasonFromAnalysis(analysis, analysisOptions);
+        failureDetails = buildFailureReasonFromAnalysis(
+          analysis,
+          analysisOptions,
+        );
 
         // Update termination reason from analysis if more specific
         if (analysis.terminationReason !== "error") {
@@ -2053,7 +1334,7 @@ export class AgentTaskExecutor {
       const errorMessage = error instanceof Error
         ? error.message
         : String(error);
-      console.error(colors.red(`[Sandbox] Error: ${errorMessage}`));
+      log.error("Sandbox error", { error: errorMessage });
 
       // Create a failed result summary
       const errorResultSummary: ParsedTaskResult = {
@@ -2096,21 +1377,15 @@ export class AgentTaskExecutor {
       // Cleanup sandbox
       if (sandbox) {
         try {
-          console.log(
-            colors.gray(`[Sandbox] Cleaning up container ${sandbox.name}...`),
-          );
+          log.debug(`Cleaning up container ${sandbox.name}...`);
           await sandbox.destroy();
         } catch (error) {
-          console.error(
-            colors.yellow(
-              `[Sandbox] Warning: Failed to cleanup container: ${error}`,
-            ),
-          );
+          log.warn(`Failed to cleanup container: ${error}`);
         }
       }
 
       // Stop MCP server - must stop since workspace mapping is per-task
-      this.stopMcpHttpServer();
+      this.mcpManager.stop();
     }
   }
 }
