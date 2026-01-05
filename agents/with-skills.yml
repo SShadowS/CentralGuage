@@ -25,6 +25,7 @@ allowedTools:
   - Edit
   - Glob
   - Grep
+  - Bash
   - Skill
 
 tags:

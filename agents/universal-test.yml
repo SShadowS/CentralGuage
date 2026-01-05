@@ -1,0 +1,40 @@
+# Universal Prompt Test Agent
+#
+# Tests the new provider-agnostic universal prompt template.
+
+id: universal-test
+name: "Universal Prompt Test Agent"
+description: "Agent using the new universal prompt template for provider-agnostic execution"
+model: claude-opus-4-5-20251101
+maxTurns: 100
+maxTokens: 100000
+
+# Use the new universal prompt template
+promptTemplate: universal
+toolNaming: generic
+
+# SDK built-in tools the agent can use
+allowedTools:
+  - Read
+  - Write
+  - Edit
+  - Glob
+  - Grep
+  - Bash
+
+# MCP servers for AL compilation and testing
+mcpServers:
+  al-tools:
+    command: deno
+    args:
+      - run
+      - --allow-all
+      - U:/Git/CentralGuage/mcp/al-tools-server.ts
+
+limits:
+  maxCompileAttempts: 10
+  timeoutMs: 600000  # 10 minutes - Claude Code buffers output in --print mode
+
+tags:
+  - test
+  - universal-prompt
