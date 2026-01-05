@@ -5,6 +5,7 @@ deno.lock
 # Results and reports
 results/
 reports/
+workspaces/
 
 # Build artifacts and binaries
 dist/
@@ -71,3 +72,10 @@ test-configs/*/.tasks/
 # AL build artifacts (prereq apps)
 tests/al/dependencies/*/.alpackages/
 tests/al/dependencies/*/output/
+
+# Local debug files and scripts
+scripts/
+TestLookupSandbox.md
+bug.md
+dockerstatus.md
+sandbox-debug.log
