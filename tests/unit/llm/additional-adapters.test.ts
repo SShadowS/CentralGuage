@@ -1431,7 +1431,7 @@ Deno.test("OpenRouterAdapter - Provider Properties", async (t) => {
     const adapter = new OpenRouterAdapter();
     assertArrayIncludes(adapter.supportedModels, [
       "openai/gpt-4o",
-      "anthropic/claude-3.5-sonnet",
+      "anthropic/claude-sonnet-4",
       "google/gemini-2.5-pro",
       "meta-llama/llama-3.3-70b-instruct",
     ]);

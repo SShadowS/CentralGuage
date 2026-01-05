@@ -1,18 +1,22 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type {
-  CodeGenerationResult,
-  GenerationContext,
   LLMConfig,
   LLMRequest,
-  LLMResponse,
   StreamChunk,
-  StreamingLLMAdapter,
   StreamOptions,
   StreamResult,
   TokenUsage,
 } from "./types.ts";
-import { CodeExtractor } from "./code-extractor.ts";
-import { DebugLogger } from "../utils/debug-logger.ts";
+import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("llm:anthropic");
+import {
+  DEFAULT_API_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_TEMPERATURE,
+} from "../constants.ts";
+import { LLMProviderError } from "../errors.ts";
 import {
   createChunk,
   createStreamState,
@@ -21,9 +25,8 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
-export class AnthropicAdapter implements StreamingLLMAdapter {
+export class AnthropicAdapter extends BaseLLMAdapter {
   readonly name = "anthropic";
-  readonly supportsStreaming = true;
   readonly supportedModels = [
     // Claude 4.5 models (latest)
     "claude-opus-4-5-20251101",
@@ -46,16 +49,14 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     // Claude 3.5 models (legacy)
     "claude-3-5-haiku-20241022",
     "claude-3-5-haiku-latest",
-    // Claude 3 models (legacy)
-    "claude-3-haiku-20240307",
   ];
 
-  private config: LLMConfig = {
+  protected override config: LLMConfig = {
     provider: "anthropic",
     model: "claude-sonnet-4-5-20250929",
-    temperature: 0.1,
-    maxTokens: 4000,
-    timeout: 30000,
+    temperature: DEFAULT_TEMPERATURE,
+    maxTokens: DEFAULT_MAX_TOKENS,
+    timeout: DEFAULT_API_TIMEOUT_MS,
   };
 
   private client: Anthropic | null = null;
@@ -67,120 +68,6 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       baseURL: config.baseUrl,
       timeout: config.timeout,
     });
-  }
-
-  async generateCode(
-    request: LLMRequest,
-    context: GenerationContext,
-  ): Promise<CodeGenerationResult> {
-    console.log(
-      `[Anthropic] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-    );
-
-    let rawResponse: unknown;
-    let response: LLMResponse;
-
-    try {
-      const result = await this.callAnthropic(request, true);
-      response = result.response;
-      rawResponse = result.rawResponse;
-    } catch (error) {
-      const debugLogger = DebugLogger.getInstance();
-      if (debugLogger) {
-        await debugLogger.logError(
-          "anthropic",
-          "generateCode",
-          request,
-          context,
-          error as Error,
-          rawResponse,
-        );
-      }
-      throw error;
-    }
-
-    const extraction = CodeExtractor.extract(response.content, "al");
-
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "anthropic",
-        "generateCode",
-        request,
-        context,
-        response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        "al",
-        rawResponse,
-      );
-    }
-
-    return {
-      code: extraction.code,
-      language: "al",
-      response,
-      extractedFromDelimiters: extraction.extractedFromDelimiters,
-    };
-  }
-
-  async generateFix(
-    _originalCode: string,
-    errors: string[],
-    request: LLMRequest,
-    context: GenerationContext,
-  ): Promise<CodeGenerationResult> {
-    console.log(
-      `[Anthropic] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
-    );
-
-    let rawResponse: unknown;
-    let response: LLMResponse;
-
-    try {
-      const result = await this.callAnthropic(request, true);
-      response = result.response;
-      rawResponse = result.rawResponse;
-    } catch (error) {
-      const debugLogger = DebugLogger.getInstance();
-      if (debugLogger) {
-        await debugLogger.logError(
-          "anthropic",
-          "generateFix",
-          request,
-          context,
-          error as Error,
-          rawResponse,
-        );
-      }
-      throw error;
-    }
-
-    const extraction = CodeExtractor.extract(response.content, "diff");
-
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "anthropic",
-        "generateFix",
-        request,
-        context,
-        response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        extraction.language === "unknown" ? "diff" : extraction.language,
-        rawResponse,
-      );
-    }
-
-    return {
-      code: extraction.code,
-      language: extraction.language === "unknown"
-        ? "diff"
-        : extraction.language,
-      response,
-      extractedFromDelimiters: extraction.extractedFromDelimiters,
-    };
   }
 
   validateConfig(config: LLMConfig): string[] {
@@ -196,11 +83,10 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       !this.supportedModels.includes(config.model) &&
       !this.isCustomModel(config.model)
     ) {
-      console.warn(
-        `Custom/unknown model: ${config.model}. Known models: ${
-          this.supportedModels.join(", ")
-        }`,
-      );
+      log.warn("Custom/unknown model", {
+        model: config.model,
+        knownModels: this.supportedModels,
+      });
     }
 
     if (
@@ -264,8 +150,6 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       // Claude 3.5 pricing (legacy)
       "claude-3-5-haiku-20241022": { input: 0.0008, output: 0.004 },
       "claude-3-5-haiku-latest": { input: 0.0008, output: 0.004 },
-      // Claude 3 pricing (legacy)
-      "claude-3-haiku-20240307": { input: 0.00025, output: 0.00125 },
     };
 
     const costs = modelCosts[this.config.model] ?? defaultCost;
@@ -275,25 +159,14 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     return inputCost + outputCost;
   }
 
-  async isHealthy(): Promise<boolean> {
-    try {
-      const testRequest: LLMRequest = {
-        prompt: "Say 'OK' if you can respond.",
-        temperature: 0,
-        maxTokens: 5,
-      };
+  // ============================================================================
+  // Provider-specific implementations (abstract method overrides)
+  // ============================================================================
 
-      await this.callAnthropic(testRequest);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async callAnthropic(
+  protected async callProvider(
     request: LLMRequest,
     includeRaw = false,
-  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
+  ): Promise<ProviderCallResult> {
     const startTime = Date.now();
     const client = this.ensureClient();
     const params = this.buildRequestParams(request);
@@ -318,184 +191,19 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
       ),
     };
 
-    const llmResponse: LLMResponse = {
-      content: contentText,
-      model: this.config.model,
-      usage,
-      duration,
-      finishReason: this.mapFinishReason(message.stop_reason),
-    };
-
     return {
-      response: llmResponse,
+      response: {
+        content: contentText,
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: this.mapFinishReason(message.stop_reason),
+      },
       rawResponse: includeRaw ? message : undefined,
     };
   }
 
-  private mapFinishReason(
-    reason: string | null,
-  ): "stop" | "length" | "content_filter" | "error" {
-    switch (reason) {
-      case "end_turn":
-      case "stop_sequence":
-        return "stop";
-      case "max_tokens":
-        return "length";
-      default:
-        return "error";
-    }
-  }
-
-  /**
-   * Ensures the Anthropic client is initialized.
-   * @throws Error if API key is not configured.
-   */
-  private ensureClient(): Anthropic {
-    if (this.client) {
-      return this.client;
-    }
-
-    if (!this.config.apiKey) {
-      throw new Error(
-        "Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable.",
-      );
-    }
-
-    this.client = new Anthropic({
-      apiKey: this.config.apiKey,
-      baseURL: this.config.baseUrl,
-      timeout: this.config.timeout,
-    });
-
-    return this.client;
-  }
-
-  /**
-   * Builds request parameters for Anthropic API calls.
-   * Handles extended thinking configuration and temperature settings.
-   */
-  // deno-lint-ignore no-explicit-any
-  private buildRequestParams(request: LLMRequest): any {
-    const thinkingBudget = typeof this.config.thinkingBudget === "number"
-      ? this.config.thinkingBudget
-      : undefined;
-
-    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
-    const temperature = thinkingBudget !== undefined
-      ? 1
-      : (request.temperature ?? this.config.temperature ?? 0.1);
-
-    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
-
-    // Validate constraint at request time (catches request overrides)
-    if (thinkingBudget !== undefined && maxTokens <= thinkingBudget) {
-      throw new Error(
-        `maxTokens (${maxTokens}) must be greater than thinkingBudget (${thinkingBudget}). ` +
-          `Use tokens=${thinkingBudget + 1000} or higher.`,
-      );
-    }
-
-    // deno-lint-ignore no-explicit-any
-    const params: any = {
-      model: this.config.model,
-      max_tokens: maxTokens,
-      messages: [
-        {
-          role: "user",
-          content: request.prompt,
-        },
-      ],
-      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
-      ...(request.stop ? { stop_sequences: request.stop } : {}),
-    };
-
-    // Add thinking configuration if budget is set
-    if (thinkingBudget !== undefined) {
-      params.thinking = {
-        type: "enabled",
-        budget_tokens: thinkingBudget,
-      };
-      // Temperature cannot be set when thinking is enabled
-    } else {
-      params.temperature = temperature;
-    }
-
-    return params;
-  }
-
-  // ============================================================================
-  // Streaming Methods
-  // ============================================================================
-
-  async *generateCodeStream(
-    request: LLMRequest,
-    context: GenerationContext,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      `[Anthropic] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-    );
-
-    const result = yield* this.streamAnthropic(request, options);
-
-    // Extract code from accumulated response
-    const extraction = CodeExtractor.extract(result.content, "al");
-
-    // Log interaction
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "anthropic",
-        "generateCode",
-        request,
-        context,
-        result.response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        "al",
-        undefined, // No raw response for streaming
-      );
-    }
-
-    return result;
-  }
-
-  async *generateFixStream(
-    _originalCode: string,
-    errors: string[],
-    request: LLMRequest,
-    context: GenerationContext,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      `[Anthropic] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
-    );
-
-    const result = yield* this.streamAnthropic(request, options);
-
-    // Extract code from accumulated response
-    const extraction = CodeExtractor.extract(result.content, "diff");
-
-    // Log interaction
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "anthropic",
-        "generateFix",
-        request,
-        context,
-        result.response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        extraction.language === "unknown" ? "diff" : extraction.language,
-        undefined, // No raw response for streaming
-      );
-    }
-
-    return result;
-  }
-
-  private async *streamAnthropic(
+  protected async *streamProvider(
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
@@ -527,11 +235,114 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
     }
   }
 
+  // ============================================================================
+  // Private Anthropic-specific helpers
+  // ============================================================================
+
+  private mapFinishReason(
+    reason: string | null,
+  ): "stop" | "length" | "content_filter" | "error" {
+    switch (reason) {
+      case "end_turn":
+      case "stop_sequence":
+        return "stop";
+      case "max_tokens":
+        return "length";
+      default:
+        return "error";
+    }
+  }
+
+  /**
+   * Ensures the Anthropic client is initialized.
+   * @throws Error if API key is not configured.
+   */
+  private ensureClient(): Anthropic {
+    if (this.client) {
+      return this.client;
+    }
+
+    if (!this.config.apiKey) {
+      throw new LLMProviderError(
+        "Anthropic API key not configured. Set ANTHROPIC_API_KEY environment variable.",
+        "anthropic",
+        false,
+      );
+    }
+
+    this.client = new Anthropic({
+      apiKey: this.config.apiKey,
+      baseURL: this.config.baseUrl,
+      timeout: this.config.timeout,
+    });
+
+    return this.client;
+  }
+
+  /**
+   * Builds request parameters for Anthropic API calls.
+   * Handles extended thinking configuration and temperature settings.
+   */
+  private buildRequestParams(
+    request: LLMRequest,
+  ): Anthropic.MessageCreateParamsNonStreaming {
+    const thinkingBudget = typeof this.config.thinkingBudget === "number"
+      ? this.config.thinkingBudget
+      : undefined;
+
+    // When thinking is enabled, temperature must be 1 (Anthropic requirement)
+    const temperature = thinkingBudget !== undefined
+      ? 1
+      : (request.temperature ?? this.config.temperature ?? 0.1);
+
+    const maxTokens = request.maxTokens ?? this.config.maxTokens ?? 4000;
+
+    // Validate constraint at request time (catches request overrides)
+    if (thinkingBudget !== undefined && maxTokens <= thinkingBudget) {
+      throw new LLMProviderError(
+        `maxTokens (${maxTokens}) must be greater than thinkingBudget (${thinkingBudget}). ` +
+          `Use tokens=${thinkingBudget + 1000} or higher.`,
+        "anthropic",
+        false,
+        undefined,
+        { maxTokens, thinkingBudget },
+      );
+    }
+
+    const params: Anthropic.MessageCreateParamsNonStreaming = {
+      model: this.config.model,
+      max_tokens: maxTokens,
+      messages: [
+        {
+          role: "user",
+          content: request.prompt,
+        },
+      ],
+      ...(request.systemPrompt ? { system: request.systemPrompt } : {}),
+      ...(request.stop ? { stop_sequences: request.stop } : {}),
+    };
+
+    // Add thinking configuration if budget is set
+    if (thinkingBudget !== undefined) {
+      params.thinking = {
+        type: "enabled",
+        budget_tokens: thinkingBudget,
+      };
+      // Temperature cannot be set when thinking is enabled
+    } else {
+      params.temperature = temperature;
+    }
+
+    return params;
+  }
+
   /**
    * Sets up abort signal handling for a stream.
    */
-  // deno-lint-ignore no-explicit-any
-  private setupAbortHandler(stream: any, options?: StreamOptions): void {
+  private setupAbortHandler(
+    stream: ReturnType<Anthropic["messages"]["stream"]>,
+    options?: StreamOptions,
+  ): void {
     if (options?.abortSignal) {
       options.abortSignal.addEventListener("abort", () => {
         stream.abort();
@@ -543,8 +354,7 @@ export class AnthropicAdapter implements StreamingLLMAdapter {
    * Processes stream events and yields text chunks.
    */
   private async *processStreamEvents(
-    // deno-lint-ignore no-explicit-any
-    stream: any,
+    stream: ReturnType<Anthropic["messages"]["stream"]>,
     state: StreamState,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, void, undefined> {

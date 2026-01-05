@@ -499,18 +499,18 @@ Deno.test("AnthropicAdapter - estimateCost edge cases", async (t) => {
     assertEquals(Math.abs(cost - 0.0048) < 0.0001, true);
   });
 
-  await t.step("calculates cost for claude-3-haiku model", () => {
+  await t.step("calculates cost for claude-haiku-4-5 model", () => {
     const adapter = new AnthropicAdapter();
     adapter.configure({
       provider: "anthropic",
-      model: "claude-3-haiku-20240307",
+      model: "claude-haiku-4-5",
       apiKey: "test-key",
     });
 
-    // Claude 3 Haiku pricing: $0.00025/1K input, $0.00125/1K output
+    // Claude 4.5 Haiku pricing: $0.001/1K input, $0.005/1K output
     const cost = adapter.estimateCost(1000, 1000);
-    // 1000/1000 * 0.00025 + 1000/1000 * 0.00125 = 0.0015
-    assertEquals(Math.abs(cost - 0.0015) < 0.0001, true);
+    // 1000/1000 * 0.001 + 1000/1000 * 0.005 = 0.006
+    assertEquals(Math.abs(cost - 0.006) < 0.0001, true);
   });
 
   await t.step("calculates cost for claude-opus-4-1 model", () => {

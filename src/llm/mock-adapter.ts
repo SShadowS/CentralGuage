@@ -8,7 +8,10 @@ import type {
   TokenUsage,
 } from "./types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
-import * as colors from "@std/fmt/colors";
+import { DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE } from "../constants.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("llm:mock");
 
 export class MockLLMAdapter implements LLMAdapter {
   readonly name = "mock";
@@ -17,8 +20,8 @@ export class MockLLMAdapter implements LLMAdapter {
   private config: LLMConfig = {
     provider: "mock",
     model: "mock-gpt-4",
-    temperature: 0.1,
-    maxTokens: 4000,
+    temperature: DEFAULT_TEMPERATURE,
+    maxTokens: DEFAULT_MAX_TOKENS,
   };
 
   private readonly codeTemplates = {
@@ -147,11 +150,10 @@ export class MockLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(
-      colors.magenta(
-        `[Mock LLM] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-      ),
-    );
+    log.info("Generating AL code", {
+      taskId: context.taskId,
+      attempt: context.attempt,
+    });
 
     await this.simulateDelay(1500);
 
@@ -174,11 +176,10 @@ export class MockLLMAdapter implements LLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(
-      colors.magenta(
-        `[Mock LLM] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
-      ),
-    );
+    log.info("Generating fix", {
+      taskId: context.taskId,
+      errorCount: errors.length,
+    });
 
     await this.simulateDelay(1200);
 
@@ -259,7 +260,7 @@ export class MockLLMAdapter implements LLMAdapter {
   }
 
   private generateMockFix(_originalCode: string, errors: string[]): string {
-    console.log(`🔧 [Mock LLM] Attempting to fix errors: ${errors.join(", ")}`);
+    log.debug("Attempting to fix errors", { errors });
 
     // Instead of generating a diff, generate the fixed AL code directly
     let fixedCode = this.codeTemplates.simpleCodeunit;

@@ -1,18 +1,22 @@
 import OpenAI from "@openai/openai";
 import type {
-  CodeGenerationResult,
-  GenerationContext,
   LLMConfig,
   LLMRequest,
-  LLMResponse,
   StreamChunk,
-  StreamingLLMAdapter,
   StreamOptions,
   StreamResult,
   TokenUsage,
 } from "./types.ts";
-import { CodeExtractor } from "./code-extractor.ts";
-import { DebugLogger } from "../utils/debug-logger.ts";
+import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("llm:openrouter");
+import {
+  DEFAULT_API_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_TEMPERATURE,
+} from "../constants.ts";
+import { LLMProviderError } from "../errors.ts";
 import {
   createChunk,
   createFallbackUsage,
@@ -25,9 +29,8 @@ import {
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
  * OpenRouter provides an OpenAI-compatible API for accessing 400+ models.
  */
-export class OpenRouterAdapter implements StreamingLLMAdapter {
+export class OpenRouterAdapter extends BaseLLMAdapter {
   readonly name = "openrouter";
-  readonly supportsStreaming = true;
   readonly supportedModels = [
     // OpenAI models via OpenRouter
     "openai/gpt-4o",
@@ -36,8 +39,8 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
     "openai/o1-preview",
     "openai/o3-mini",
     // Anthropic models via OpenRouter
-    "anthropic/claude-3.5-sonnet",
-    "anthropic/claude-3.5-haiku",
+    "anthropic/claude-sonnet-4",
+    "anthropic/claude-haiku-4",
     "anthropic/claude-opus-4",
     // Google models via OpenRouter
     "google/gemini-2.5-pro",
@@ -55,12 +58,12 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
     "mistralai/codestral-latest",
   ];
 
-  private config: LLMConfig = {
+  protected override config: LLMConfig = {
     provider: "openrouter",
     model: "openai/gpt-4o",
-    temperature: 0.1,
-    maxTokens: 4000,
-    timeout: 30000,
+    temperature: DEFAULT_TEMPERATURE,
+    maxTokens: DEFAULT_MAX_TOKENS,
+    timeout: DEFAULT_API_TIMEOUT_MS,
   };
 
   private client: OpenAI | null = null;
@@ -80,120 +83,6 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
     }
   }
 
-  async generateCode(
-    request: LLMRequest,
-    context: GenerationContext,
-  ): Promise<CodeGenerationResult> {
-    console.log(
-      `[OpenRouter] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-    );
-
-    let rawResponse: unknown;
-    let response: LLMResponse;
-
-    try {
-      const result = await this.callOpenRouter(request, true);
-      response = result.response;
-      rawResponse = result.rawResponse;
-    } catch (error) {
-      const debugLogger = DebugLogger.getInstance();
-      if (debugLogger) {
-        await debugLogger.logError(
-          "openrouter",
-          "generateCode",
-          request,
-          context,
-          error as Error,
-          rawResponse,
-        );
-      }
-      throw error;
-    }
-
-    const extraction = CodeExtractor.extract(response.content, "al");
-
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openrouter",
-        "generateCode",
-        request,
-        context,
-        response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        "al",
-        rawResponse,
-      );
-    }
-
-    return {
-      code: extraction.code,
-      language: "al",
-      response,
-      extractedFromDelimiters: extraction.extractedFromDelimiters,
-    };
-  }
-
-  async generateFix(
-    _originalCode: string,
-    errors: string[],
-    request: LLMRequest,
-    context: GenerationContext,
-  ): Promise<CodeGenerationResult> {
-    console.log(
-      `[OpenRouter] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
-    );
-
-    let rawResponse: unknown;
-    let response: LLMResponse;
-
-    try {
-      const result = await this.callOpenRouter(request, true);
-      response = result.response;
-      rawResponse = result.rawResponse;
-    } catch (error) {
-      const debugLogger = DebugLogger.getInstance();
-      if (debugLogger) {
-        await debugLogger.logError(
-          "openrouter",
-          "generateFix",
-          request,
-          context,
-          error as Error,
-          rawResponse,
-        );
-      }
-      throw error;
-    }
-
-    const extraction = CodeExtractor.extract(response.content, "diff");
-
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openrouter",
-        "generateFix",
-        request,
-        context,
-        response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        extraction.language === "unknown" ? "diff" : extraction.language,
-        rawResponse,
-      );
-    }
-
-    return {
-      code: extraction.code,
-      language: extraction.language === "unknown"
-        ? "diff"
-        : extraction.language,
-      response,
-      extractedFromDelimiters: extraction.extractedFromDelimiters,
-    };
-  }
-
   validateConfig(config: LLMConfig): string[] {
     const errors: string[] = [];
 
@@ -208,9 +97,9 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
       !this.isCustomModel(config.model)
     ) {
       // OpenRouter supports 400+ models, so we allow most formats
-      console.warn(
-        `Custom/unknown model: ${config.model}. OpenRouter supports 400+ models.`,
-      );
+      log.warn("Custom/unknown model (OpenRouter supports 400+ models)", {
+        model: config.model,
+      });
     }
 
     if (
@@ -242,8 +131,8 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
       "openai/o1-preview": { input: 0.015, output: 0.06 },
       "openai/o3-mini": { input: 0.005, output: 0.02 },
       // Anthropic via OpenRouter
-      "anthropic/claude-3.5-sonnet": { input: 0.003, output: 0.015 },
-      "anthropic/claude-3.5-haiku": { input: 0.001, output: 0.005 },
+      "anthropic/claude-sonnet-4": { input: 0.003, output: 0.015 },
+      "anthropic/claude-haiku-4": { input: 0.001, output: 0.005 },
       "anthropic/claude-opus-4": { input: 0.015, output: 0.075 },
       // Google via OpenRouter
       "google/gemini-2.5-pro": { input: 0.00125, output: 0.005 },
@@ -269,59 +158,19 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
     return inputCost + outputCost;
   }
 
-  async isHealthy(): Promise<boolean> {
-    try {
-      const testRequest: LLMRequest = {
-        prompt: "Say 'OK' if you can respond.",
-        temperature: 0,
-        maxTokens: 5,
-      };
+  // ============================================================================
+  // Provider-specific implementations (abstract method overrides)
+  // ============================================================================
 
-      await this.callOpenRouter(testRequest);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async callOpenRouter(
+  protected async callProvider(
     request: LLMRequest,
     includeRaw = false,
-  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
+  ): Promise<ProviderCallResult> {
     const startTime = Date.now();
+    const client = this.ensureClient();
+    const messages = this.buildMessages(request);
 
-    if (!this.client) {
-      if (!this.config.apiKey) {
-        throw new Error(
-          "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
-        );
-      }
-      this.client = new OpenAI({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl ?? "https://openrouter.ai/api/v1",
-        timeout: this.config.timeout,
-        defaultHeaders: {
-          "HTTP-Referer": this.config.siteUrl ??
-            "https://github.com/centralgauge",
-          "X-Title": this.config.siteName ?? "CentralGauge",
-        },
-      });
-    }
-
-    // Build messages array with optional system prompt
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-    if (request.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: request.systemPrompt,
-      });
-    }
-    messages.push({
-      role: "user",
-      content: request.prompt,
-    });
-
-    const completion = await this.client.chat.completions.create({
+    const completion = await client.chat.completions.create({
       model: this.config.model,
       messages,
       temperature: request.temperature ?? this.config.temperature ?? 0.1,
@@ -342,148 +191,30 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
       ),
     };
 
-    const llmResponse: LLMResponse = {
-      content: choice?.message?.content ?? "",
-      model: this.config.model,
-      usage,
-      duration,
-      finishReason: this.mapFinishReason(choice?.finish_reason),
-    };
-
     return {
-      response: llmResponse,
+      response: {
+        content: choice?.message?.content ?? "",
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: this.mapFinishReason(choice?.finish_reason),
+      },
       rawResponse: includeRaw ? completion : undefined,
     };
   }
 
-  private mapFinishReason(
-    reason: string | undefined | null,
-  ): "stop" | "length" | "content_filter" | "error" {
-    switch (reason) {
-      case "stop":
-        return "stop";
-      case "length":
-        return "length";
-      case "content_filter":
-        return "content_filter";
-      default:
-        return "error";
-    }
-  }
-
-  // ============================================================================
-  // Streaming Methods
-  // ============================================================================
-
-  async *generateCodeStream(
-    request: LLMRequest,
-    context: GenerationContext,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      `[OpenRouter] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-    );
-
-    const result = yield* this.streamOpenRouter(request, options);
-
-    // Extract code from accumulated response
-    const extraction = CodeExtractor.extract(result.content, "al");
-
-    // Log interaction
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openrouter",
-        "generateCode",
-        request,
-        context,
-        result.response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        "al",
-        undefined, // No raw response for streaming
-      );
-    }
-
-    return result;
-  }
-
-  async *generateFixStream(
-    _originalCode: string,
-    errors: string[],
-    request: LLMRequest,
-    context: GenerationContext,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      `[OpenRouter] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
-    );
-
-    const result = yield* this.streamOpenRouter(request, options);
-
-    // Extract code from accumulated response
-    const extraction = CodeExtractor.extract(result.content, "diff");
-
-    // Log interaction
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openrouter",
-        "generateFix",
-        request,
-        context,
-        result.response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        extraction.language === "unknown" ? "diff" : extraction.language,
-        undefined, // No raw response for streaming
-      );
-    }
-
-    return result;
-  }
-
-  private async *streamOpenRouter(
+  protected async *streamProvider(
     request: LLMRequest,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
     const state = createStreamState();
-
-    if (!this.client) {
-      if (!this.config.apiKey) {
-        throw new Error(
-          "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
-        );
-      }
-      this.client = new OpenAI({
-        apiKey: this.config.apiKey,
-        baseURL: this.config.baseUrl ?? "https://openrouter.ai/api/v1",
-        timeout: this.config.timeout,
-        defaultHeaders: {
-          "HTTP-Referer": this.config.siteUrl ??
-            "https://github.com/centralgauge",
-          "X-Title": this.config.siteName ?? "CentralGauge",
-        },
-      });
-    }
-
-    // Build messages array with optional system prompt
-    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
-    if (request.systemPrompt) {
-      messages.push({
-        role: "system",
-        content: request.systemPrompt,
-      });
-    }
-    messages.push({
-      role: "user",
-      content: request.prompt,
-    });
+    const client = this.ensureClient();
+    const messages = this.buildMessages(request);
 
     let finalUsage: TokenUsage | undefined;
 
     try {
-      const stream = await this.client.chat.completions.create({
+      const stream = await client.chat.completions.create({
         model: this.config.model,
         messages,
         temperature: request.temperature ?? this.config.temperature ?? 0.1,
@@ -537,6 +268,69 @@ export class OpenRouterAdapter implements StreamingLLMAdapter {
       return result;
     } catch (error) {
       handleStreamError(error, options);
+    }
+  }
+
+  // ============================================================================
+  // Private OpenRouter-specific helpers
+  // ============================================================================
+
+  private ensureClient(): OpenAI {
+    if (this.client) {
+      return this.client;
+    }
+
+    if (!this.config.apiKey) {
+      throw new LLMProviderError(
+        "OpenRouter API key not configured. Set OPENROUTER_API_KEY environment variable.",
+        "openrouter",
+        false,
+      );
+    }
+
+    this.client = new OpenAI({
+      apiKey: this.config.apiKey,
+      baseURL: this.config.baseUrl ?? "https://openrouter.ai/api/v1",
+      timeout: this.config.timeout,
+      defaultHeaders: {
+        "HTTP-Referer": this.config.siteUrl ??
+          "https://github.com/centralgauge",
+        "X-Title": this.config.siteName ?? "CentralGauge",
+      },
+    });
+
+    return this.client;
+  }
+
+  private buildMessages(
+    request: LLMRequest,
+  ): OpenAI.Chat.ChatCompletionMessageParam[] {
+    const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [];
+    if (request.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: request.systemPrompt,
+      });
+    }
+    messages.push({
+      role: "user",
+      content: request.prompt,
+    });
+    return messages;
+  }
+
+  private mapFinishReason(
+    reason: string | undefined | null,
+  ): "stop" | "length" | "content_filter" | "error" {
+    switch (reason) {
+      case "stop":
+        return "stop";
+      case "length":
+        return "length";
+      case "content_filter":
+        return "content_filter";
+      default:
+        return "error";
     }
   }
 }

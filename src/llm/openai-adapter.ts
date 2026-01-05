@@ -1,18 +1,22 @@
 import OpenAI from "@openai/openai";
 import type {
-  CodeGenerationResult,
-  GenerationContext,
   LLMConfig,
   LLMRequest,
-  LLMResponse,
   StreamChunk,
-  StreamingLLMAdapter,
   StreamOptions,
   StreamResult,
   TokenUsage,
 } from "./types.ts";
-import { CodeExtractor } from "./code-extractor.ts";
-import { DebugLogger } from "../utils/debug-logger.ts";
+import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("llm:openai");
+import {
+  DEFAULT_API_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_TEMPERATURE,
+} from "../constants.ts";
+import { LLMProviderError } from "../errors.ts";
 import {
   createChunk,
   createFallbackUsage,
@@ -22,9 +26,8 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
-export class OpenAIAdapter implements StreamingLLMAdapter {
+export class OpenAIAdapter extends BaseLLMAdapter {
   readonly name = "openai";
-  readonly supportsStreaming = true;
   readonly supportedModels = [
     // 2025 GPT-5 models
     "gpt-5.1",
@@ -48,12 +51,12 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     "gpt-3.5-turbo",
   ];
 
-  private config: LLMConfig = {
+  protected override config: LLMConfig = {
     provider: "openai",
     model: "gpt-4o",
-    temperature: 0.1,
-    maxTokens: 4000,
-    timeout: 30000,
+    temperature: DEFAULT_TEMPERATURE,
+    maxTokens: DEFAULT_MAX_TOKENS,
+    timeout: DEFAULT_API_TIMEOUT_MS,
   };
 
   private client: OpenAI | null = null;
@@ -65,120 +68,6 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
       baseURL: config.baseUrl,
       timeout: config.timeout,
     });
-  }
-
-  async generateCode(
-    request: LLMRequest,
-    context: GenerationContext,
-  ): Promise<CodeGenerationResult> {
-    console.log(
-      `[OpenAI] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-    );
-
-    let rawResponse: unknown;
-    let response: LLMResponse;
-
-    try {
-      const result = await this.callOpenAI(request, true);
-      response = result.response;
-      rawResponse = result.rawResponse;
-    } catch (error) {
-      const debugLogger = DebugLogger.getInstance();
-      if (debugLogger) {
-        await debugLogger.logError(
-          "openai",
-          "generateCode",
-          request,
-          context,
-          error as Error,
-          rawResponse,
-        );
-      }
-      throw error;
-    }
-
-    const extraction = CodeExtractor.extract(response.content, "al");
-
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openai",
-        "generateCode",
-        request,
-        context,
-        response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        "al",
-        rawResponse,
-      );
-    }
-
-    return {
-      code: extraction.code,
-      language: "al",
-      response,
-      extractedFromDelimiters: extraction.extractedFromDelimiters,
-    };
-  }
-
-  async generateFix(
-    _originalCode: string,
-    errors: string[],
-    request: LLMRequest,
-    context: GenerationContext,
-  ): Promise<CodeGenerationResult> {
-    console.log(
-      `[OpenAI] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
-    );
-
-    let rawResponse: unknown;
-    let response: LLMResponse;
-
-    try {
-      const result = await this.callOpenAI(request, true);
-      response = result.response;
-      rawResponse = result.rawResponse;
-    } catch (error) {
-      const debugLogger = DebugLogger.getInstance();
-      if (debugLogger) {
-        await debugLogger.logError(
-          "openai",
-          "generateFix",
-          request,
-          context,
-          error as Error,
-          rawResponse,
-        );
-      }
-      throw error;
-    }
-
-    const extraction = CodeExtractor.extract(response.content, "diff");
-
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openai",
-        "generateFix",
-        request,
-        context,
-        response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        extraction.language === "unknown" ? "diff" : extraction.language,
-        rawResponse,
-      );
-    }
-
-    return {
-      code: extraction.code,
-      language: extraction.language === "unknown"
-        ? "diff"
-        : extraction.language,
-      response,
-      extractedFromDelimiters: extraction.extractedFromDelimiters,
-    };
   }
 
   validateConfig(config: LLMConfig): string[] {
@@ -194,11 +83,10 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
       !this.supportedModels.includes(config.model) &&
       !this.isCustomModel(config.model)
     ) {
-      console.warn(
-        `Custom/unknown model: ${config.model}. Known models: ${
-          this.supportedModels.join(", ")
-        }`,
-      );
+      log.warn("Custom/unknown model", {
+        model: config.model,
+        knownModels: this.supportedModels,
+      });
     }
 
     if (
@@ -294,25 +182,14 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     return inputCost + outputCost;
   }
 
-  async isHealthy(): Promise<boolean> {
-    try {
-      const testRequest: LLMRequest = {
-        prompt: "Say 'OK' if you can respond.",
-        temperature: 0,
-        maxTokens: 5,
-      };
+  // ============================================================================
+  // Provider-specific implementations (abstract method overrides)
+  // ============================================================================
 
-      await this.callOpenAI(testRequest);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async callOpenAI(
+  protected async callProvider(
     request: LLMRequest,
     includeRaw = false,
-  ): Promise<{ response: LLMResponse; rawResponse?: unknown }> {
+  ): Promise<ProviderCallResult> {
     const startTime = Date.now();
     const client = this.ensureClient();
     const params = this.buildRequestParams(request);
@@ -325,19 +202,60 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     const choice = completion.choices[0];
     const usage = this.buildUsageFromCompletion(completion.usage);
 
-    const llmResponse: LLMResponse = {
-      content: choice?.message?.content ?? "",
-      model: this.config.model,
-      usage,
-      duration,
-      finishReason: this.mapFinishReason(choice?.finish_reason),
-    };
-
     return {
-      response: llmResponse,
+      response: {
+        content: choice?.message?.content ?? "",
+        model: this.config.model,
+        usage,
+        duration,
+        finishReason: this.mapFinishReason(choice?.finish_reason),
+      },
       rawResponse: includeRaw ? completion : undefined,
     };
   }
+
+  protected async *streamProvider(
+    request: LLMRequest,
+    options?: StreamOptions,
+  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
+    const state = createStreamState();
+    const client = this.ensureClient();
+    const params = this.buildRequestParams(request, true);
+
+    try {
+      const stream = await client.chat.completions.create(
+        params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
+      );
+
+      this.setupStreamAbortHandler(stream, options);
+
+      const finalUsage = yield* this.processStreamChunks(
+        stream,
+        state,
+        options,
+      );
+
+      const usage: TokenUsage = finalUsage ??
+        createFallbackUsage(request.prompt, state.accumulatedText);
+
+      const { finalChunk, result } = finalizeStream({
+        state,
+        model: this.config.model,
+        usage,
+        finishReason: "stop",
+        options,
+      });
+
+      yield finalChunk;
+      return result;
+    } catch (error) {
+      handleStreamError(error, options);
+    }
+  }
+
+  // ============================================================================
+  // Private OpenAI-specific helpers
+  // ============================================================================
 
   private mapFinishReason(
     reason: string | undefined | null,
@@ -364,8 +282,10 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
     }
 
     if (!this.config.apiKey) {
-      throw new Error(
+      throw new LLMProviderError(
         "OpenAI API key not configured. Set OPENAI_API_KEY environment variable.",
+        "openai",
+        false,
       );
     }
 
@@ -452,117 +372,6 @@ export class OpenAIAdapter implements StreamingLLMAdapter {
         usage?.completion_tokens ?? 0,
       ),
     };
-  }
-
-  // ============================================================================
-  // Streaming Methods
-  // ============================================================================
-
-  async *generateCodeStream(
-    request: LLMRequest,
-    context: GenerationContext,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      `[OpenAI] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-    );
-
-    const result = yield* this.streamOpenAI(request, options);
-
-    // Extract code from accumulated response
-    const extraction = CodeExtractor.extract(result.content, "al");
-
-    // Log interaction
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openai",
-        "generateCode",
-        request,
-        context,
-        result.response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        "al",
-        undefined, // No raw response for streaming
-      );
-    }
-
-    return result;
-  }
-
-  async *generateFixStream(
-    _originalCode: string,
-    errors: string[],
-    request: LLMRequest,
-    context: GenerationContext,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      `[OpenAI] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
-    );
-
-    const result = yield* this.streamOpenAI(request, options);
-
-    // Extract code from accumulated response
-    const extraction = CodeExtractor.extract(result.content, "diff");
-
-    // Log interaction
-    const debugLogger = DebugLogger.getInstance();
-    if (debugLogger) {
-      await debugLogger.logInteraction(
-        "openai",
-        "generateFix",
-        request,
-        context,
-        result.response,
-        extraction.code,
-        extraction.extractedFromDelimiters,
-        extraction.language === "unknown" ? "diff" : extraction.language,
-        undefined, // No raw response for streaming
-      );
-    }
-
-    return result;
-  }
-
-  private async *streamOpenAI(
-    request: LLMRequest,
-    options?: StreamOptions,
-  ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    const state = createStreamState();
-    const client = this.ensureClient();
-    const params = this.buildRequestParams(request, true);
-
-    try {
-      const stream = await client.chat.completions.create(
-        params as OpenAI.Chat.ChatCompletionCreateParamsStreaming,
-      );
-
-      this.setupStreamAbortHandler(stream, options);
-
-      const finalUsage = yield* this.processStreamChunks(
-        stream,
-        state,
-        options,
-      );
-
-      const usage: TokenUsage = finalUsage ??
-        createFallbackUsage(request.prompt, state.accumulatedText);
-
-      const { finalChunk, result } = finalizeStream({
-        state,
-        model: this.config.model,
-        usage,
-        finishReason: "stop",
-        options,
-      });
-
-      yield finalChunk;
-      return result;
-    } catch (error) {
-      handleStreamError(error, options);
-    }
   }
 
   /**

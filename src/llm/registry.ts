@@ -6,6 +6,7 @@ import { GeminiAdapter } from "./gemini-adapter.ts";
 import { AzureOpenAIAdapter } from "./azure-openai-adapter.ts";
 import { LocalLLMAdapter } from "./local-adapter.ts";
 import { OpenRouterAdapter } from "./openrouter-adapter.ts";
+import { ConfigurationError } from "../errors.ts";
 
 /**
  * Pooled adapter entry with tracking metadata
@@ -44,10 +45,15 @@ export class LLMAdapterRegistry {
   static create(name: string, config?: LLMConfig): LLMAdapter {
     const factory = this.adapters.get(name);
     if (!factory) {
-      throw new Error(
+      throw new ConfigurationError(
         `Unknown LLM adapter: ${name}. Available: ${
           Array.from(this.adapters.keys()).join(", ")
         }`,
+        undefined,
+        {
+          requestedAdapter: name,
+          availableAdapters: Array.from(this.adapters.keys()),
+        },
       );
     }
 

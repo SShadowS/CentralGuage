@@ -13,6 +13,12 @@ import type {
 import { CodeExtractor } from "./code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import {
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_TEMPERATURE,
+  LOCAL_MODEL_TIMEOUT_MS,
+} from "../constants.ts";
+import { LLMProviderError } from "../errors.ts";
+import {
   getStreamReader,
   parseNDJSONStream,
   parseSSEStream,
@@ -25,7 +31,9 @@ import {
   handleStreamError,
   type StreamState,
 } from "./stream-handler.ts";
-import * as colors from "@std/fmt/colors";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("llm:local");
 
 export class LocalLLMAdapter implements StreamingLLMAdapter {
   readonly name = "local";
@@ -54,9 +62,9 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
   private config: LLMConfig = {
     provider: "local",
     model: "codellama:latest",
-    temperature: 0.1,
-    maxTokens: 4000,
-    timeout: 60000, // Local models can be slower
+    temperature: DEFAULT_TEMPERATURE,
+    maxTokens: DEFAULT_MAX_TOKENS,
+    timeout: LOCAL_MODEL_TIMEOUT_MS, // Local models can be slower
   };
 
   configure(config: LLMConfig): void {
@@ -67,11 +75,10 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(
-      colors.blue(
-        `[Local LLM] Generating AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-      ),
-    );
+    log.info("Generating AL code", {
+      taskId: context.taskId,
+      attempt: context.attempt,
+    });
 
     let rawResponse: unknown;
     let response: LLMResponse;
@@ -126,11 +133,10 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     request: LLMRequest,
     context: GenerationContext,
   ): Promise<CodeGenerationResult> {
-    console.log(
-      colors.blue(
-        `[Local LLM] Generating fix for ${errors.length} error(s) in task: ${context.taskId}`,
-      ),
-    );
+    log.info("Generating fix", {
+      taskId: context.taskId,
+      errorCount: errors.length,
+    });
 
     let rawResponse: unknown;
     let response: LLMResponse;
@@ -366,8 +372,14 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
 
     if (!apiResponse.ok) {
       const errorText = await apiResponse.text();
-      throw new Error(
+      const isRetryable = apiResponse.status === 429 ||
+        apiResponse.status >= 500;
+      throw new LLMProviderError(
         `Local LLM API error (${apiResponse.status}): ${errorText}`,
+        "local",
+        isRetryable,
+        undefined,
+        { statusCode: apiResponse.status },
       );
     }
 
@@ -397,7 +409,11 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
       | Array<Record<string, unknown>>
       | undefined;
     if (!choices || choices.length === 0) {
-      throw new Error("No response from local LLM API");
+      throw new LLMProviderError(
+        "No response from local LLM API",
+        "local",
+        false,
+      );
     }
     const choice = choices[0]!;
     const message = choice["message"] as Record<string, unknown> | undefined;
@@ -513,11 +529,10 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     context: GenerationContext,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      colors.blue(
-        `[Local LLM] Streaming AL code for task: ${context.taskId} (attempt ${context.attempt})`,
-      ),
-    );
+    log.info("Streaming AL code", {
+      taskId: context.taskId,
+      attempt: context.attempt,
+    });
 
     const result = yield* this.streamLocalLLM(request, options);
 
@@ -550,11 +565,10 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     context: GenerationContext,
     options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult, undefined> {
-    console.log(
-      colors.blue(
-        `[Local LLM] Streaming fix for ${errors.length} error(s) in task: ${context.taskId}`,
-      ),
-    );
+    log.info("Streaming fix", {
+      taskId: context.taskId,
+      errorCount: errors.length,
+    });
 
     const result = yield* this.streamLocalLLM(request, options);
 
@@ -627,8 +641,14 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
 
       if (!apiResponse.ok) {
         const errorText = await apiResponse.text();
-        throw new Error(
+        const isRetryable = apiResponse.status === 429 ||
+          apiResponse.status >= 500;
+        throw new LLMProviderError(
           `Ollama API error (${apiResponse.status}): ${errorText}`,
+          "local",
+          isRetryable,
+          undefined,
+          { statusCode: apiResponse.status, variant: "ollama" },
         );
       }
 
@@ -685,8 +705,14 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
 
       if (!apiResponse.ok) {
         const errorText = await apiResponse.text();
-        throw new Error(
+        const isRetryable = apiResponse.status === 429 ||
+          apiResponse.status >= 500;
+        throw new LLMProviderError(
           `Local LLM API error (${apiResponse.status}): ${errorText}`,
+          "local",
+          isRetryable,
+          undefined,
+          { statusCode: apiResponse.status, variant: "openai-compatible" },
         );
       }
 
