@@ -9,6 +9,9 @@ import type {
   LLMRequest,
   LLMResponse,
 } from "../llm/types.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("debug-logger");
 
 export interface DebugLogEntry {
   timestamp: string;
@@ -201,15 +204,11 @@ export class DebugLogger {
         });
       }
 
-      console.log(
-        `🔍 [Debug] Logged ${provider} ${operation} interaction: ${requestId}`,
-      );
+      log.debug("Logged interaction", { provider, operation, requestId });
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to log interaction: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to log interaction", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -277,17 +276,14 @@ export class DebugLogger {
         await this.writeCompilationOutput(requestId, result.output);
       }
 
-      console.log(
-        `🔍 [Debug] Logged compilation result: ${requestId} (${
-          result.success ? "success" : "failed"
-        })`,
-      );
+      log.debug("Logged compilation result", {
+        requestId,
+        success: result.success,
+      });
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to log compilation: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to log compilation", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -348,15 +344,15 @@ export class DebugLogger {
         await this.writeTestOutput(requestId, result.output);
       }
 
-      console.log(
-        `🔍 [Debug] Logged test result: ${requestId} (${result.passedTests}/${result.totalTests} passed)`,
-      );
+      log.debug("Logged test result", {
+        requestId,
+        passed: result.passedTests,
+        total: result.totalTests,
+      });
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to log test result: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to log test result", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -376,11 +372,9 @@ export class DebugLogger {
       await Deno.writeTextFile(filePath, logLine, { append: true });
       await this.checkFileSize(filePath);
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to write compilation entry: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to write compilation entry", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -400,11 +394,9 @@ export class DebugLogger {
       await Deno.writeTextFile(filePath, logLine, { append: true });
       await this.checkFileSize(filePath);
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to write test entry: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to write test entry", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -422,11 +414,9 @@ export class DebugLogger {
       const outputFile = `${outputDir}/${requestId}.txt`;
       await Deno.writeTextFile(outputFile, output);
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to write compilation output: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to write compilation output", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -444,11 +434,9 @@ export class DebugLogger {
       const outputFile = `${outputDir}/${requestId}.txt`;
       await Deno.writeTextFile(outputFile, output);
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to write test output: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to write test output", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -489,7 +477,7 @@ export class DebugLogger {
     };
 
     await Deno.writeTextFile(filePath, JSON.stringify(header) + "\n");
-    console.log(`📝 [Debug] Created log file for ${provider}: ${filePath}`);
+    log.debug("Created log file", { provider, filePath });
 
     return filePath;
   }
@@ -512,11 +500,9 @@ export class DebugLogger {
       // Check file size and rotate if necessary
       await this.checkFileSize(filePath);
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to write log entry: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to write log entry", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -560,11 +546,9 @@ export class DebugLogger {
         JSON.stringify(detailsData, null, 2),
       );
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to write detailed log: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to write detailed log", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -585,7 +569,7 @@ export class DebugLogger {
         );
         await Deno.rename(filePath, rotatedPath);
 
-        console.log(`🔄 [Debug] Rotated log file: ${rotatedPath}`);
+        log.debug("Rotated log file", { rotatedPath });
 
         // Remove the file from cache so a new one will be created
         for (const [provider, path] of this.logFiles.entries()) {
@@ -647,13 +631,11 @@ export class DebugLogger {
       await Deno.writeTextFile(logFile, JSON.stringify(errorEntry) + "\n", {
         append: true,
       });
-      console.log(`🔍 [Debug] Logged ${provider} error: ${requestId}`);
+      log.debug("Logged error", { provider, requestId });
     } catch (logError) {
-      console.warn(
-        `⚠️  [Debug] Failed to log error: ${
-          logError instanceof Error ? logError.message : String(logError)
-        }`,
-      );
+      log.warn("Failed to log error", {
+        error: logError instanceof Error ? logError.message : String(logError),
+      });
     }
   }
 
@@ -739,13 +721,11 @@ export class DebugLogger {
       };
 
       await Deno.writeTextFile(summaryFile, JSON.stringify(summary, null, 2));
-      console.log(`📊 [Debug] Generated summary report: ${summaryFile}`);
+      log.debug("Generated summary report", { summaryFile });
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to generate summary: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to generate summary", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -755,9 +735,7 @@ export class DebugLogger {
   async finalize(): Promise<void> {
     if (this.config.enabled) {
       await this.generateSummaryReport();
-      console.log(
-        `🔍 [Debug] Session finalized. Logs saved in: ${this.config.outputDir}`,
-      );
+      log.debug("Session finalized", { outputDir: this.config.outputDir });
     }
   }
 
@@ -817,15 +795,11 @@ export class DebugLogger {
         }
       }
 
-      console.log(
-        `🔍 [Debug] Saved verbose artifacts: ${artifactDir}`,
-      );
+      log.debug("Saved verbose artifacts", { artifactDir });
     } catch (error) {
-      console.warn(
-        `⚠️  [Debug] Failed to save verbose artifacts: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      log.warn("Failed to save verbose artifacts", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

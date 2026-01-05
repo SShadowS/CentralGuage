@@ -10,6 +10,7 @@
 
 import { Command } from "@cliffy/command";
 import { EnvLoader } from "../src/utils/env-loader.ts";
+import { isValidLogLevel, Logger } from "../src/logger/mod.ts";
 import { SplashScreen } from "../src/utils/splash-screen.ts";
 
 // Command registration functions
@@ -56,6 +57,11 @@ const cli = new Command()
   )
   .globalOption("-v, --verbose", "Enable verbose output")
   .globalOption("-q, --quiet", "Disable splash screen and minimize output")
+  .globalOption(
+    "--log-level <level:string>",
+    "Set log level (debug, info, warn, error)",
+    { default: "info" },
+  )
   .example(
     "Basic benchmark with aliases",
     "centralgauge bench --llms sonnet,gpt-4o --tasks tasks/*.yml",
@@ -99,6 +105,28 @@ registerStatsCommands(cliAny);
 if (import.meta.main) {
   // Check for global quiet flag
   const isQuiet = Deno.args.includes("--quiet") || Deno.args.includes("-q");
+
+  // Check for --log-level flag
+  const logLevelIndex = Deno.args.findIndex((arg) =>
+    arg === "--log-level" || arg.startsWith("--log-level=")
+  );
+  let logLevel = "info";
+  if (logLevelIndex !== -1) {
+    const arg = Deno.args[logLevelIndex];
+    if (arg && arg.includes("=")) {
+      logLevel = arg.split("=")[1] ?? "info";
+    } else {
+      const nextArg = Deno.args[logLevelIndex + 1];
+      if (nextArg) {
+        logLevel = nextArg;
+      }
+    }
+  }
+
+  // Configure logger before anything else
+  if (isValidLogLevel(logLevel)) {
+    Logger.configure({ level: logLevel });
+  }
 
   // Initialize app
   await initializeApp(isQuiet);
