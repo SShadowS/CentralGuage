@@ -8,9 +8,11 @@
 
 import { Command } from "@cliffy/command";
 import * as colors from "@std/fmt/colors";
+import { expandGlob } from "@std/fs";
 import { join } from "@std/path";
 import { AgentRegistry } from "../../src/agents/registry.ts";
 import { AgentTaskExecutor } from "../../src/agents/executor.ts";
+import { formatFailureReason } from "../../src/agents/failure-parser.ts";
 import { getAgentDisplayName } from "../../src/agents/loader.ts";
 import { loadTaskManifest } from "../../src/tasks/loader.ts";
 
@@ -57,10 +59,16 @@ async function handleAgentsList(): Promise<void> {
 
   // Show usage examples
   console.log(colors.bold("\nUsage Examples:"));
-  console.log("  # Run a single task with an agent");
+  console.log("  # Run all tasks with an agent");
   console.log(
     colors.dim(
-      "  centralgauge agents run --agent default --task tasks/easy/CG-AL-E001.yml",
+      "  centralgauge agents run --agent default",
+    ),
+  );
+  console.log("\n  # Run specific task pattern");
+  console.log(
+    colors.dim(
+      "  centralgauge agents run --agent default --tasks 'tasks/easy/*.yml'",
     ),
   );
   console.log("\n  # Show agent configuration details");
@@ -224,11 +232,29 @@ async function handleAgentsValidate(agentId: string): Promise<void> {
  */
 async function handleAgentsRun(options: {
   agent: string;
-  task: string;
+  tasks: readonly string[];
   container: string;
   projectDir?: string;
   verbose?: true | undefined;
+  sandbox?: true | undefined;
 }): Promise<void> {
+  // Deprecation warning
+  console.log(
+    colors.yellow(
+      "[DEPRECATED] 'agents run' is deprecated and will be removed in a future version.",
+    ),
+  );
+  console.log(
+    colors.yellow("Use 'bench --agents <agent>' instead. Example:"),
+  );
+  const sandboxFlag = options.sandbox ? " --sandbox" : "";
+  console.log(
+    colors.yellow(
+      `  centralgauge bench --agents ${options.agent} --container ${options.container}${sandboxFlag}`,
+    ),
+  );
+  console.log();
+
   console.log(colors.bold("Agent Task Execution\n"));
 
   await AgentRegistry.load("agents");
@@ -242,90 +268,145 @@ async function handleAgentsRun(options: {
     return;
   }
 
-  // Load the task manifest
-  let task;
-  try {
-    task = await loadTaskManifest(options.task);
-  } catch (error) {
-    console.log(
-      colors.red(
-        `Failed to load task: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      ),
-    );
+  // Expand glob patterns to task files
+  const taskFiles: string[] = [];
+  for (const pattern of options.tasks) {
+    for await (const entry of expandGlob(pattern)) {
+      if (entry.isFile && entry.path.endsWith(".yml")) {
+        taskFiles.push(entry.path);
+      }
+    }
+  }
+
+  // Sort for consistent ordering
+  taskFiles.sort();
+
+  if (taskFiles.length === 0) {
+    console.log(colors.yellow("No task files found matching patterns:"));
+    for (const pattern of options.tasks) {
+      console.log(`  ${pattern}`);
+    }
     return;
   }
 
   console.log(`Agent:     ${config.name} (${config.id})`);
   console.log(`Model:     ${config.model}`);
-  console.log(`Task:      ${task.id}`);
+  console.log(`Tasks:     ${taskFiles.length} task(s)`);
   console.log(`Container: ${options.container}`);
-
-  // Resolve project directory - default to safe workspace under results/
-  const projectDir = options.projectDir ??
-    join(Deno.cwd(), "results", "agent-workspace", `${task.id}_${Date.now()}`);
-  console.log(`Project:   ${projectDir}`);
+  if (options.sandbox) {
+    console.log(`Sandbox:   ${colors.cyan("enabled")}`);
+  }
   console.log();
 
-  console.log(colors.cyan("[RUNNING]"), "Starting agent execution...\n");
-
-  const startTime = Date.now();
   const executor = new AgentTaskExecutor();
+  let successCount = 0;
+  let failCount = 0;
 
-  try {
-    const result = await executor.execute(config, task, {
-      projectDir,
-      containerName: options.container,
-      containerProvider: "bccontainer",
-      debug: options.verbose ?? false,
-    });
+  for (let i = 0; i < taskFiles.length; i++) {
+    const taskFile = taskFiles[i]!;
 
-    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-
-    console.log();
-    console.log(colors.bold("Execution Result:"));
-    console.log("─".repeat(40));
-
-    if (result.success) {
-      console.log(colors.green("[SUCCESS]"), "Task completed successfully!");
-    } else {
+    // Load the task manifest
+    let task;
+    try {
+      task = await loadTaskManifest(taskFile);
+    } catch (error) {
       console.log(
-        colors.red("[FAILED]"),
-        `Task failed (${result.terminationReason})`,
+        colors.red(
+          `[${i + 1}/${taskFiles.length}] Failed to load task ${taskFile}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        ),
       );
+      failCount++;
+      continue;
     }
 
-    console.log(`Duration:          ${duration}s`);
-    console.log(`Turns:             ${result.metrics.turns}`);
-    console.log(`Compile Attempts:  ${result.metrics.compileAttempts}`);
-    console.log(`Test Runs:         ${result.metrics.testRuns}`);
     console.log(
-      `Token Usage:       ${result.metrics.totalTokens.toLocaleString()} tokens`,
-    );
-    console.log(
-      `Estimated Cost:    $${result.metrics.estimatedCost.toFixed(4)}`,
-    );
-    console.log(`Termination:       ${result.terminationReason}`);
-
-    if (result.finalCode && options.verbose) {
-      console.log();
-      console.log(colors.bold("Generated Code:"));
-      console.log("─".repeat(40));
-      console.log(result.finalCode);
-    }
-  } catch (error) {
-    console.log();
-    console.log(
-      colors.red("[ERROR]"),
-      `Agent execution failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      colors.cyan(`[${i + 1}/${taskFiles.length}]`),
+      `Running task ${task.id}...`,
     );
 
-    if (options.verbose && error instanceof Error && error.stack) {
-      console.log(colors.dim(error.stack));
+    // Resolve project directory - default to safe workspace under results/
+    const projectDir = options.projectDir ??
+      join(
+        Deno.cwd(),
+        "results",
+        "agent-workspace",
+        `${task.id}_${Date.now()}`,
+      );
+
+    const startTime = Date.now();
+
+    try {
+      const result = await executor.execute(config, task, {
+        projectDir,
+        containerName: options.container,
+        containerProvider: "bccontainer",
+        debug: options.verbose ?? false,
+        sandbox: options.sandbox ?? false,
+      });
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+      if (result.success) {
+        console.log(
+          colors.green(`    [SUCCESS]`),
+          `${task.id} completed in ${duration}s`,
+        );
+        successCount++;
+      } else {
+        console.log(
+          colors.red(`    [FAILED]`),
+          `${task.id} failed (${result.terminationReason}) in ${duration}s`,
+        );
+
+        // Display detailed failure information
+        if (result.failureDetails) {
+          console.log(
+            formatFailureReason(
+              result.failureDetails,
+              options.verbose ?? false,
+            ),
+          );
+        }
+
+        failCount++;
+      }
+
+      if (result.finalCode && options.verbose) {
+        console.log();
+        console.log(colors.bold("Generated Code:"));
+        console.log("─".repeat(40));
+        console.log(result.finalCode);
+      }
+    } catch (error) {
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.log(
+        colors.red(`    [ERROR]`),
+        `${task.id} failed in ${duration}s: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      failCount++;
+
+      if (options.verbose && error instanceof Error && error.stack) {
+        console.log(colors.dim(error.stack));
+      }
     }
+  }
+
+  // Summary
+  console.log();
+  console.log(colors.bold("Summary:"));
+  console.log("─".repeat(40));
+  console.log(
+    `Total:   ${taskFiles.length} task(s)`,
+  );
+  console.log(
+    colors.green(`Success: ${successCount}`),
+  );
+  if (failCount > 0) {
+    console.log(colors.red(`Failed:  ${failCount}`));
   }
 }
 
@@ -358,20 +439,24 @@ export function registerAgentsCommand(cli: Command): void {
     .alias("check")
     .action((_options, agent) => handleAgentsValidate(agent));
 
-  // Run subcommand
+  // Run subcommand (deprecated - use bench --agents instead)
   agentsCmd
-    .command("run", "Run a single task with an agent")
+    .command(
+      "run",
+      "[DEPRECATED] Run tasks with an agent (use 'bench --agents' instead)",
+    )
     .option("-a, --agent <agent:string>", "Agent configuration to use", {
       required: true,
     })
-    .option("-t, --task <task:string>", "Task manifest file to run", {
-      required: true,
+    .option("-t, --tasks <patterns:string[]>", "Task file patterns", {
+      default: ["tasks/**/*.yml"],
     })
     .option("-c, --container <name:string>", "BC container name", {
       default: "Cronus27",
     })
     .option("-p, --project-dir <dir:string>", "Project directory for execution")
     .option("-v, --verbose", "Enable verbose output")
+    .option("-s, --sandbox", "Run agent in isolated Windows container")
     .action(handleAgentsRun);
 
   cli.command("agents", agentsCmd);

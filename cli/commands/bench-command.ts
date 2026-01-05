@@ -50,6 +50,7 @@ import type { ExtendedBenchmarkOptions } from "../types/cli-types.ts";
 import { AgentRegistry } from "../../src/agents/registry.ts";
 import { AgentTaskExecutor } from "../../src/agents/executor.ts";
 import type { AgentExecutionResult } from "../../src/agents/types.ts";
+import { formatFailureReason } from "../../src/agents/failure-parser.ts";
 import type { TaskExecutionResult } from "../../src/tasks/interfaces.ts";
 import { join } from "@std/path";
 
@@ -1152,6 +1153,10 @@ interface AgentBenchmarkOptions {
   stream?: boolean;
   tui?: boolean;
   containerName: string;
+  /** Run agents in isolated Windows containers */
+  sandbox?: boolean;
+  /** Show detailed failure output */
+  verbose?: boolean;
 }
 
 /**
@@ -1176,6 +1181,9 @@ async function runAgentBenchmark(
   log.info(`Tasks: ${options.tasks.join(", ")}`);
   log.info(`Container: ${options.containerName}`);
   log.info(`Output: ${options.outputDir}`);
+  if (options.sandbox) {
+    log.info("Sandbox: enabled (isolated Windows containers)");
+  }
 
   // Load agent configurations
   await AgentRegistry.load("agents");
@@ -1295,11 +1303,10 @@ async function runAgentBenchmark(
     output(`[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`);
 
     for (const agentConfig of agentConfigs) {
-      // Create a unique workspace for this agent+task
+      // Create a unique workspace for this agent+task (outside results/ to avoid polluting reports)
       const projectDir = join(
         Deno.cwd(),
-        options.outputDir,
-        "agent-workspace",
+        "workspaces",
         `${agentConfig.id}_${task.id}_${Date.now()}`,
       );
 
@@ -1311,6 +1318,7 @@ async function runAgentBenchmark(
           containerName: options.containerName,
           containerProvider: "bccontainer",
           debug: options.debug ?? false,
+          sandbox: options.sandbox ?? false,
         });
 
         allResults.push({
@@ -1330,6 +1338,11 @@ async function runAgentBenchmark(
             result.metrics.estimatedCost.toFixed(4)
           }`,
         );
+
+        // Show failure details when verbose is enabled
+        if (!result.success && result.failureDetails && options.verbose) {
+          output(formatFailureReason(result.failureDetails, true));
+        }
 
         // Update TUI model stats
         if (tui) {
@@ -1505,6 +1518,15 @@ export function registerBenchCommand(cli: Command): void {
       "--agents <agents:string[]>",
       "Agent configurations to use (from agents/ directory)",
     )
+    .option(
+      "--container <name:string>",
+      "BC container name (for agent mode)",
+      { default: "Cronus27" },
+    )
+    .option(
+      "-s, --sandbox",
+      "Run agents in isolated Windows containers (agent mode only)",
+    )
     .option("-t, --tasks <patterns:string[]>", "Task file patterns", {
       default: ["tasks/**/*.yml"],
     })
@@ -1607,14 +1629,16 @@ export function registerBenchCommand(cli: Command): void {
 
       // Handle agent-based execution
       if (options.agents && options.agents.length > 0) {
-        const agentBenchOptions = {
+        const agentBenchOptions: AgentBenchmarkOptions = {
           agents: options.agents,
           tasks: [...options.tasks],
           outputDir: options.output,
           debug: options.debug,
           stream: options.stream,
           tui: options.tui,
-          containerName: "Cronus27", // Default container
+          containerName: options.container,
+          sandbox: options.sandbox ?? false,
+          verbose: options.debug ?? false,
         };
         await runAgentBenchmark(agentBenchOptions, options.quiet);
         Deno.exit(0);
