@@ -11,6 +11,10 @@ import type {
   ContainerStatus,
   TestResult,
 } from "./types.ts";
+import { ContainerError } from "../errors.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("container:docker");
 import {
   calculateDockerTestMetrics,
   calculateUptime,
@@ -47,10 +51,15 @@ export class DockerContainerProvider implements ContainerProvider {
         exitCode: code,
       };
     } catch (error) {
-      throw new Error(
+      throw new ContainerError(
         `Docker command failed: ${
           error instanceof Error ? error.message : String(error)
         }`,
+        "docker",
+        "setup",
+        {
+          originalError: error instanceof Error ? error.message : String(error),
+        },
       );
     }
   }
@@ -59,17 +68,24 @@ export class DockerContainerProvider implements ContainerProvider {
     try {
       const result = await this.executeDocker(["--version"]);
       if (result.exitCode !== 0) {
-        throw new Error("Docker is not responding");
+        throw new ContainerError(
+          "Docker is not responding",
+          "docker",
+          "health",
+        );
       }
-    } catch {
-      throw new Error(
+    } catch (error) {
+      if (error instanceof ContainerError) throw error;
+      throw new ContainerError(
         "Docker is not installed or not accessible. Please install Docker and ensure it's running.",
+        "docker",
+        "setup",
       );
     }
   }
 
   async setup(config: ContainerConfig): Promise<void> {
-    console.log(`🐳 [Docker] Setting up container: ${config.name}`);
+    log.info("Setting up container", { name: config.name });
 
     await this.checkDockerAvailable();
 
@@ -82,13 +98,18 @@ export class DockerContainerProvider implements ContainerProvider {
     const bcVersion = config.bcVersion || "24.0";
     const imageName = `mcr.microsoft.com/businesscentral:${bcVersion}`;
 
-    console.log(`📦 [Docker] Using BC image: ${imageName}`);
+    log.info("Using BC image", { image: imageName });
 
     // Pull the BC image if not present
-    console.log(`📥 [Docker] Pulling BC image...`);
+    log.info("Pulling BC image");
     const pullResult = await this.executeDocker(["pull", imageName]);
     if (pullResult.exitCode !== 0) {
-      throw new Error(`Failed to pull BC image: ${pullResult.output}`);
+      throw new ContainerError(
+        `Failed to pull BC image: ${pullResult.output}`,
+        config.name,
+        "setup",
+        { image: imageName },
+      );
     }
 
     // Get credentials from config or use defaults
@@ -133,14 +154,18 @@ export class DockerContainerProvider implements ContainerProvider {
 
     const createResult = await this.executeDocker(dockerArgs);
     if (createResult.exitCode !== 0) {
-      throw new Error(`Failed to create container: ${createResult.output}`);
+      throw new ContainerError(
+        `Failed to create container: ${createResult.output}`,
+        config.name,
+        "setup",
+      );
     }
 
     // Wait for container to be ready
-    console.log(`⏳ [Docker] Waiting for container to be ready...`);
+    log.info("Waiting for container to be ready");
     await this.waitForContainerReady(config.name, 300000); // 5 minute timeout
 
-    console.log(`✅ [Docker] Container ${config.name} setup complete`);
+    log.info("Container setup complete", { name: config.name });
   }
 
   private async waitForContainerReady(
@@ -167,44 +192,59 @@ export class DockerContainerProvider implements ContainerProvider {
       await new Promise((resolve) => setTimeout(resolve, 5000)); // Wait 5 seconds
     }
 
-    throw new Error(
+    throw new ContainerError(
       `Container ${containerName} did not become ready within ${
         timeoutMs / 1000
       } seconds`,
+      containerName,
+      "start",
+      { timeoutMs },
     );
   }
 
   async start(containerName: string): Promise<void> {
-    console.log(`🚀 [Docker] Starting container: ${containerName}`);
+    log.info("Starting container", { name: containerName });
 
     const result = await this.executeDocker(["start", containerName]);
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to start container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to start container: ${result.output}`,
+        containerName,
+        "start",
+      );
     }
 
-    console.log(`✅ [Docker] Container ${containerName} started`);
+    log.info("Container started", { name: containerName });
   }
 
   async stop(containerName: string): Promise<void> {
-    console.log(`🛑 [Docker] Stopping container: ${containerName}`);
+    log.info("Stopping container", { name: containerName });
 
     const result = await this.executeDocker(["stop", containerName]);
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to stop container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to stop container: ${result.output}`,
+        containerName,
+        "stop",
+      );
     }
 
-    console.log(`✅ [Docker] Container ${containerName} stopped`);
+    log.info("Container stopped", { name: containerName });
   }
 
   async remove(containerName: string): Promise<void> {
-    console.log(`🗑️  [Docker] Removing container: ${containerName}`);
+    log.info("Removing container", { name: containerName });
 
     const result = await this.executeDocker(["rm", "-f", containerName]);
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to remove container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to remove container: ${result.output}`,
+        containerName,
+        "stop",
+      );
     }
 
-    console.log(`✅ [Docker] Container ${containerName} removed`);
+    log.info("Container removed", { name: containerName });
   }
 
   async status(containerName: string): Promise<ContainerStatus> {
@@ -217,7 +257,11 @@ export class DockerContainerProvider implements ContainerProvider {
     ]);
 
     if (inspectResult.exitCode !== 0) {
-      throw new Error(`Container ${containerName} not found`);
+      throw new ContainerError(
+        `Container ${containerName} not found`,
+        containerName,
+        "health",
+      );
     }
 
     // Parse docker inspect output using extracted function
@@ -251,9 +295,7 @@ export class DockerContainerProvider implements ContainerProvider {
     containerName: string,
     project: ALProject,
   ): Promise<CompilationResult> {
-    console.log(
-      `🔨 [Docker] Compiling AL project in container: ${containerName}`,
-    );
+    log.info("Compiling AL project in container", { name: containerName });
 
     const startTime = Date.now();
     const projectPath = project.path;
@@ -267,8 +309,11 @@ export class DockerContainerProvider implements ContainerProvider {
     ]);
 
     if (copyResult.exitCode !== 0) {
-      throw new Error(
+      throw new ContainerError(
         `Failed to copy project to container: ${copyResult.output}`,
+        containerName,
+        "compile",
+        { projectPath },
       );
     }
 
@@ -297,11 +342,11 @@ export class DockerContainerProvider implements ContainerProvider {
         errors.length,
       );
 
-      console.log(
-        `${success ? "✅" : "❌"} [Docker] Compilation ${
-          success ? "succeeded" : "failed"
-        }: ${errors.length} errors, ${warnings.length} warnings`,
-      );
+      log.info("Compilation complete", {
+        success,
+        errors: errors.length,
+        warnings: warnings.length,
+      });
 
       return {
         success,
@@ -329,7 +374,11 @@ export class DockerContainerProvider implements ContainerProvider {
     _appPath: string,
   ): Promise<void> {
     return Promise.reject(
-      new Error("publishApp not implemented for Docker provider"),
+      new ContainerError(
+        "publishApp not implemented for Docker provider",
+        _containerName,
+        "setup",
+      ),
     );
   }
 
@@ -339,7 +388,7 @@ export class DockerContainerProvider implements ContainerProvider {
     _appFilePath?: string,
     _testCodeunitId?: number,
   ): Promise<TestResult> {
-    console.log(`🧪 [Docker] Running tests in container: ${containerName}`);
+    log.info("Running tests in container", { name: containerName });
 
     const startTime = Date.now();
     const projectPath = project.path;
@@ -373,11 +422,11 @@ export class DockerContainerProvider implements ContainerProvider {
       const results = parseDockerTestResults(testResult.output);
       const metrics = calculateDockerTestMetrics(results);
 
-      console.log(
-        `${metrics.success ? "✅" : "❌"} [Docker] Tests ${
-          metrics.success ? "passed" : "failed"
-        }: ${metrics.passedTests}/${metrics.totalTests} passed`,
-      );
+      log.info("Tests complete", {
+        success: metrics.success,
+        passed: metrics.passedTests,
+        total: metrics.totalTests,
+      });
 
       return {
         success: metrics.success,
@@ -414,7 +463,12 @@ export class DockerContainerProvider implements ContainerProvider {
     ]);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to copy to container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to copy to container: ${result.output}`,
+        containerName,
+        "compile",
+        { localPath, containerPath },
+      );
     }
   }
 
@@ -430,7 +484,12 @@ export class DockerContainerProvider implements ContainerProvider {
     ]);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to copy from container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to copy from container: ${result.output}`,
+        containerName,
+        "compile",
+        { localPath, containerPath },
+      );
     }
   }
 

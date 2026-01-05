@@ -10,6 +10,9 @@ import type {
   ContainerStatus,
   TestResult,
 } from "./types.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("container:mock");
 
 export class MockContainerProvider implements ContainerProvider {
   readonly name = "mock";
@@ -18,7 +21,7 @@ export class MockContainerProvider implements ContainerProvider {
   private containers = new Map<string, ContainerStatus>();
 
   async setup(config: ContainerConfig): Promise<void> {
-    console.log(`🔧 [Mock] Setting up container: ${config.name}`);
+    log.info("Setting up container", { name: config.name });
     await this.simulateDelay(2000);
 
     this.containers.set(config.name, {
@@ -29,11 +32,11 @@ export class MockContainerProvider implements ContainerProvider {
       health: "healthy",
     });
 
-    console.log(`✅ [Mock] Container ${config.name} setup complete`);
+    log.info("Container setup complete", { name: config.name });
   }
 
   async start(containerName: string): Promise<void> {
-    console.log(`▶️  [Mock] Starting container: ${containerName}`);
+    log.info("Starting container", { name: containerName });
     await this.simulateDelay(1000);
 
     const status = this.containers.get(containerName);
@@ -42,11 +45,11 @@ export class MockContainerProvider implements ContainerProvider {
       status.health = "healthy";
     }
 
-    console.log(`✅ [Mock] Container ${containerName} started`);
+    log.info("Container started", { name: containerName });
   }
 
   async stop(containerName: string): Promise<void> {
-    console.log(`⏹️  [Mock] Stopping container: ${containerName}`);
+    log.info("Stopping container", { name: containerName });
     await this.simulateDelay(500);
 
     const status = this.containers.get(containerName);
@@ -55,14 +58,14 @@ export class MockContainerProvider implements ContainerProvider {
       status.health = "stopped";
     }
 
-    console.log(`✅ [Mock] Container ${containerName} stopped`);
+    log.info("Container stopped", { name: containerName });
   }
 
   async remove(containerName: string): Promise<void> {
-    console.log(`🗑️  [Mock] Removing container: ${containerName}`);
+    log.info("Removing container", { name: containerName });
     await this.simulateDelay(500);
     this.containers.delete(containerName);
-    console.log(`✅ [Mock] Container ${containerName} removed`);
+    log.info("Container removed", { name: containerName });
   }
 
   status(containerName: string): Promise<ContainerStatus> {
@@ -81,7 +84,7 @@ export class MockContainerProvider implements ContainerProvider {
     _containerName: string,
     project: ALProject,
   ): Promise<CompilationResult> {
-    console.log(`🔨 [Mock] Compiling AL project: ${project.path}`);
+    log.info("Compiling AL project", { path: project.path });
     const startTime = Date.now();
 
     await this.simulateDelay(1500); // Simulate compilation time
@@ -101,11 +104,7 @@ export class MockContainerProvider implements ContainerProvider {
       ...(success && { artifactPath: join(project.path, "bin", "app.app") }),
     };
 
-    console.log(
-      `${success ? "✅" : "❌"} [Mock] Compilation ${
-        success ? "succeeded" : "failed"
-      }: ${errors.length} issues found`,
-    );
+    log.info("Compilation complete", { success, issues: errors.length });
 
     return result;
   }
@@ -114,9 +113,9 @@ export class MockContainerProvider implements ContainerProvider {
     _containerName: string,
     _appPath: string,
   ): Promise<void> {
-    console.log(`📦 [Mock] Publishing app`);
+    log.info("Publishing app");
     await this.simulateDelay(500);
-    console.log(`✅ [Mock] App published`);
+    log.info("App published");
   }
 
   async runTests(
@@ -125,7 +124,7 @@ export class MockContainerProvider implements ContainerProvider {
     _appFilePath?: string,
     _testCodeunitId?: number,
   ): Promise<TestResult> {
-    console.log(`🧪 [Mock] Running tests for project: ${project.path}`);
+    log.info("Running tests", { path: project.path });
     const startTime = Date.now();
 
     await this.simulateDelay(800); // Simulate test execution time
@@ -144,11 +143,11 @@ export class MockContainerProvider implements ContainerProvider {
       output: `Mock test execution: ${passedTests}/${testCount} tests passed`,
     };
 
-    console.log(
-      `${result.success ? "✅" : "❌"} [Mock] Tests ${
-        result.success ? "passed" : "failed"
-      }: ${passedTests}/${testCount}`,
-    );
+    log.info("Tests complete", {
+      success: result.success,
+      passed: passedTests,
+      total: testCount,
+    });
 
     return result;
   }
@@ -158,9 +157,7 @@ export class MockContainerProvider implements ContainerProvider {
     localPath: string,
     containerPath: string,
   ): Promise<void> {
-    console.log(
-      `📤 [Mock] Copy to container: ${localPath} -> ${containerPath}`,
-    );
+    log.debug("Copy to container", { from: localPath, to: containerPath });
     await this.simulateDelay(200);
   }
 
@@ -169,9 +166,7 @@ export class MockContainerProvider implements ContainerProvider {
     containerPath: string,
     localPath: string,
   ): Promise<void> {
-    console.log(
-      `📥 [Mock] Copy from container: ${containerPath} -> ${localPath}`,
-    );
+    log.debug("Copy from container", { from: containerPath, to: localPath });
     await this.simulateDelay(200);
   }
 
@@ -179,7 +174,7 @@ export class MockContainerProvider implements ContainerProvider {
     _containerName: string,
     command: string,
   ): Promise<{ output: string; exitCode: number }> {
-    console.log(`💻 [Mock] Execute: ${command}`);
+    log.debug("Execute command", { command });
     await this.simulateDelay(300);
 
     return {

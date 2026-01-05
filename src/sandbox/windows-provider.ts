@@ -12,6 +12,7 @@ import type {
   SandboxProvider,
   SandboxStatus,
 } from "./types.ts";
+import { ContainerError } from "../errors.ts";
 
 const DEFAULT_IMAGE = "centralgauge/agent-sandbox:windows-latest";
 const CONTAINER_PREFIX = "cg-sandbox-";
@@ -187,7 +188,12 @@ class WindowsSandbox implements Sandbox {
       `${this.name}:${sandboxPath}`,
     ]);
     if (result.code !== 0) {
-      throw new Error(`Failed to copy to sandbox: ${result.stderr}`);
+      throw new ContainerError(
+        `Failed to copy to sandbox: ${result.stderr}`,
+        this.name,
+        "setup",
+        { hostPath, sandboxPath },
+      );
     }
   }
 
@@ -198,14 +204,23 @@ class WindowsSandbox implements Sandbox {
       hostPath,
     ]);
     if (result.code !== 0) {
-      throw new Error(`Failed to copy from sandbox: ${result.stderr}`);
+      throw new ContainerError(
+        `Failed to copy from sandbox: ${result.stderr}`,
+        this.name,
+        "setup",
+        { hostPath, sandboxPath },
+      );
     }
   }
 
   async stop(): Promise<void> {
     const result = await runDocker(["stop", this.name], { timeout: 30000 });
     if (result.code !== 0) {
-      throw new Error(`Failed to stop sandbox: ${result.stderr}`);
+      throw new ContainerError(
+        `Failed to stop sandbox: ${result.stderr}`,
+        this.name,
+        "stop",
+      );
     }
     this.status = "stopped";
   }
@@ -223,7 +238,11 @@ class WindowsSandbox implements Sandbox {
     // Remove container
     const result = await runDocker(["rm", "-f", this.name]);
     if (result.code !== 0) {
-      throw new Error(`Failed to destroy sandbox: ${result.stderr}`);
+      throw new ContainerError(
+        `Failed to destroy sandbox: ${result.stderr}`,
+        this.name,
+        "stop",
+      );
     }
     this.status = "stopped";
   }
@@ -329,7 +348,12 @@ export class WindowsSandboxProvider implements SandboxProvider {
     // Create container
     const result = await runDocker(args);
     if (result.code !== 0) {
-      throw new Error(`Failed to create sandbox: ${result.stderr}`);
+      throw new ContainerError(
+        `Failed to create sandbox: ${result.stderr}`,
+        name,
+        "setup",
+        { image },
+      );
     }
 
     const containerId = result.stdout.trim();

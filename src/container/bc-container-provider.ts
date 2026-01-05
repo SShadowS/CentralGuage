@@ -12,8 +12,11 @@ import type {
   ContainerStatus,
   TestResult,
 } from "./types.ts";
-import * as colors from "@std/fmt/colors";
 import { ensureDir } from "@std/fs";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("container:bc");
+import { ContainerError } from "../errors.ts";
 import {
   calculateTestMetrics,
   extractArtifactPath,
@@ -48,14 +51,17 @@ function logSubTimings(output: string): void {
   }
 
   // Calculate and log durations
+  const timings: Record<string, string> = {};
   const phases = ["PUBLISH", "TEST"];
   for (const phase of phases) {
     const start = timestamps[`${phase}_START`];
     const end = timestamps[`${phase}_END`];
     if (start && end) {
-      const duration = ((end - start) / 1000).toFixed(1);
-      console.log(colors.gray(`  [SubTiming] ${phase}: ${duration}s`));
+      timings[phase] = `${((end - start) / 1000).toFixed(1)}s`;
     }
+  }
+  if (Object.keys(timings).length > 0) {
+    log.debug("Sub-timings", timings);
   }
 }
 
@@ -95,8 +101,10 @@ export class BcContainerProvider implements ContainerProvider {
     script: string,
   ): Promise<{ output: string; exitCode: number }> {
     if (!this.isWindows()) {
-      throw new Error(
+      throw new ContainerError(
         "BcContainerProvider requires Windows with bccontainerhelper PowerShell module",
+        "bccontainer",
+        "setup",
       );
     }
 
@@ -121,9 +129,7 @@ export class BcContainerProvider implements ContainerProvider {
   }
 
   async setup(config: ContainerConfig): Promise<void> {
-    console.log(
-      colors.cyan(`[BC Container] Setting up container: ${config.name}`),
-    );
+    log.info(`Setting up container: ${config.name}`);
 
     // Store credentials if provided
     if (config.credentials) {
@@ -140,9 +146,7 @@ export class BcContainerProvider implements ContainerProvider {
     `);
 
     if (isModuleMissing(checkModule.output)) {
-      console.log(
-        colors.cyan("[BC Container] Installing bccontainerhelper module..."),
-      );
+      log.info("Installing bccontainerhelper module...");
       const installResult = await this.executePowerShell(`
         Install-Module bccontainerhelper -Force -AllowClobber -Scope CurrentUser
         Import-Module bccontainerhelper
@@ -150,8 +154,10 @@ export class BcContainerProvider implements ContainerProvider {
       `);
 
       if (installResult.exitCode !== 0) {
-        throw new Error(
+        throw new ContainerError(
           `Failed to install bccontainerhelper: ${installResult.output}`,
+          config.name,
+          "setup",
         );
       }
     }
@@ -187,18 +193,18 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(setupScript);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to create BC container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to create BC container: ${result.output}`,
+        config.name,
+        "setup",
+      );
     }
 
-    console.log(
-      colors.green(`[BC Container] Container ${config.name} setup complete`),
-    );
+    log.info(`Container ${config.name} setup complete`);
   }
 
   async start(containerName: string): Promise<void> {
-    console.log(
-      colors.cyan(`[BC Container] Starting container: ${containerName}`),
-    );
+    log.info(`Starting container: ${containerName}`);
 
     const script = `
       Import-Module bccontainerhelper
@@ -209,18 +215,18 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to start container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to start container: ${result.output}`,
+        containerName,
+        "start",
+      );
     }
 
-    console.log(
-      colors.green(`[BC Container] Container ${containerName} started`),
-    );
+    log.info(`Container ${containerName} started`);
   }
 
   async stop(containerName: string): Promise<void> {
-    console.log(
-      colors.cyan(`[BC Container] Stopping container: ${containerName}`),
-    );
+    log.info(`Stopping container: ${containerName}`);
 
     const script = `
       Import-Module bccontainerhelper
@@ -231,18 +237,18 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to stop container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to stop container: ${result.output}`,
+        containerName,
+        "stop",
+      );
     }
 
-    console.log(
-      colors.green(`[BC Container] Container ${containerName} stopped`),
-    );
+    log.info(`Container ${containerName} stopped`);
   }
 
   async remove(containerName: string): Promise<void> {
-    console.log(
-      colors.cyan(`[BC Container] Removing container: ${containerName}`),
-    );
+    log.info(`Removing container: ${containerName}`);
 
     const script = `
       Import-Module bccontainerhelper
@@ -253,12 +259,14 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to remove container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to remove container: ${result.output}`,
+        containerName,
+        "stop",
+      );
     }
 
-    console.log(
-      colors.green(`[BC Container] Container ${containerName} removed`),
-    );
+    log.info(`Container ${containerName} removed`);
   }
 
   async status(containerName: string): Promise<ContainerStatus> {
@@ -299,7 +307,11 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (isContainerNotFound(result.output)) {
-      throw new Error(`Container ${containerName} not found`);
+      throw new ContainerError(
+        `Container ${containerName} not found`,
+        containerName,
+        "health",
+      );
     }
 
     const statusData = parseStatusOutput(result.output);
@@ -336,11 +348,7 @@ export class BcContainerProvider implements ContainerProvider {
       }
     }
 
-    console.log(
-      colors.cyan(
-        `[BC Container] Creating compiler folder for ${containerName}...`,
-      ),
-    );
+    log.info(`Creating compiler folder for ${containerName}...`);
 
     const script = `
       Import-Module bccontainerhelper -WarningAction SilentlyContinue
@@ -354,14 +362,16 @@ export class BcContainerProvider implements ContainerProvider {
 
     const compilerFolder = extractCompilerFolder(result.output);
     if (!compilerFolder) {
-      throw new Error(`Failed to create compiler folder: ${result.output}`);
+      throw new ContainerError(
+        `Failed to create compiler folder: ${result.output}`,
+        containerName,
+        "compile",
+      );
     }
 
     this.compilerFolderCache.set(containerName, compilerFolder);
 
-    console.log(
-      colors.green(`[BC Container] Compiler folder ready: ${compilerFolder}`),
-    );
+    log.info(`Compiler folder ready: ${compilerFolder}`);
     return compilerFolder;
   }
 
@@ -413,13 +423,17 @@ export class BcContainerProvider implements ContainerProvider {
     const artifactPath = extractArtifactPath(output);
     const success = isCompilationSuccessful(output, errors.length);
 
-    console.log(
-      (success ? colors.green : colors.red)(
-        `[BC Container] Compilation ${
-          success ? "succeeded" : "failed"
-        }: ${errors.length} errors, ${warnings.length} warnings`,
-      ),
-    );
+    if (success) {
+      log.info(`Compilation succeeded`, {
+        errors: errors.length,
+        warnings: warnings.length,
+      });
+    } else {
+      log.error(`Compilation failed`, {
+        errors: errors.length,
+        warnings: warnings.length,
+      });
+    }
 
     return {
       success,
@@ -435,11 +449,7 @@ export class BcContainerProvider implements ContainerProvider {
     containerName: string,
     project: ALProject,
   ): Promise<CompilationResult> {
-    console.log(
-      colors.cyan(
-        `[BC Container] Compiling AL project for container: ${containerName}`,
-      ),
-    );
+    log.info(`Compiling AL project for container: ${containerName}`);
 
     const startTime = Date.now();
     const projectPath = project.path.replace(/\\/g, "\\\\");
@@ -499,11 +509,7 @@ export class BcContainerProvider implements ContainerProvider {
     containerName: string,
     appPath: string,
   ): Promise<void> {
-    console.log(
-      colors.cyan(
-        `[BC Container] Publishing app to container: ${containerName}`,
-      ),
-    );
+    log.info(`Publishing app to container: ${containerName}`);
 
     // Copy the app to the shared "my" folder which is mounted in the container
     const appFileName = appPath.split(/[/\\]/).pop()!;
@@ -557,12 +563,15 @@ export class BcContainerProvider implements ContainerProvider {
     }
 
     if (!result.output.includes("PUBLISH_SUCCESS")) {
-      throw new Error(`Publish failed: ${result.output}`);
+      throw new ContainerError(
+        `Publish failed: ${result.output}`,
+        containerName,
+        "setup",
+        { appPath },
+      );
     }
 
-    console.log(
-      colors.green(`[BC Container] App published successfully`),
-    );
+    log.info("App published successfully");
   }
 
   async runTests(
@@ -571,11 +580,7 @@ export class BcContainerProvider implements ContainerProvider {
     appFilePath?: string,
     testCodeunitId?: number,
   ): Promise<TestResult> {
-    console.log(
-      colors.cyan(
-        `[BC Container] Running tests in container: ${containerName}`,
-      ),
-    );
+    log.info(`Running tests in container: ${containerName}`);
 
     const startTime = Date.now();
     const credentials = this.getCredentials(containerName);
@@ -626,10 +631,12 @@ export class BcContainerProvider implements ContainerProvider {
     const hasPublishEnd = result.output.includes("PUBLISH_END:");
     const hasTestStart = result.output.includes("TEST_START:");
     const hasTestEnd = result.output.includes("TEST_END:");
-    console.log(colors.gray(
-      `[Debug] Markers: PUBLISH_START=${hasPublishStart}, PUBLISH_END=${hasPublishEnd}, ` +
-        `TEST_START=${hasTestStart}, TEST_END=${hasTestEnd}`,
-    ));
+    log.debug("Markers", {
+      PUBLISH_START: hasPublishStart,
+      PUBLISH_END: hasPublishEnd,
+      TEST_START: hasTestStart,
+      TEST_END: hasTestEnd,
+    });
 
     // Cleanup copied file
     try {
@@ -649,10 +656,8 @@ export class BcContainerProvider implements ContainerProvider {
 
     // Debug: Log raw output when no tests are found (helps diagnose parsing issues)
     if (totalTests === 0) {
-      console.log(colors.yellow("[Debug] No tests detected. Raw output:"));
-      console.log(colors.gray("--- BEGIN TEST OUTPUT ---"));
-      console.log(result.output);
-      console.log(colors.gray("--- END TEST OUTPUT ---"));
+      log.warn("No tests detected");
+      log.debug("Raw output", { output: result.output });
     }
 
     return {
@@ -680,11 +685,7 @@ export class BcContainerProvider implements ContainerProvider {
     let appFilePath = await this.findCompiledAppFile(project);
 
     if (!appFilePath) {
-      console.log(
-        colors.yellow(
-          `[BC Container] No compiled app found, compiling first...`,
-        ),
-      );
+      log.warn("No compiled app found, compiling first...");
       const compileResult = await this.compileProject(containerName, project);
       if (!compileResult.success) {
         return {
@@ -750,13 +751,11 @@ export class BcContainerProvider implements ContainerProvider {
     passedTests: number,
     totalTests: number,
   ): void {
-    console.log(
-      (success ? colors.green : colors.red)(
-        `[BC Container] Tests ${
-          success ? "passed" : "failed"
-        }: ${passedTests}/${totalTests} passed`,
-      ),
-    );
+    if (success) {
+      log.info(`Tests passed: ${passedTests}/${totalTests}`);
+    } else {
+      log.error(`Tests failed: ${passedTests}/${totalTests} passed`);
+    }
   }
 
   /** Build the PowerShell script for publishing and running tests */
@@ -905,7 +904,12 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to copy to container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to copy to container: ${result.output}`,
+        containerName,
+        "compile",
+        { localPath, containerPath },
+      );
     }
   }
 
@@ -923,7 +927,12 @@ export class BcContainerProvider implements ContainerProvider {
     const result = await this.executePowerShell(script);
 
     if (result.exitCode !== 0) {
-      throw new Error(`Failed to copy from container: ${result.output}`);
+      throw new ContainerError(
+        `Failed to copy from container: ${result.output}`,
+        containerName,
+        "compile",
+        { localPath, containerPath },
+      );
     }
   }
 
@@ -963,24 +972,14 @@ export class BcContainerProvider implements ContainerProvider {
       return;
     }
 
-    console.log(
-      colors.cyan(
-        `[BC Container] Cleaning up ${this.compilerFolderCache.size} compiler folder(s)...`,
-      ),
-    );
+    log.info(`Cleaning up ${this.compilerFolderCache.size} compiler folder(s)...`);
 
     for (const [containerName, folderPath] of this.compilerFolderCache) {
       try {
         await Deno.remove(folderPath, { recursive: true });
-        console.log(
-          colors.green(`[BC Container] Removed compiler folder: ${folderPath}`),
-        );
+        log.info(`Removed compiler folder: ${folderPath}`);
       } catch (error) {
-        console.log(
-          colors.yellow(
-            `[BC Container] Failed to remove compiler folder ${folderPath}: ${error}`,
-          ),
-        );
+        log.warn(`Failed to remove compiler folder ${folderPath}: ${error}`);
       }
       this.compilerFolderCache.delete(containerName);
     }
@@ -997,11 +996,7 @@ export class BcContainerProvider implements ContainerProvider {
     let removed = 0;
     let failed = 0;
 
-    console.log(
-      colors.cyan(
-        `[BC Container] Cleaning up all compiler folders in ${compilerDir}...`,
-      ),
-    );
+    log.info(`Cleaning up all compiler folders in ${compilerDir}...`);
 
     try {
       for await (const entry of Deno.readDir(compilerDir)) {
@@ -1016,22 +1011,14 @@ export class BcContainerProvider implements ContainerProvider {
         }
       }
     } catch (error) {
-      console.log(
-        colors.yellow(
-          `[BC Container] Could not access compiler directory: ${error}`,
-        ),
-      );
+      log.warn(`Could not access compiler directory: ${error}`);
     }
 
     if (removed > 0) {
-      console.log(
-        colors.green(`[BC Container] Removed ${removed} compiler folder(s)`),
-      );
+      log.info(`Removed ${removed} compiler folder(s)`);
     }
     if (failed > 0) {
-      console.log(
-        colors.yellow(`[BC Container] Failed to remove ${failed} folder(s)`),
-      );
+      log.warn(`Failed to remove ${failed} folder(s)`);
     }
 
     // Clear the cache

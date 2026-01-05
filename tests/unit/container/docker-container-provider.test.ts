@@ -146,7 +146,7 @@ Deno.test("DockerContainerProvider - setup throws when Docker not available", as
           includeTestToolkit: true,
         }),
       Error,
-      "Docker is not installed or not accessible",
+      "Docker is not responding",
     );
   } finally {
     mock.restore();
