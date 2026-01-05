@@ -269,7 +269,7 @@ async function runParallelBenchmark(
     };
 
     debugLogger = DebugLogger.initialize(debugConfig);
-    console.log(
+    log.info(
       `Debug logging enabled: ${debugConfig.outputDir} (level: ${logLevel})`,
     );
   }
@@ -469,11 +469,7 @@ async function runParallelBenchmark(
     let tui: BenchTui | null = null;
     if (tuiMode) {
       if (!isTuiSupported()) {
-        console.warn(
-          colors.yellow(
-            "[WARN] TUI mode requires a terminal. Falling back to console output.",
-          ),
-        );
+        log.warn("TUI mode requires a terminal. Falling back to console output.");
       } else {
         tui = new BenchTui();
         tui.start();
@@ -995,12 +991,12 @@ async function runBenchmark(
     };
 
     debugLogger = DebugLogger.initialize(debugConfig);
-    console.log(
+    log.info(
       `Debug logging enabled: ${debugConfig.outputDir} (level: ${logLevel})`,
     );
   }
 
-  console.log("Starting CentralGauge benchmark...");
+  log.summary("Starting CentralGauge benchmark...");
   console.log(`Models: ${options.llms.join(", ")}`);
   console.log(`Tasks: ${options.tasks.join(", ")}`);
   console.log(`Attempts: ${options.attempts}`);
@@ -1022,10 +1018,7 @@ async function runBenchmark(
     }
 
     if (taskManifests.length === 0) {
-      console.error(
-        "[ERROR] No task manifests found matching patterns:",
-        options.tasks,
-      );
+      log.fail(`No task manifests found matching patterns: ${options.tasks.join(", ")}`);
       return;
     }
 
@@ -1092,7 +1085,7 @@ async function runBenchmark(
               } (score: ${result.finalScore.toFixed(3)})`,
             );
           } catch (error) {
-            console.error(
+            log.fail(
               `Task ${manifest.id} failed: ${
                 error instanceof Error ? error.message : String(error)
               }`,
@@ -1128,7 +1121,7 @@ async function runBenchmark(
       await debugLogger.finalize();
     }
   } catch (error) {
-    console.error(
+    log.fail(
       `Benchmark failed: ${
         error instanceof Error ? error.message : String(error)
       }`,
@@ -1234,11 +1227,7 @@ async function runAgentBenchmark(
   let tui: BenchTui | null = null;
   if (options.tui) {
     if (!isTuiSupported()) {
-      console.warn(
-        colors.yellow(
-          "[WARN] TUI mode requires a terminal. Falling back to console output.",
-        ),
-      );
+      log.warn("TUI mode requires a terminal. Falling back to console output.");
     } else {
       tui = new BenchTui();
       tui.start();
@@ -1619,11 +1608,7 @@ export function registerBenchCommand(cli: Command): void {
         (!options.llms || options.llms.length === 0) &&
         (!options.agents || options.agents.length === 0)
       ) {
-        console.error(
-          colors.red(
-            "[ERROR] Either --llms or --agents must be specified",
-          ),
-        );
+        log.fail("Either --llms or --agents must be specified");
         Deno.exit(1);
       }
 

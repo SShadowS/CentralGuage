@@ -5,7 +5,10 @@
 
 import { exists } from "@std/fs";
 import * as colors from "@std/fmt/colors";
+import { Logger } from "../logger/mod.ts";
 import type { SuggestedFix } from "./types.ts";
+
+const log = Logger.create("verify");
 
 /**
  * Generate a unified diff preview for a suggested fix
@@ -55,9 +58,7 @@ export async function applyFix(
 ): Promise<boolean> {
   // Validate file exists
   if (!await exists(fix.filePath)) {
-    console.error(
-      colors.red(`[ERROR] File not found: ${fix.filePath}`),
-    );
+    log.error(`File not found: ${fix.filePath}`);
     return false;
   }
 
@@ -65,21 +66,17 @@ export async function applyFix(
   const currentContent = await Deno.readTextFile(fix.filePath);
 
   if (debug) {
-    console.log(colors.gray(`[DEBUG] File path: ${fix.filePath}`));
-    console.log(colors.gray(`[DEBUG] File size: ${currentContent.length}`));
-    console.log(
-      colors.gray(`[DEBUG] codeBefore length: ${fix.codeBefore?.length ?? 0}`),
-    );
-    console.log(
-      colors.gray(`[DEBUG] codeAfter length: ${fix.codeAfter?.length ?? 0}`),
-    );
+    log.debug("Fix details", {
+      filePath: fix.filePath,
+      fileSize: currentContent.length,
+      codeBeforeLength: fix.codeBefore?.length ?? 0,
+      codeAfterLength: fix.codeAfter?.length ?? 0,
+    });
   }
 
   // Check if the "before" code exists in the file
   if (!fix.codeBefore || !fix.codeAfter) {
-    console.error(
-      colors.red("[ERROR] Fix does not have codeBefore/codeAfter specified"),
-    );
+    log.error("Fix does not have codeBefore/codeAfter specified");
     return false;
   }
 
@@ -89,14 +86,13 @@ export async function applyFix(
     /\n\s*\.\.\.\s*\n/.test(fix.codeBefore);
   if (hasMultiChangeSeparator) {
     if (debug) {
-      console.log(colors.gray("[DEBUG] Detected multi-change format"));
+      log.debug("Detected multi-change format");
     }
     return applyMultiChangeFix(currentContent, fix, debug);
   }
 
   if (debug) {
-    console.log(colors.gray("[DEBUG] codeBefore:"));
-    console.log(colors.gray(`  "${fix.codeBefore.replace(/\n/g, "\\n")}"`));
+    log.debug("codeBefore", { content: fix.codeBefore.replace(/\n/g, "\\n") });
   }
 
   // Normalize whitespace for comparison
@@ -106,21 +102,17 @@ export async function applyFix(
   // Check if the before code exists
   if (!normalizedContent.includes(normalizedBefore)) {
     if (debug) {
-      console.log(
-        colors.gray(
-          "[DEBUG] Normalized content does not include normalized codeBefore",
-        ),
-      );
-      console.log(
-        colors.gray(`[DEBUG] Normalized codeBefore: "${normalizedBefore}"`),
-      );
+      log.debug("Normalized content does not include normalized codeBefore", {
+        normalizedBefore,
+      });
     }
     // Try fuzzy matching
     const fuzzyMatch = findFuzzyMatch(currentContent, fix.codeBefore);
     if (fuzzyMatch) {
       if (debug) {
-        console.log(colors.gray("[DEBUG] Found fuzzy match:"));
-        console.log(colors.gray(`  "${fuzzyMatch.replace(/\n/g, "\\n")}"`));
+        log.debug("Found fuzzy match", {
+          match: fuzzyMatch.replace(/\n/g, "\\n"),
+        });
       }
       // Apply with fuzzy match - preserve indentation from original
       const newContent = applyWithIndentPreservation(
@@ -129,17 +121,13 @@ export async function applyFix(
         fix.codeAfter,
       );
       await Deno.writeTextFile(fix.filePath, newContent);
-      console.log(
-        colors.yellow("[WARN] Applied fix with fuzzy matching"),
-      );
+      log.warn("Applied fix with fuzzy matching");
       return true;
     }
 
-    console.error(
-      colors.red("[ERROR] Could not find the code to replace in file"),
-    );
-    console.error(colors.gray("Expected to find:"));
-    console.error(colors.gray(fix.codeBefore.slice(0, 200)));
+    log.error("Could not find the code to replace in file", {
+      expected: fix.codeBefore.slice(0, 200),
+    });
     return false;
   }
 
@@ -148,9 +136,7 @@ export async function applyFix(
 
   // Verify the replacement was made
   if (newContent === currentContent) {
-    console.error(
-      colors.red("[ERROR] Replacement did not change the file"),
-    );
+    log.error("Replacement did not change the file");
     return false;
   }
 
@@ -179,25 +165,19 @@ async function applyMultiChangeFix(
   );
 
   if (debug) {
-    console.log(
-      colors.gray(`[DEBUG] Found ${beforeParts.length} before parts`),
-    );
-    console.log(colors.gray(`[DEBUG] Found ${afterParts.length} after parts`));
+    log.debug("Multi-change format", {
+      beforeParts: beforeParts.length,
+      afterParts: afterParts.length,
+    });
   }
 
   if (beforeParts.length !== afterParts.length) {
-    console.error(
-      colors.red(
-        `[ERROR] Mismatched change count: ${beforeParts.length} before vs ${afterParts.length} after`,
-      ),
-    );
+    log.error(`Mismatched change count: ${beforeParts.length} before vs ${afterParts.length} after`);
     return false;
   }
 
   if (beforeParts.length === 0) {
-    console.error(
-      colors.red("[ERROR] No changes found in multi-change format"),
-    );
+    log.error("No changes found in multi-change format");
     return false;
   }
 
@@ -211,11 +191,10 @@ async function applyMultiChangeFix(
     if (!beforePart || !afterPart) continue;
 
     if (debug) {
-      console.log(
-        colors.gray(`[DEBUG] Applying change ${i + 1}/${beforeParts.length}:`),
-      );
-      console.log(colors.gray(`  before: "${beforePart}"`));
-      console.log(colors.gray(`  after: "${afterPart}"`));
+      log.debug(`Applying change ${i + 1}/${beforeParts.length}`, {
+        before: beforePart,
+        after: afterPart,
+      });
     }
 
     // Try fuzzy matching for this part
@@ -228,7 +207,7 @@ async function applyMultiChangeFix(
       );
       appliedCount++;
       if (debug) {
-        console.log(colors.gray(`  [OK] Applied change ${i + 1}`));
+        log.debug(`Applied change ${i + 1} (fuzzy match)`);
       }
     } else {
       // Try exact match with the trimmed content
@@ -236,24 +215,16 @@ async function applyMultiChangeFix(
         currentContent = currentContent.replace(beforePart, afterPart);
         appliedCount++;
         if (debug) {
-          console.log(
-            colors.gray(`  [OK] Applied change ${i + 1} (exact match)`),
-          );
+          log.debug(`Applied change ${i + 1} (exact match)`);
         }
       } else {
-        console.log(
-          colors.yellow(
-            `[WARN] Could not find code for change ${i + 1}: "${
-              beforePart.slice(0, 50)
-            }..."`,
-          ),
-        );
+        log.warn(`Could not find code for change ${i + 1}: "${beforePart.slice(0, 50)}..."`);
       }
     }
   }
 
   if (appliedCount === 0) {
-    console.error(colors.red("[ERROR] No changes could be applied"));
+    log.error("No changes could be applied");
     return false;
   }
 
@@ -261,15 +232,9 @@ async function applyMultiChangeFix(
   await Deno.writeTextFile(fix.filePath, currentContent);
 
   if (appliedCount < beforeParts.length) {
-    console.log(
-      colors.yellow(
-        `[WARN] Applied ${appliedCount}/${beforeParts.length} changes`,
-      ),
-    );
+    log.warn(`Applied ${appliedCount}/${beforeParts.length} changes`);
   } else {
-    console.log(
-      colors.green(`[OK] Applied all ${appliedCount} changes`),
-    );
+    log.info(`Applied all ${appliedCount} changes`);
   }
 
   return true;

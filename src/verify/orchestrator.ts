@@ -4,6 +4,7 @@
  */
 
 import * as colors from "@std/fmt/colors";
+import { Logger } from "../logger/mod.ts";
 import type {
   AnalysisResult,
   FailingTask,
@@ -19,6 +20,8 @@ import { type AnalyzerConfig, FailureAnalyzer } from "./analyzer.ts";
 import { ShortcomingsTracker } from "./shortcomings-tracker.ts";
 import { applyFix, generateDiffPreview } from "./fix-applicator.ts";
 import { analyzeFailurePatterns } from "./debug-parser.ts";
+
+const log = Logger.create("verify");
 
 /**
  * User response to a fix prompt
@@ -156,7 +159,7 @@ export class VerifyOrchestrator {
       try {
         listener(event);
       } catch (error) {
-        console.error("[ERROR] Event listener error:", error);
+        log.error("Event listener error", { error: String(error) });
       }
     }
   }

@@ -3,6 +3,10 @@
  * Supports Windows, macOS, and Linux
  */
 
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("utils:clipboard");
+
 /**
  * Copy text to system clipboard
  * @param text Text to copy
@@ -39,21 +43,19 @@ export async function copyToClipboard(text: string): Promise<boolean> {
         } else if (await commandExists("xsel")) {
           cmd = ["xsel", "--clipboard", "--input"];
         } else {
-          console.warn(
-            "⚠️  No clipboard utility found (install xclip or xsel)",
-          );
+          log.warn("No clipboard utility found (install xclip or xsel)");
           return false;
         }
         break;
 
       default:
-        console.warn(`⚠️  Clipboard not supported on ${os}`);
+        log.warn("Clipboard not supported on platform", { os });
         return false;
     }
 
     const cmdPath = cmd[0];
     if (!cmdPath) {
-      console.warn("⚠️  No clipboard command configured");
+      log.warn("No clipboard command configured");
       return false;
     }
 
@@ -74,11 +76,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
     const status = await process.status;
     return status.success;
   } catch (error) {
-    console.warn(
-      `⚠️  Clipboard copy failed: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
+    log.warn("Clipboard copy failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return false;
   }
 }

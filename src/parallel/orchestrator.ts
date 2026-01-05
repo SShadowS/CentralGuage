@@ -18,6 +18,9 @@ import type {
   TaskExecutionResult,
   TaskManifest,
 } from "./types.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("parallel");
 import { createDefaultConfig } from "./types.ts";
 import { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";
 import { CompileQueue, CriticalError } from "./compile-queue.ts";
@@ -144,7 +147,7 @@ export class ParallelBenchmarkOrchestrator {
       try {
         listener(event);
       } catch (error) {
-        console.error("Error in event listener:", error);
+        log.error("Error in event listener", { error: String(error) });
       }
     }
   }

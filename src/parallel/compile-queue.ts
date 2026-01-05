@@ -14,6 +14,9 @@ import type { ContainerProvider } from "../container/interface.ts";
 import type { TestResult } from "../container/types.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("compile");
 
 /**
  * Critical error that should abort the entire benchmark run.
@@ -264,7 +267,7 @@ export class CompileQueue {
 
       // Start processing (non-blocking)
       this.processQueue().catch((error) => {
-        console.error("Error processing compile queue:", error);
+        log.error("Error processing compile queue", { error: String(error) });
       });
 
       // Set up timeout
@@ -381,11 +384,10 @@ export class CompileQueue {
         prereqProject,
       );
       if (!prereqCompileResult.success) {
-        console.error(
-          `[Prereq] Compilation failed for ${prereq.appJson["name"]}: ${
-            prereqCompileResult.errors.map((e) => e.message).join(", ")
-          }`,
-        );
+        log.error("Prereq compilation failed", {
+          name: prereq.appJson["name"],
+          errors: prereqCompileResult.errors.map((e) => e.message),
+        });
       } else {
         // Publish prereq immediately after successful compilation
         if (prereqCompileResult.artifactPath) {
@@ -441,7 +443,7 @@ export class CompileQueue {
           JSON.stringify(appJson, null, 2),
         );
       } catch (e) {
-        console.error(`[Prereq] Failed to inject dependency: ${e}`);
+        log.error("Failed to inject prereq dependency", { error: String(e) });
       }
     }
 
@@ -597,9 +599,7 @@ export class CompileQueue {
           }
         }
       } else {
-        console.warn(
-          `[CompileQueue] Test directory not found: ${testDir}`,
-        );
+        log.warn("Test directory not found", { path: testDir });
       }
     }
 

@@ -6,6 +6,11 @@
 import { exists } from "@std/fs";
 import { parse as parseYaml } from "@std/yaml";
 import type { PromptInjectionConfig } from "../prompts/mod.ts";
+import {
+  DEFAULT_API_TIMEOUT_MS,
+  DEFAULT_MAX_TOKENS,
+  DEFAULT_TEMPERATURE,
+} from "../constants.ts";
 import type {
   SystemPromptDefinition,
   VariantProfile,
@@ -45,7 +50,7 @@ export interface CentralGaugeConfig {
     };
   };
 
-  // Debug settings
+  // Debug settings (file-based LLM interaction logging)
   debug?: {
     enabled?: boolean;
     outputDir?: string;
@@ -53,6 +58,11 @@ export interface CentralGaugeConfig {
     includeRawResponse?: boolean;
     includeRequestHeaders?: boolean;
     maxFileSize?: number; // in MB
+  };
+
+  // Logging settings (unified console logger)
+  logging?: {
+    level?: "debug" | "info" | "warn" | "error";
   };
 
   // Environment overrides
@@ -202,9 +212,9 @@ export class ConfigManager {
         comparison: ["flagship"],
       },
       llm: {
-        temperature: 0.1,
-        maxTokens: 4000,
-        timeout: 30000,
+        temperature: DEFAULT_TEMPERATURE,
+        maxTokens: DEFAULT_MAX_TOKENS,
+        timeout: DEFAULT_API_TIMEOUT_MS,
       },
       benchmark: {
         attempts: 2,
@@ -362,6 +372,27 @@ export class ConfigManager {
   }
 
   /**
+   * Load logging settings from environment variables
+   */
+  private static loadEnvLoggingSettings(): CentralGaugeConfig["logging"] {
+    const logLevel = Deno.env.get("CENTRALGAUGE_LOG_LEVEL");
+
+    if (!logLevel) {
+      return undefined;
+    }
+
+    const normalized = logLevel.toLowerCase();
+    if (
+      normalized === "debug" || normalized === "info" ||
+      normalized === "warn" || normalized === "error"
+    ) {
+      return { level: normalized as "debug" | "info" | "warn" | "error" };
+    }
+
+    return undefined;
+  }
+
+  /**
    * Load configuration from environment variables
    */
   private static loadEnvironmentConfig(): CentralGaugeConfig {
@@ -381,6 +412,9 @@ export class ConfigManager {
 
     const debug = this.loadEnvDebugSettings();
     if (debug) config.debug = debug;
+
+    const logging = this.loadEnvLoggingSettings();
+    if (logging) config.logging = logging;
 
     return config;
   }
@@ -421,6 +455,9 @@ export class ConfigManager {
     }
     if (override.debug) {
       result.debug = { ...result.debug, ...override.debug };
+    }
+    if (override.logging) {
+      result.logging = { ...result.logging, ...override.logging };
     }
     if (override.environment) {
       result.environment = { ...result.environment, ...override.environment };
@@ -539,6 +576,10 @@ container:
   credentials:
     username: sshadows             # Container authentication username
     password: "1234"               # Container authentication password
+
+# Logging settings (console output)
+logging:
+  level: info                        # Log level: debug, info, warn, error
 
 # Environment variable overrides (optional)
 # These will be set during execution

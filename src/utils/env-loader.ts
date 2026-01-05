@@ -12,6 +12,9 @@ import {
   gray,
   red,
 } from "@std/fmt/colors";
+import { Logger } from "../logger/mod.ts";
+
+const log = Logger.create("utils:env");
 
 export interface EnvConfig {
   // API Keys
@@ -84,7 +87,7 @@ export class EnvLoader {
             loadedFromFile = { ...loadedFromFile, ...fileVars };
             envFileFound = true;
             result.source = ".env";
-            console.log(gray(`📁 Loaded environment from ${envFile}`));
+            log.debug("Loaded environment from file", { file: envFile });
           } catch (error) {
             result.errors.push(
               `Failed to load ${envFile}: ${
