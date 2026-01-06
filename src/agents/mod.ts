@@ -36,6 +36,10 @@ export {
 // Executor
 export { AgentTaskExecutor } from "./executor.ts";
 
+// Sandbox Executor
+export { SandboxExecutor, shouldUseSandbox } from "./sandbox-executor.ts";
+export type { SandboxExecutionContext } from "./sandbox-executor.ts";
+
 // MCP Server Manager
 export { McpServerManager } from "./mcp-manager.ts";
 export type { McpServerConfig } from "./mcp-manager.ts";
