@@ -23,6 +23,7 @@ import {
   registerModelsCommand,
   registerReportCommand,
   registerReportDbCommand,
+  registerRulesCommand,
   registerStatsCommands,
   registerVerifyCommand,
 } from "./commands/mod.ts";
@@ -100,6 +101,7 @@ registerCompileTestCommands(cliAny);
 registerModelsCommand(cliAny);
 registerConfigCommands(cliAny);
 registerStatsCommands(cliAny);
+registerRulesCommand(cliAny);
 
 // Parse and execute
 if (import.meta.main) {

@@ -96,6 +96,10 @@ export interface CLIPromptOverrides {
   stage?: InjectionStage | "both";
   /** Which provider these apply to (default: all) */
   provider?: string;
+  /** Pre-loaded knowledge bank content to prepend to system prompt */
+  knowledgeContent?: string;
+  /** Custom run label for results/reports */
+  runLabel?: string;
 }
 
 /**

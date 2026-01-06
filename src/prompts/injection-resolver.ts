@@ -127,6 +127,15 @@ export class PromptInjectionResolver {
       result.suffix = cli.suffix;
     }
 
+    // Prepend knowledge content to system prompt
+    if (cli.knowledgeContent) {
+      if (result.system) {
+        result.system = cli.knowledgeContent + "\n\n" + result.system;
+      } else {
+        result.system = cli.knowledgeContent;
+      }
+    }
+
     return result;
   }
 

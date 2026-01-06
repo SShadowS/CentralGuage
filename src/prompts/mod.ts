@@ -15,3 +15,6 @@ export type {
 } from "./types.ts";
 
 export { PromptInjectionResolver } from "./injection-resolver.ts";
+
+export type { KnowledgeLoadOptions } from "./knowledge-loader.ts";
+export { hasKnowledgeOptions, loadKnowledgeFiles } from "./knowledge-loader.ts";

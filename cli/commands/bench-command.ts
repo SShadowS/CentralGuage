@@ -8,6 +8,10 @@ import type {
   CLIPromptOverrides,
   InjectionStage,
 } from "../../src/prompts/mod.ts";
+import {
+  hasKnowledgeOptions,
+  loadKnowledgeFiles,
+} from "../../src/prompts/mod.ts";
 import type { OutputFormat } from "../../src/utils/formatters.ts";
 import { log } from "../helpers/mod.ts";
 import type {
@@ -99,6 +103,18 @@ export function registerBenchCommand(cli: Command): void {
       "Only apply prompt overrides to this provider",
     )
     .option(
+      "--knowledge <files:string[]>",
+      "Markdown files to inject as knowledge bank into system prompt",
+    )
+    .option(
+      "--knowledge-dir <path:string>",
+      "Directory of .md files to inject as knowledge bank",
+    )
+    .option(
+      "--run-label <label:string>",
+      "Custom label for this run (default: auto-append '(guided)' if knowledge used)",
+    )
+    .option(
       "--no-continuation",
       "Disable automatic continuation for truncated responses",
       { default: false },
@@ -149,10 +165,35 @@ export function registerBenchCommand(cli: Command): void {
         Deno.exit(0);
       }
 
+      // Load knowledge files if specified
+      let knowledgeContent: string | undefined;
+      const knowledgeOpts = {
+        files: options.knowledge,
+        directory: options.knowledgeDir,
+      };
+      if (hasKnowledgeOptions(knowledgeOpts)) {
+        try {
+          knowledgeContent = await loadKnowledgeFiles(knowledgeOpts);
+          if (knowledgeContent) {
+            console.log(
+              `Loaded knowledge bank (${knowledgeContent.length} chars)`,
+            );
+          }
+        } catch (error) {
+          log.fail(
+            `Failed to load knowledge files: ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+          Deno.exit(1);
+        }
+      }
+
       // Build prompt overrides from CLI options
       let promptOverrides: CLIPromptOverrides | undefined;
       if (
-        options.systemPrompt || options.promptPrefix || options.promptSuffix
+        options.systemPrompt || options.promptPrefix || options.promptSuffix ||
+        knowledgeContent
       ) {
         promptOverrides = {};
         if (options.systemPrompt) {
@@ -171,6 +212,17 @@ export function registerBenchCommand(cli: Command): void {
         }
         if (options.promptProvider) {
           promptOverrides.provider = options.promptProvider;
+        }
+        // Add knowledge content
+        if (knowledgeContent) {
+          promptOverrides.knowledgeContent = knowledgeContent;
+        }
+        // Add run label
+        if (options.runLabel) {
+          promptOverrides.runLabel = options.runLabel;
+        } else if (knowledgeContent) {
+          // Auto-label with "(guided)" suffix when knowledge is used
+          promptOverrides.runLabel = "(guided)";
         }
       }
 
@@ -206,6 +258,14 @@ export function registerBenchCommand(cli: Command): void {
       // Log prompt overrides if provided
       if (promptOverrides) {
         console.log("Prompt overrides enabled:");
+        if (promptOverrides.knowledgeContent) {
+          console.log(
+            `   Knowledge: ${promptOverrides.knowledgeContent.length} chars injected`,
+          );
+        }
+        if (promptOverrides.runLabel) {
+          console.log(`   Run label: ${promptOverrides.runLabel}`);
+        }
         if (promptOverrides.systemPrompt) {
           console.log(
             `   System: ${promptOverrides.systemPrompt.slice(0, 50)}...`,

@@ -10,6 +10,7 @@ export { registerConfigCommands } from "./config-command.ts";
 export { registerContainerCommands } from "./container-command.ts";
 export { registerModelsCommand } from "./models-command.ts";
 export { registerReportCommand } from "./report-command.ts";
+export { registerRulesCommand } from "./rules-command.ts";
 export { registerReportDbCommand } from "./report-db-command.ts";
 export { registerStatsCommands } from "./stats-command.ts";
 export { registerVerifyCommand } from "./verify-command.ts";
