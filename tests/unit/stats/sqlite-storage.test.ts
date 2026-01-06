@@ -578,7 +578,10 @@ describe("SqliteStorage", () => {
           }),
         ]);
 
-        const comparison = await storage.compareModels("variant-a", "variant-b");
+        const comparison = await storage.compareModels(
+          "variant-a",
+          "variant-b",
+        );
         assertEquals(comparison.variant1, "variant-a");
         assertEquals(comparison.variant2, "variant-b");
         assertEquals(comparison.variant1Wins, 1); // E001
@@ -596,7 +599,10 @@ describe("SqliteStorage", () => {
           createResultRecord({ taskId: "E002", variantId: "variant-b" }),
         ]);
 
-        const comparison = await storage.compareModels("variant-a", "variant-b");
+        const comparison = await storage.compareModels(
+          "variant-a",
+          "variant-b",
+        );
         assertEquals(comparison.perTask.length, 0);
       });
     });

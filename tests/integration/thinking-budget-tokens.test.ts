@@ -61,17 +61,22 @@ describe("Thinking Budget + Max Tokens Integration", () => {
       // This should fail with API error
       await assertRejects(
         async () => {
-          const generator = adapter.generateCodeStream(simpleRequest, testContext);
+          const generator = adapter.generateCodeStream(
+            simpleRequest,
+            testContext,
+          );
           let iterResult = await generator.next();
           while (!iterResult.done) {
             iterResult = await generator.next();
           }
         },
         Error,
-        "max_tokens",
+        "maxTokens",
       );
 
-      console.log(`[OK] API correctly rejects max_tokens (16000) < thinking_budget (56000)`);
+      console.log(
+        `[OK] API correctly rejects max_tokens (16000) < thinking_budget (56000)`,
+      );
     });
 
     it("should accept when max_tokens > thinking_budget (streaming)", {
@@ -86,7 +91,6 @@ describe("Thinking Budget + Max Tokens Integration", () => {
       });
 
       const chunks: string[] = [];
-      let result;
 
       const generator = adapter.generateCodeStream(simpleRequest, testContext);
 
@@ -95,14 +99,16 @@ describe("Thinking Budget + Max Tokens Integration", () => {
         chunks.push(iterResult.value.text);
         iterResult = await generator.next();
       }
-      result = iterResult.value;
+      const result = iterResult.value;
 
       assertExists(result, "Stream should return a result");
       assertExists(result.content, "Result should have content");
       assert(result.content.length > 0, "Content should not be empty");
       assertExists(result.response.usage, "Result should have usage info");
 
-      console.log(`[OK] Streaming works with max_tokens (12000) > thinking_budget (10000)`);
+      console.log(
+        `[OK] Streaming works with max_tokens (12000) > thinking_budget (10000)`,
+      );
       console.log(
         `     Chunks: ${result.chunkCount}, Usage: ${result.response.usage.totalTokens} tokens`,
       );
@@ -122,7 +128,6 @@ describe("Thinking Budget + Max Tokens Integration", () => {
       });
 
       const chunks: string[] = [];
-      let result;
 
       const generator = adapter.generateCodeStream(simpleRequest, testContext);
 
@@ -131,12 +136,14 @@ describe("Thinking Budget + Max Tokens Integration", () => {
         chunks.push(iterResult.value.text);
         iterResult = await generator.next();
       }
-      result = iterResult.value;
+      const result = iterResult.value;
 
       assertExists(result, "Stream should return a result");
       assertExists(result.content, "Result should have content");
 
-      console.log(`[OK] High thinking budget works: thinking=56000, max_tokens=60000`);
+      console.log(
+        `[OK] High thinking budget works: thinking=56000, max_tokens=60000`,
+      );
       console.log(
         `     Chunks: ${result.chunkCount}, Usage: ${result.response.usage.totalTokens} tokens`,
       );
@@ -144,33 +151,37 @@ describe("Thinking Budget + Max Tokens Integration", () => {
   });
 
   describe("Temperature Override Verification", () => {
-    it("should accept temperature config when thinking is enabled (API overrides to 1)", {
-      ignore: !hasAnthropicKey,
-    }, async () => {
-      // Configure with explicit temperature - should be overridden to 1
-      adapter.configure({
-        provider: "anthropic",
-        model: "claude-sonnet-4-5-20250929",
-        apiKey: String(EnvLoader.get("ANTHROPIC_API_KEY")),
-        maxTokens: 12000, // Valid: > thinking_budget
-        thinkingBudget: 10000,
-        temperature: 0.5, // This will be ignored when thinking is enabled
-      });
+    it(
+      "should accept temperature config when thinking is enabled (API overrides to 1)",
+      {
+        ignore: !hasAnthropicKey,
+      },
+      async () => {
+        // Configure with explicit temperature - should be overridden to 1
+        adapter.configure({
+          provider: "anthropic",
+          model: "claude-sonnet-4-5-20250929",
+          apiKey: String(EnvLoader.get("ANTHROPIC_API_KEY")),
+          maxTokens: 12000, // Valid: > thinking_budget
+          thinkingBudget: 10000,
+          temperature: 0.5, // This will be ignored when thinking is enabled
+        });
 
-      const generator = adapter.generateCodeStream(
-        { ...simpleRequest, temperature: 0.3 }, // Request temp also ignored
-        testContext,
-      );
+        const generator = adapter.generateCodeStream(
+          { ...simpleRequest, temperature: 0.3 }, // Request temp also ignored
+          testContext,
+        );
 
-      let iterResult = await generator.next();
-      while (!iterResult.done) {
-        iterResult = await generator.next();
-      }
-      const result = iterResult.value;
+        let iterResult = await generator.next();
+        while (!iterResult.done) {
+          iterResult = await generator.next();
+        }
+        const result = iterResult.value;
 
-      assertExists(result, "Should complete without temperature error");
-      console.log(`[OK] Temperature override works with thinking enabled`);
-    });
+        assertExists(result, "Should complete without temperature error");
+        console.log(`[OK] Temperature override works with thinking enabled`);
+      },
+    );
   });
 
   describe("Non-streaming with Thinking", () => {
@@ -191,7 +202,9 @@ describe("Thinking Budget + Max Tokens Integration", () => {
       assertExists(result, "Should return result");
       assertExists(result.code, "Should have code");
 
-      console.log(`[OK] Non-streaming works with max_tokens (12000) > thinking_budget (10000)`);
+      console.log(
+        `[OK] Non-streaming works with max_tokens (12000) > thinking_budget (10000)`,
+      );
       console.log(`     Response length: ${result.code.length} chars`);
     });
   });

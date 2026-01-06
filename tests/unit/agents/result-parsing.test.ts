@@ -1,85 +1,13 @@
 /**
- * Tests for result parsing helpers used to extract structured data from tool responses.
- *
- * These functions parse tool results (al_compile, al_verify_task) and format them
- * into a standardized plain-text format for easy regex extraction.
+ * Tests for result-parser module
+ * @module tests/unit/agents/result-parsing
  */
 
 import { assertEquals } from "@std/assert";
-
-/**
- * Extracted compile/test results from tool response (mirrors PartialParsedResult)
- */
-interface PartialParsedResult {
-  compileSuccess?: boolean;
-  testsPassed?: number;
-  testsTotal?: number;
-}
-
-/**
- * Extract structured data from a tool result JSON string.
- * Mirrors the function in src/agents/executor.ts
- */
-function extractResultFromToolResult(content: string): PartialParsedResult {
-  try {
-    const json = JSON.parse(content);
-    if (json.passed !== undefined && json.totalTests !== undefined) {
-      // al_verify_task response format
-      return {
-        testsPassed: json.passed,
-        testsTotal: json.totalTests,
-      };
-    }
-    if (json.message?.toLowerCase().includes("compilation")) {
-      // al_compile response format
-      return {
-        compileSuccess: json.success,
-      };
-    }
-  } catch {
-    // Not JSON, check for patterns in text
-    const lower = content.toLowerCase();
-    if (lower.includes("compilation successful")) {
-      return { compileSuccess: true };
-    }
-    // Check for "all N tests passed" pattern first (extracts count)
-    const allTestsMatch = content.match(/all\s+(\d+)\s+tests?\s+passed/i);
-    if (allTestsMatch && allTestsMatch[1]) {
-      const count = parseInt(allTestsMatch[1], 10);
-      return { testsPassed: count, testsTotal: count };
-    }
-    // Check for "N/N passed" pattern
-    const passedMatch = content.match(/(\d+)\/(\d+)\s+passed/i);
-    if (passedMatch && passedMatch[1] && passedMatch[2]) {
-      return {
-        testsPassed: parseInt(passedMatch[1], 10),
-        testsTotal: parseInt(passedMatch[2], 10),
-      };
-    }
-  }
-  return {};
-}
-
-/**
- * Format a parsed result into the standardized plain-text format.
- * Mirrors the function in src/agents/executor.ts
- */
-function formatTaskResult(
-  compileSuccess: boolean,
-  testsPassed?: number,
-  testsTotal?: number,
-): string {
-  const lines: string[] = [];
-  lines.push(`Compile: ${compileSuccess ? "Success" : "Failed"}`);
-  if (testsTotal !== undefined) {
-    lines.push(`Tests: ${testsPassed ?? 0}/${testsTotal}`);
-  }
-  const pass = testsTotal !== undefined
-    ? testsPassed === testsTotal
-    : compileSuccess;
-  lines.push(`Result: ${pass ? "Pass" : "Fail"}`);
-  return lines.join("\n");
-}
+import {
+  extractResultFromToolResult,
+  formatTaskResult,
+} from "../../../src/agents/result-parser.ts";
 
 Deno.test("extractResultFromToolResult - JSON responses", async (t) => {
   await t.step("parses al_compile success response", () => {

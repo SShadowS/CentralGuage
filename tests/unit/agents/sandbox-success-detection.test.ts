@@ -185,7 +185,8 @@ Deno.test("sandbox success detection", async (t) => {
   });
 
   await t.step("detects: ran successfully (0 failures)", () => {
-    const output = "Tests: The al_verify_task tool ran successfully (0 failures)";
+    const output =
+      "Tests: The al_verify_task tool ran successfully (0 failures)";
     assertEquals(detectTestSuccess(output), true);
   });
 
@@ -224,12 +225,15 @@ Deno.test("sandbox success detection", async (t) => {
     assertEquals(detectTestSuccess(output), false);
   });
 
-  await t.step("rejects: compilation successful without test mention (old behavior preserved for non-compile-success)", () => {
-    // Just "Compilation successful." without clear success indicators
-    // should now pass because hasCompileSuccess matches
-    const output = "Compilation successful.";
-    assertEquals(detectTestSuccess(output), true);
-  });
+  await t.step(
+    "rejects: compilation successful without test mention (old behavior preserved for non-compile-success)",
+    () => {
+      // Just "Compilation successful." without clear success indicators
+      // should now pass because hasCompileSuccess matches
+      const output = "Compilation successful.";
+      assertEquals(detectTestSuccess(output), true);
+    },
+  );
 
   await t.step("rejects: compilation failed", () => {
     const output = "Compilation failed with 3 errors";
