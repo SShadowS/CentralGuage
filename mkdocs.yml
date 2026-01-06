@@ -1,0 +1,81 @@
+site_name: CentralGauge
+site_description: Modern LLM benchmark for Microsoft Dynamics 365 Business Central AL code
+site_url: https://sshadows.github.io/CentralGuage/
+repo_url: https://github.com/SShadowS/CentralGuage
+repo_name: SShadowS/CentralGuage
+edit_uri: edit/master/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.action.edit
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Overview: overview.md
+      - Installation: installation.md
+      - Quick Start: quick-start.md
+  - User Guides:
+      - Running Benchmarks: guides/running-benchmarks.md
+      - Understanding Results: guides/understanding-results.md
+      - Configuration: guides/configuration.md
+      - Model Variants: guides/model-variants.md
+  - Task Authoring:
+      - Task Format: tasks/task-format.md
+      - Writing Tests: tasks/writing-tests.md
+      - Task Categories: tasks/categories.md
+      - Task Creation Guide: tasks/task-creation-prompt.md
+  - Architecture:
+      - System Overview: architecture/overview.md
+      - LLM Adapters: architecture/llm-adapters.md
+      - Container Providers: architecture/containers.md
+      - Agent System: architecture/agents.md
+  - CLI Reference:
+      - Commands: cli/commands.md
+      - bench: cli/bench.md
+      - report: cli/report.md
+      - config: cli/config.md
+      - rules: cli/rules.md
+  - API Reference:
+      - Module Index: api/index.md
+      - Core Types: api/types.md
+  - Contributing:
+      - Development Setup: contributing/development.md
+      - Testing Patterns: contributing/testing.md
+      - Code Style: contributing/style.md
