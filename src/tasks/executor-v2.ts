@@ -14,39 +14,21 @@ import type {
 import { TaskTransformer } from "./transformer.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { ContainerProviderRegistry } from "../container/registry.ts";
-import { TemplateRenderer } from "../templates/renderer.ts";
 import { ConfigManager } from "../config/config.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
-import { CodeExtractor } from "../llm/code-extractor.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
-import type { GenerationContext, LLMAdapter } from "../llm/types.ts";
+import type { LLMAdapter } from "../llm/types.ts";
 import type { CompilationResult, TestResult } from "../container/types.ts";
-import {
-  getRetryDelay,
-  isRetryableError,
-  LLMProviderError,
-  TaskExecutionError,
-} from "../errors.ts";
-import { PromptInjectionResolver } from "../prompts/mod.ts";
-import type { InjectionStage } from "../prompts/mod.ts";
 import { Logger } from "../logger/mod.ts";
-
-const log = Logger.create("task");
+import { PromptGenerator } from "./prompt-generator.ts";
+import { LLMCaller } from "./llm-caller.ts";
 import { findAllPrereqApps, type PrereqApp } from "./prereq-resolver.ts";
 
-export class TaskExecutorV2 {
-  private templateRenderer: TemplateRenderer | null = null;
+const log = Logger.create("task");
 
-  private async getTemplateRenderer(
-    _context: TaskExecutionContext,
-  ): Promise<TemplateRenderer> {
-    if (!this.templateRenderer) {
-      const config = await ConfigManager.loadConfig();
-      const templateDir = config.benchmark?.templateDir || "templates";
-      this.templateRenderer = new TemplateRenderer(templateDir);
-    }
-    return this.templateRenderer;
-  }
+export class TaskExecutorV2 {
+  private promptGenerator = new PromptGenerator();
+  private llmCaller = new LLMCaller();
 
   /**
    * Execute a task using the provided request
@@ -187,21 +169,29 @@ export class TaskExecutorV2 {
     });
 
     // Generate prompt with injection support
-    const { prompt, systemPrompt } = await this.generatePrompt(
+    const { prompt, systemPrompt } = await this.promptGenerator.generate(
+      context,
+      attemptNumber,
+      previousAttempts,
+    );
+
+    // Build generation context for LLM caller
+    const generationContext = this.promptGenerator.buildGenerationContext(
       context,
       attemptNumber,
       previousAttempts,
     );
 
     // Call LLM and extract code
-    const { codeResult, extractedCode, codeLanguage } = await this
-      .callLLMAndExtractCode(
+    const { codeResult, extractedCode, codeLanguage } = await this.llmCaller
+      .callAndExtractCode(
+        llmAdapter,
         context,
         attemptNumber,
         previousAttempts,
-        llmAdapter,
         prompt,
         systemPrompt,
+        generationContext,
       );
 
     // Compile and run tests
@@ -232,87 +222,6 @@ export class TaskExecutorV2 {
       evaluation,
       llmAdapter,
     );
-  }
-
-  /**
-   * Build generation context from previous attempts
-   */
-  private buildGenerationContext(
-    context: TaskExecutionContext,
-    attemptNumber: number,
-    previousAttempts: ExecutionAttempt[],
-  ): GenerationContext {
-    const lastAttempt = previousAttempts[previousAttempts.length - 1];
-    const previousCode = lastAttempt?.extractedCode;
-    const previousErrors = lastAttempt?.compilationResult?.errors.map(
-      (e) => `${e.file}:${e.line} - ${e.message}`,
-    );
-
-    return {
-      taskId: context.manifest.id,
-      attempt: attemptNumber,
-      description: context.instructions,
-      ...(previousCode !== undefined && { previousCode }),
-      ...(previousErrors !== undefined && { errors: previousErrors }),
-    };
-  }
-
-  /**
-   * Call LLM and extract code from response
-   */
-  private async callLLMAndExtractCode(
-    context: TaskExecutionContext,
-    attemptNumber: number,
-    previousAttempts: ExecutionAttempt[],
-    llmAdapter: LLMAdapter,
-    prompt: string,
-    systemPrompt?: string,
-    generationContext?: GenerationContext,
-  ): Promise<{
-    codeResult: Awaited<ReturnType<LLMAdapter["generateCode"]>>;
-    extractedCode: string;
-    codeLanguage: "al" | "diff";
-  }> {
-    const genContext = generationContext ??
-      this.buildGenerationContext(context, attemptNumber, previousAttempts);
-
-    // Build LLM request with optional system prompt
-    const llmRequest: { prompt: string; systemPrompt?: string } = { prompt };
-    if (systemPrompt) {
-      llmRequest.systemPrompt = systemPrompt;
-    }
-
-    // Call LLM with retry for transient errors
-    const codeResult = await this.callLLMWithRetry(
-      async () => {
-        return attemptNumber === 1
-          ? await llmAdapter.generateCode(llmRequest, genContext)
-          : await llmAdapter.generateFix(
-            previousAttempts[previousAttempts.length - 1]!.extractedCode,
-            genContext.errors || [],
-            llmRequest,
-            genContext,
-          );
-      },
-      context.llmProvider,
-      context.manifest.id,
-      attemptNumber,
-    );
-
-    // Extract code
-    const extraction = CodeExtractor.extract(
-      codeResult.response.content,
-      context.expectedOutput.type === "diff" ? "diff" : "al",
-    );
-    const codeLanguage: "al" | "diff" = extraction.language === "diff"
-      ? "diff"
-      : "al";
-    const extractedCode = CodeExtractor.cleanCode(
-      extraction.code,
-      codeLanguage,
-    );
-
-    return { codeResult, extractedCode, codeLanguage };
   }
 
   /**
@@ -352,72 +261,6 @@ export class TaskExecutorV2 {
     };
 
     return attempt;
-  }
-
-  /**
-   * Generate prompt for an attempt with prompt injection support
-   * Returns both the assembled prompt and optional system prompt
-   */
-  private async generatePrompt(
-    context: TaskExecutionContext,
-    attemptNumber: number,
-    previousAttempts: ExecutionAttempt[],
-  ): Promise<{ prompt: string; systemPrompt?: string }> {
-    // Determine the injection stage
-    const stage: InjectionStage = attemptNumber === 1 ? "generation" : "fix";
-
-    // Get global config for prompts
-    const globalConfig = await ConfigManager.loadConfig();
-
-    // Generate base prompt from templates
-    let basePrompt: string;
-    if (attemptNumber === 1) {
-      // First attempt - use prompt template
-      const renderer = await this.getTemplateRenderer(context);
-      basePrompt = await renderer.render(context.manifest.prompt_template, {
-        task_id: context.manifest.id,
-        description: context.manifest.description,
-        instructions: context.instructions,
-        expected_compile: context.manifest.expected.compile,
-        expected_test: context.manifest.expected.testApp || "",
-      });
-    } else {
-      // Subsequent attempts - use fix template
-      const previousAttempt = previousAttempts[previousAttempts.length - 1]!;
-      const errors = previousAttempt.compilationResult?.errors.map(
-        (e) => `${e.file}:${e.line} - ${e.message}`,
-      ).join("\n") || "";
-
-      const renderer = await this.getTemplateRenderer(context);
-      basePrompt = await renderer.render(context.manifest.fix_template, {
-        task_id: context.manifest.id,
-        description: context.manifest.description,
-        attempt: attemptNumber,
-        previous_code: previousAttempt.extractedCode,
-        errors: errors,
-        error_snippet: this.truncateErrors(errors, 2048),
-      });
-    }
-
-    // Apply prompt injection resolver
-    const applied = PromptInjectionResolver.resolveAndApply(
-      basePrompt,
-      globalConfig.prompts,
-      context.manifest.prompts,
-      context.promptOverrides,
-      context.llmProvider,
-      stage,
-    );
-
-    const result: { prompt: string; systemPrompt?: string } = {
-      prompt: applied.prompt,
-    };
-
-    if (applied.systemPrompt) {
-      result.systemPrompt = applied.systemPrompt;
-    }
-
-    return result;
   }
 
   /**
@@ -622,28 +465,6 @@ export class TaskExecutorV2 {
   }
 
   /**
-   * Truncate error messages for prompt
-   */
-  private truncateErrors(errors: string, maxLength: number): string {
-    if (errors.length <= maxLength) return errors;
-
-    const lines = errors.split("\n");
-    const truncated: string[] = [];
-    let currentLength = 0;
-
-    for (const line of lines) {
-      if (currentLength + line.length > maxLength) {
-        truncated.push("... (truncated)");
-        break;
-      }
-      truncated.push(line);
-      currentLength += line.length + 1;
-    }
-
-    return truncated.join("\n");
-  }
-
-  /**
    * Save execution results
    */
   private async saveResults(
@@ -700,55 +521,6 @@ export class TaskExecutorV2 {
     }
 
     log.info("Results saved", { path: outputDir });
-  }
-
-  /**
-   * Call LLM with retry logic for transient errors
-   */
-  private async callLLMWithRetry<T>(
-    fn: () => Promise<T>,
-    provider: string,
-    taskId: string,
-    attemptNumber: number,
-    maxRetries: number = 2,
-  ): Promise<T> {
-    let lastError: Error | undefined;
-
-    for (let retry = 0; retry <= maxRetries; retry++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (retry < maxRetries && isRetryableError(error)) {
-          const delayMs = getRetryDelay(error, 1000 * (retry + 1));
-          log.warn("LLM call failed, retrying", {
-            retry: retry + 1,
-            maxRetries,
-            error: lastError.message,
-            delayMs,
-          });
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-          continue;
-        }
-
-        // Non-retryable or max retries exceeded
-        throw new LLMProviderError(
-          `LLM call failed after ${retry + 1} attempt(s): ${lastError.message}`,
-          provider,
-          false,
-          undefined,
-          { taskId, attemptNumber, originalError: lastError.message },
-        );
-      }
-    }
-
-    // Should never reach here, but TypeScript needs this
-    throw new TaskExecutionError(
-      `LLM call failed: ${lastError?.message || "Unknown error"}`,
-      taskId,
-      attemptNumber,
-    );
   }
 
   /**

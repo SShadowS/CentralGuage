@@ -27,5 +27,11 @@ export { loadTaskManifest } from "./loader.ts";
 // Transformer
 export { TaskTransformer } from "./transformer.ts";
 
+// Prompt Generator
+export { type GeneratedPrompt, PromptGenerator } from "./prompt-generator.ts";
+
+// LLM Caller
+export { LLMCaller, type LLMCallResult } from "./llm-caller.ts";
+
 // Executor
 export { TaskExecutorV2 } from "./executor-v2.ts";
