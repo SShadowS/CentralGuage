@@ -172,7 +172,9 @@ async function applyMultiChangeFix(
   }
 
   if (beforeParts.length !== afterParts.length) {
-    log.error(`Mismatched change count: ${beforeParts.length} before vs ${afterParts.length} after`);
+    log.error(
+      `Mismatched change count: ${beforeParts.length} before vs ${afterParts.length} after`,
+    );
     return false;
   }
 
@@ -218,7 +220,11 @@ async function applyMultiChangeFix(
           log.debug(`Applied change ${i + 1} (exact match)`);
         }
       } else {
-        log.warn(`Could not find code for change ${i + 1}: "${beforePart.slice(0, 50)}..."`);
+        log.warn(
+          `Could not find code for change ${i + 1}: "${
+            beforePart.slice(0, 50)
+          }..."`,
+        );
       }
     }
   }

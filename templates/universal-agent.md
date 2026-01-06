@@ -93,6 +93,7 @@ Create ALL files directly in this directory (no subdirectories):
 5. Repeat until `success: true` OR you get a prereq-related error (then skip to Phase 3)
 
 {{#if REQUIRES_TESTS}}
+
 ### PHASE 3: Run Tests (MANDATORY)
 
 6. Once compilation succeeds, call `al_verify_task` with:
@@ -104,7 +105,7 @@ Create ALL files directly in this directory (no subdirectories):
    - Call `al_compile` to verify it compiles
    - Call `al_verify_task` again
 8. Repeat until `success: true` with "All tests passed!"
-{{/if}}
+   {{/if}}
 
 ---
 
@@ -121,9 +122,9 @@ Create ALL files directly in this directory (no subdirectories):
 - Only create files without calling `al_compile`
 - Compilation succeeds but you skip `al_verify_task`
 - Exit before receiving `success: true` from `al_verify_task`
-{{/if}}
-{{#unless REQUIRES_TESTS}}
-**Task is COMPLETE only when:**
+  {{/if}}
+  {{#unless REQUIRES_TESTS}}
+  **Task is COMPLETE only when:**
 
 - `al_compile` returns `{ "success": true }` with "Compilation successful"
 
@@ -131,7 +132,7 @@ Create ALL files directly in this directory (no subdirectories):
 
 - Only create files without calling `al_compile`
 - Exit before receiving `success: true` from `al_compile`
-{{/unless}}
+  {{/unless}}
 
 ---
 
@@ -142,9 +143,9 @@ Create ALL files directly in this directory (no subdirectories):
 You MUST call tools to complete this task:
 
 1. Call `al_compile` after creating/modifying files
-{{#if REQUIRES_TESTS}}
+   {{#if REQUIRES_TESTS}}
 2. Call `al_verify_task` after compilation succeeds
-{{/if}}
+   {{/if}}
 3. Iterate on errors until you get `success: true`
 
 Do NOT stop after creating files. The compile tool determines success.
@@ -168,6 +169,7 @@ When the task description mentions an **"existing"** object (table, enum, interf
 - Reference the existing object by its name/ID as described
 
 For example, if the task says "create a page based on the existing Product Category table (ID 69001)":
+
 - Create ONLY the page - the table is provided as a dependency
 - Your code should reference `SourceTable = "Product Category"` without creating the table itself
 - Initial `al_compile` may show "table not found" - this is expected for prereq objects
@@ -180,6 +182,7 @@ For example, if the task says "create a page based on the existing Product Categ
 When you complete the task (or if it fails), you MUST output this exact summary format at the end:
 
 {{#if REQUIRES_TESTS}}
+
 ```
 Compile: Success
 Tests: X/Y
@@ -187,19 +190,22 @@ Result: Pass
 ```
 
 Where:
+
 - `Compile:` is "Success" or "Failed"
 - `Tests:` is "passed/total" (e.g., "7/7" or "5/7")
 - `Result:` is "Pass" if compile succeeded AND all tests passed, otherwise "Fail"
-{{/if}}
-{{#unless REQUIRES_TESTS}}
+  {{/if}}
+  {{#unless REQUIRES_TESTS}}
+
 ```
 Compile: Success
 Result: Pass
 ```
 
 Where:
+
 - `Compile:` is "Success" or "Failed"
 - `Result:` is "Pass" if compile succeeded, otherwise "Fail"
-{{/unless}}
+  {{/unless}}
 
 **This format is machine-parsed. Output it exactly as shown.**

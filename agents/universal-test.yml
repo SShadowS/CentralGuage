@@ -33,7 +33,7 @@ mcpServers:
 
 limits:
   maxCompileAttempts: 10
-  timeoutMs: 600000  # 10 minutes - Claude Code buffers output in --print mode
+  timeoutMs: 600000 # 10 minutes - Claude Code buffers output in --print mode
 
 tags:
   - test
