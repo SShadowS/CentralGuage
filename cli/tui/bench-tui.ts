@@ -72,9 +72,9 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
       }`;
 
     case "compile_completed":
-      return `${crayon.magenta(`[${event.model}]`)} ${crayon.yellow("[Compile]")} ${
-        event.success ? crayon.green("OK") : crayon.red("FAIL")
-      }`;
+      return `${crayon.magenta(`[${event.model}]`)} ${
+        crayon.yellow("[Compile]")
+      } ${event.success ? crayon.green("OK") : crayon.red("FAIL")}`;
 
     case "result": {
       const variantId = event.result.context.variantId ||
@@ -103,9 +103,9 @@ export function formatEventLine(event: ParallelExecutionEvent): string | null {
     }
 
     case "error":
-      return `${
-        event.model ? crayon.magenta(`[${event.model}]`) + " " : ""
-      }${crayon.red("[FAIL]")} ${event.error.message}`;
+      return `${event.model ? crayon.magenta(`[${event.model}]`) + " " : ""}${
+        crayon.red("[FAIL]")
+      } ${event.error.message}`;
 
     // Skip noisy events - these are either too frequent or handled via progress
     case "llm_chunk":
@@ -244,6 +244,30 @@ export function createInitialState(): BenchTuiState {
 // =============================================================================
 
 /**
+ * Configuration for TUI setup
+ */
+export interface TuiSetupConfig {
+  /** Total number of tasks */
+  totalTasks: number;
+  /** Start time for elapsed tracking */
+  startTime: Date;
+  /** Header line to display (e.g., "[CentralGauge] LLM Benchmark Mode") */
+  headerLine: string;
+  /** Status lines to display after header (e.g., models, tasks, container) */
+  statusLines: string[];
+}
+
+/**
+ * Result of TUI setup
+ */
+export interface TuiSetupResult {
+  /** The BenchTui instance */
+  tui: BenchTui;
+  /** Function to restore original console.log (call in finally block) */
+  restore: () => void;
+}
+
+/**
  * Minimal TUI for benchmark progress
  * Layout: Scrollable log area + fixed status bar at bottom
  */
@@ -256,6 +280,85 @@ export class BenchTui {
   private isRunning = false;
   private startTime: number;
   private visibleRows: number;
+
+  /**
+   * Create and start a BenchTui with console.log interception
+   * Returns null if TUI is not supported (not a TTY, etc.)
+   *
+   * This is the preferred way to set up TUI - it handles all the boilerplate:
+   * - Checks if TUI is supported
+   * - Creates and starts the TUI
+   * - Sets up initial progress
+   * - Adds header and status lines
+   * - Intercepts console.log
+   *
+   * @example
+   * ```ts
+   * const setup = BenchTui.setup({
+   *   totalTasks: taskCount,
+   *   startTime: new Date(),
+   *   headerLine: "[CentralGauge] LLM Benchmark Mode",
+   *   statusLines: [
+   *     `Models: ${options.llms.join(", ")}`,
+   *     `Tasks: ${taskManifests.length} task(s)`,
+   *     `Container: ${containerName}`,
+   *   ],
+   * });
+   *
+   * if (!setup) {
+   *   log.warn("TUI mode requires a terminal. Falling back to console output.");
+   * } else {
+   *   try {
+   *     // ... run benchmark, TUI will display progress
+   *   } finally {
+   *     setup.restore(); // Restores console.log
+   *     setup.tui.destroy();
+   *   }
+   * }
+   * ```
+   */
+  static setup(config: TuiSetupConfig): TuiSetupResult | null {
+    if (!isTuiSupported()) {
+      return null;
+    }
+
+    const tui = new BenchTui();
+    tui.start();
+
+    // Set initial progress
+    tui.updateProgress({
+      completedTasks: 0,
+      totalTasks: config.totalTasks,
+      activeLLMCalls: 0,
+      compileQueueLength: 0,
+      errors: [],
+      startTime: config.startTime,
+      elapsedTime: 0,
+    });
+
+    // Add header and status lines
+    tui.addLine(config.headerLine);
+    for (const line of config.statusLines) {
+      tui.addLine(line);
+    }
+    tui.addLine(""); // Blank line separator
+
+    // Intercept console.log to route through TUI
+    const originalConsoleLog = console.log;
+    console.log = (...args: unknown[]) => {
+      const line = args.map((a) =>
+        typeof a === "string" ? a : JSON.stringify(a)
+      ).join(" ");
+      tui.addLine(line);
+    };
+
+    // Return restore function
+    const restore = () => {
+      console.log = originalConsoleLog;
+    };
+
+    return { tui, restore };
+  }
 
   constructor() {
     this.startTime = Date.now();
