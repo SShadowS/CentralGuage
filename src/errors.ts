@@ -253,6 +253,77 @@ export class NotImplementedError extends CentralGaugeError {
 }
 
 /**
+ * Individual model validation failure
+ */
+export interface ModelValidationFailure {
+  /** Original spec string that failed validation */
+  originalSpec: string;
+  /** Resolved provider (if any) */
+  provider?: string;
+  /** Resolved model (if any) */
+  model?: string;
+  /** Error message */
+  error: string;
+  /** Suggested similar models */
+  suggestions?: string[];
+  /** All available models for the provider */
+  availableModels?: string[];
+}
+
+/**
+ * Error when model specification validation fails
+ */
+export class ModelValidationError extends CentralGaugeError {
+  constructor(
+    message: string,
+    public readonly failures: ModelValidationFailure[],
+    context?: Record<string, unknown>,
+  ) {
+    super(message, "MODEL_VALIDATION_ERROR", {
+      failures,
+      failedCount: failures.length,
+      ...context,
+    });
+    this.name = "ModelValidationError";
+  }
+
+  /**
+   * Format a user-friendly error message with all failures
+   */
+  formatMessage(): string {
+    const lines: string[] = [
+      "Error: Invalid model specification(s)\n",
+    ];
+
+    for (const failure of this.failures) {
+      lines.push(`  ${failure.originalSpec}`);
+      lines.push(`  └─ ${failure.error}`);
+
+      if (failure.suggestions && failure.suggestions.length > 0) {
+        lines.push(`     Did you mean: ${failure.suggestions.join(", ")}?`);
+      }
+
+      if (failure.availableModels && failure.availableModels.length > 0) {
+        const modelList = failure.availableModels.length > 8
+          ? failure.availableModels.slice(0, 8).join(", ") + ", ..."
+          : failure.availableModels.join(", ");
+        lines.push(
+          `     Available ${
+            failure.provider || "unknown"
+          } models: ${modelList}`,
+        );
+      }
+
+      lines.push("");
+    }
+
+    lines.push("Use --list-models to see all available models.");
+
+    return lines.join("\n");
+  }
+}
+
+/**
  * Check if an error is retryable (rate limits, transient network issues)
  */
 export function isRetryableError(error: unknown): boolean {

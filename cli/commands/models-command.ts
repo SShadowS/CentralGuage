@@ -72,6 +72,64 @@ function displayProviders(): void {
   });
 }
 
+function displayProviderModels(provider: string): void {
+  const providers = LLMAdapterRegistry.list();
+
+  if (!providers.includes(provider)) {
+    console.log(`Unknown provider: ${provider}`);
+    console.log(`\nAvailable providers: ${providers.join(", ")}`);
+    return;
+  }
+
+  const supportedModels = LLMAdapterRegistry.listModelsForProvider(provider);
+
+  console.log(`Models for ${provider} provider:\n`);
+
+  if (supportedModels.length === 0) {
+    console.log("   No models found");
+    return;
+  }
+
+  // Find matching presets for each model
+  const modelDetails = supportedModels.map((model) => {
+    // Find presets that match this provider and model prefix
+    const matchingPreset = Object.values(MODEL_PRESETS).find(
+      (p) => p.provider === provider && p.model.startsWith(model),
+    );
+    return { model, preset: matchingPreset };
+  });
+
+  // Display models
+  modelDetails.forEach(({ model, preset }) => {
+    if (preset) {
+      console.log(`   ${model.padEnd(24)} (alias: ${preset.alias})`);
+    } else {
+      console.log(`   ${model}`);
+    }
+  });
+
+  // Show aliases for this provider
+  const providerPresets = Object.values(MODEL_PRESETS).filter(
+    (p) => p.provider === provider,
+  );
+
+  if (providerPresets.length > 0) {
+    console.log(`\nAliases for ${provider}:`);
+    providerPresets.forEach((p) => {
+      console.log(`   ${p.alias.padEnd(16)} -> ${p.model}`);
+      console.log(`   ${"".padEnd(16)}    ${p.description}`);
+    });
+  }
+
+  console.log(`\nUsage:`);
+  console.log(`   centralgauge bench --llms ${provider}/${supportedModels[0]}`);
+  if (providerPresets.length > 0) {
+    console.log(
+      `   centralgauge bench --llms ${providerPresets[0]?.alias}  (using alias)`,
+    );
+  }
+}
+
 function testModelSpecParsing(testSpecs: string[]): void {
   console.log("\nTesting Model Spec Parsing:");
   testSpecs.forEach((spec) => {
@@ -153,7 +211,15 @@ function handleModelsList(testSpecs?: string[]): void {
 
 export function registerModelsCommand(cli: Command): void {
   cli.command("models [...specs]", "List supported models and test parsing")
-    .action((_options, ...specs: string[]) => {
-      handleModelsList(specs.length > 0 ? specs : undefined);
+    .option(
+      "-p, --provider <provider:string>",
+      "Show all models for a specific provider (e.g., openai, anthropic)",
+    )
+    .action((options, ...specs: string[]) => {
+      if (options.provider) {
+        displayProviderModels(options.provider);
+      } else {
+        handleModelsList(specs.length > 0 ? specs : undefined);
+      }
     });
 }

@@ -9,7 +9,12 @@ import { SplashScreen } from "../../../src/utils/splash-screen.ts";
 import { DebugLogger } from "../../../src/utils/debug-logger.ts";
 import { ConfigManager } from "../../../src/config/config.ts";
 import { ModelPresetRegistry } from "../../../src/llm/model-presets.ts";
+import { LLMAdapterRegistry } from "../../../src/llm/registry.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
+import {
+  ModelValidationError,
+  type ModelValidationFailure,
+} from "../../../src/errors.ts";
 import { getVariantDisplayName } from "../../../src/llm/variant-parser.ts";
 import type {
   TaskExecutionResult,
@@ -135,6 +140,9 @@ export async function executeParallelBenchmark(
       options.llms,
       appConfig,
     );
+
+    // Validate all resolved models before starting
+    validateModels(variants, options.llms);
 
     log.info(
       `Running with ${variants.length} model variant(s): ${
@@ -643,4 +651,103 @@ export function buildParallelOptions(
     parallelOptions.promptOverrides = options.promptOverrides;
   }
   return parallelOptions;
+}
+
+/**
+ * Validate all resolved model variants before benchmark execution.
+ * Throws ModelValidationError if any models are invalid.
+ * @param variants - Resolved model variants
+ * @param originalSpecs - Original model spec strings from CLI
+ */
+function validateModels(
+  variants: ModelVariant[],
+  originalSpecs: string[],
+): void {
+  const failures: ModelValidationFailure[] = [];
+
+  // Build a map from variantId/model to original spec for error messages
+  const specMap = new Map<string, string>();
+  for (let i = 0; i < variants.length; i++) {
+    const variant = variants[i];
+    if (!variant) continue;
+    const spec = originalSpecs[i] || variant.originalSpec;
+    // Map both provider/model and variantId to original spec
+    specMap.set(`${variant.provider}/${variant.model}`, spec);
+    specMap.set(variant.variantId, spec);
+  }
+
+  for (const variant of variants) {
+    const result = LLMAdapterRegistry.validateModel(
+      variant.provider,
+      variant.model,
+    );
+
+    if (!result.valid) {
+      const originalSpec =
+        specMap.get(`${variant.provider}/${variant.model}`) ||
+        specMap.get(variant.variantId) ||
+        variant.originalSpec;
+
+      const failure: ModelValidationFailure = {
+        originalSpec,
+        provider: variant.provider,
+        model: variant.model,
+        error: result.error || `Unknown validation error`,
+      };
+
+      if (result.suggestions) {
+        failure.suggestions = result.suggestions;
+      }
+      if (result.availableModels) {
+        failure.availableModels = result.availableModels;
+      }
+
+      failures.push(failure);
+    }
+  }
+
+  if (failures.length > 0) {
+    const error = new ModelValidationError(
+      `${failures.length} invalid model specification(s)`,
+      failures,
+    );
+
+    // Print formatted error message
+    console.log("");
+    console.log(
+      colors.red(colors.bold("Error: Invalid model specification(s)")),
+    );
+    console.log("");
+
+    for (const failure of failures) {
+      console.log(colors.white(`  ${failure.originalSpec}`));
+      console.log(colors.red(`  └─ ${failure.error}`));
+
+      if (failure.suggestions && failure.suggestions.length > 0) {
+        console.log(
+          colors.yellow(
+            `     Did you mean: ${failure.suggestions.join(", ")}?`,
+          ),
+        );
+      }
+
+      if (failure.availableModels && failure.availableModels.length > 0) {
+        const modelList = failure.availableModels.length > 8
+          ? failure.availableModels.slice(0, 8).join(", ") + ", ..."
+          : failure.availableModels.join(", ");
+        console.log(
+          colors.dim(
+            `     Available ${failure.provider} models: ${modelList}`,
+          ),
+        );
+      }
+
+      console.log("");
+    }
+
+    console.log(colors.dim("Use --list-models to see all available models."));
+    console.log("");
+
+    throw error;
+  }
 }

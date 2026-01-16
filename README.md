@@ -27,6 +27,7 @@ CentralGauge evaluates large language models on their ability to generate, debug
 - **Rich reporting** - JSON data + beautiful HTML reports
 - **Model agnostic** - Works with OpenAI, Anthropic, Google, Azure, OpenRouter, and local LLMs
 - **Model variants** - Compare same model with different temperatures/prompts
+- **Early validation** - Invalid models are detected before benchmark starts with helpful suggestions
 - **Debug logging** - Capture raw LLM requests/responses for analysis
 - **Historical stats** - SQLite persistence for tracking results, regressions, and costs over time
 - **Fast & deterministic** - Consistent results across identical runs
@@ -83,6 +84,7 @@ deno task bench --llms opus,gpt-5.2 --tasks tasks/*.yml --sequential
 # Configuration
 deno run --allow-all cli/centralgauge.ts config init           # Create config file
 deno run --allow-all cli/centralgauge.ts models               # List all models
+deno run --allow-all cli/centralgauge.ts models --provider openai  # List models for a provider
 deno run --allow-all cli/centralgauge.ts models flagship      # Test model resolution
 
 # HTML Reports
@@ -393,6 +395,44 @@ Stats are stored in `results/centralgauge.db` by default. Use `--db <path>` to s
 | Azure OpenAI   | `AZURE_OPENAI_API_KEY` | `azure/gpt-5.2`                        |
 | OpenRouter     | `OPENROUTER_API_KEY`   | `openrouter/anthropic/claude-4.5-opus` |
 | Local (Ollama) | -                      | `local/codellama`                      |
+
+### Listing Available Models
+
+View all models supported by a specific provider:
+
+```bash
+# List all OpenAI models
+deno task start models --provider openai
+
+# List all Anthropic models
+deno task start models --provider anthropic
+
+# List all available providers and models
+deno task start models
+```
+
+The `--provider` output shows:
+
+- Base models supported by the adapter
+- Aliases that map to full model names
+- Usage examples
+
+### Model Validation
+
+Invalid models are detected before benchmarks start:
+
+```bash
+$ deno task bench --llms "openai/gpt-99-nonexistent"
+
+Error: Invalid model specification(s)
+
+  openai/gpt-99-nonexistent
+  └─ Model 'gpt-99-nonexistent' not supported by openai provider
+     Did you mean: gpt-4o, gpt-5.2, gpt-5-pro?
+     Available openai models: gpt-5.1, gpt-5.2, gpt-5-pro, gpt-4o, ...
+
+Use --list-models to see all available models.
+```
 
 ## Contributing
 

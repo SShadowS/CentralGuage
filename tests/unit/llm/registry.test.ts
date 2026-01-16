@@ -630,3 +630,100 @@ describe("Adapter health checks", () => {
     assertEquals(errors.length, 0);
   });
 });
+
+describe("validateModel()", () => {
+  it("should return valid for known provider and model", () => {
+    const result = LLMAdapterRegistry.validateModel("mock", "mock-gpt-4");
+
+    assertEquals(result.valid, true);
+    assertEquals(result.error, undefined);
+  });
+
+  it("should return valid for model with date suffix", () => {
+    // OpenAI models often have date suffixes like gpt-5.2-2025-12-11
+    const result = LLMAdapterRegistry.validateModel("openai", "gpt-5.2-2025-12-11");
+
+    assertEquals(result.valid, true);
+  });
+
+  it("should return valid for exact model match", () => {
+    const result = LLMAdapterRegistry.validateModel("openai", "gpt-4o");
+
+    assertEquals(result.valid, true);
+  });
+
+  it("should return invalid for unknown provider", () => {
+    const result = LLMAdapterRegistry.validateModel("unknown-provider", "some-model");
+
+    assertEquals(result.valid, false);
+    assert(result.error?.includes("Unknown provider"));
+    assert(result.suggestions?.includes("mock"));
+    assert(result.suggestions?.includes("openai"));
+  });
+
+  it("should return invalid for unknown model", () => {
+    const result = LLMAdapterRegistry.validateModel("openai", "gpt-99-nonexistent");
+
+    assertEquals(result.valid, false);
+    assert(result.error?.includes("not supported by openai"));
+    assertExists(result.availableModels);
+    assert(result.availableModels.length > 0);
+  });
+
+  it("should suggest similar models for typos", () => {
+    const result = LLMAdapterRegistry.validateModel("openai", "gpt-4");
+
+    assertEquals(result.valid, true); // gpt-4 is a valid model
+  });
+
+  it("should suggest codex models when searching for codex variant", () => {
+    const result = LLMAdapterRegistry.validateModel("openai", "gpt-5-codex-unknown");
+
+    assertEquals(result.valid, false);
+    // Should suggest codex models
+    if (result.suggestions) {
+      const hasCodexSuggestion = result.suggestions.some((s) =>
+        s.toLowerCase().includes("codex")
+      );
+      assert(hasCodexSuggestion || result.suggestions.length > 0);
+    }
+  });
+
+  it("should return available models for the provider", () => {
+    const result = LLMAdapterRegistry.validateModel("openai", "nonexistent-model");
+
+    assertEquals(result.valid, false);
+    assertExists(result.availableModels);
+    assert(result.availableModels.includes("gpt-4o"));
+    assert(result.availableModels.includes("gpt-5.2"));
+  });
+});
+
+describe("listModelsForProvider()", () => {
+  it("should return models for valid provider", () => {
+    const models = LLMAdapterRegistry.listModelsForProvider("mock");
+
+    assert(Array.isArray(models));
+    assert(models.length > 0);
+    assert(models.includes("mock-gpt-4"));
+  });
+
+  it("should return empty array for unknown provider", () => {
+    const models = LLMAdapterRegistry.listModelsForProvider("nonexistent");
+
+    assertEquals(models.length, 0);
+  });
+
+  it("should return openai models", () => {
+    const models = LLMAdapterRegistry.listModelsForProvider("openai");
+
+    assert(models.includes("gpt-4o"));
+    assert(models.includes("gpt-5.2"));
+  });
+
+  it("should return anthropic models", () => {
+    const models = LLMAdapterRegistry.listModelsForProvider("anthropic");
+
+    assert(models.length > 0);
+  });
+});

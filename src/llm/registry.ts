@@ -201,4 +201,124 @@ export class LLMAdapterRegistry {
     }
     return result;
   }
+
+  /**
+   * Validate a model specification against the adapter's supported models.
+   * Models match if they exactly match or start with a supported model prefix.
+   * @param provider - The provider name (e.g., "openai", "anthropic")
+   * @param model - The model ID (e.g., "gpt-5.2-2025-12-11")
+   * @returns Validation result with error message and suggestions if invalid
+   */
+  static validateModel(
+    provider: string,
+    model: string,
+  ): {
+    valid: boolean;
+    error?: string;
+    suggestions?: string[];
+    availableModels?: string[];
+  } {
+    // Check if provider exists
+    if (!this.isAvailable(provider)) {
+      return {
+        valid: false,
+        error: `Unknown provider '${provider}'`,
+        suggestions: this.list(),
+      };
+    }
+
+    const supportedModels = this.getSupportedModels(provider);
+
+    // Check exact match or prefix match
+    const isValid = supportedModels.some(
+      (supported) =>
+        model === supported || model.startsWith(supported + "-") ||
+        model.startsWith(supported),
+    );
+
+    if (isValid) {
+      return { valid: true };
+    }
+
+    // Find similar models for suggestions
+    const suggestions = this.findSimilarModels(model, supportedModels);
+
+    const result: {
+      valid: boolean;
+      error?: string;
+      suggestions?: string[];
+      availableModels?: string[];
+    } = {
+      valid: false,
+      error: `Model '${model}' not supported by ${provider} provider`,
+      availableModels: supportedModels,
+    };
+
+    if (suggestions.length > 0) {
+      result.suggestions = suggestions;
+    }
+
+    return result;
+  }
+
+  /**
+   * Find similar models using simple string matching
+   */
+  private static findSimilarModels(
+    target: string,
+    candidates: string[],
+  ): string[] {
+    const targetLower = target.toLowerCase();
+    const suggestions: Array<{ model: string; score: number }> = [];
+
+    for (const candidate of candidates) {
+      const candidateLower = candidate.toLowerCase();
+      let score = 0;
+
+      // Exact prefix match
+      if (targetLower.startsWith(candidateLower)) {
+        score += 50;
+      }
+      // Reverse prefix match
+      if (candidateLower.startsWith(targetLower)) {
+        score += 40;
+      }
+      // Contains match
+      if (targetLower.includes(candidateLower)) {
+        score += 30;
+      }
+      if (candidateLower.includes(targetLower)) {
+        score += 25;
+      }
+      // Check for common substrings (e.g., "gpt", "claude", "codex")
+      const targetParts = targetLower.split(/[-_./]/);
+      const candidateParts = candidateLower.split(/[-_./]/);
+      for (const part of targetParts) {
+        if (
+          part.length >= 3 && candidateParts.some((cp) => cp.includes(part))
+        ) {
+          score += 10;
+        }
+      }
+
+      if (score > 0) {
+        suggestions.push({ model: candidate, score });
+      }
+    }
+
+    // Sort by score descending and return top 3
+    return suggestions
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3)
+      .map((s) => s.model);
+  }
+
+  /**
+   * List all models for a specific provider
+   * @param provider - The provider name
+   * @returns Array of supported model names, or empty array if provider not found
+   */
+  static listModelsForProvider(provider: string): string[] {
+    return this.getSupportedModels(provider);
+  }
 }
