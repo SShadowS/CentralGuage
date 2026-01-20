@@ -2,12 +2,27 @@
  * Unit tests for Agent Cost Tracker
  */
 
-import { beforeEach, describe, it } from "@std/testing/bdd";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  it,
+} from "@std/testing/bdd";
 import { assertEquals, assertExists } from "@std/assert";
 import { CostTracker } from "../../../src/agents/cost-tracker.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
 
 describe("CostTracker", () => {
   let tracker: CostTracker;
+
+  beforeAll(async () => {
+    await PricingService.initialize();
+  });
+
+  afterAll(() => {
+    PricingService.reset();
+  });
 
   beforeEach(() => {
     tracker = new CostTracker();
@@ -298,10 +313,11 @@ describe("CostTracker", () => {
 
       const metrics = opusTracker.getMetrics();
 
-      // Opus: $15/MTok input + $75/MTok output
-      // 1000 tokens = 0.001 MTok
-      // Cost = 0.001 * 15 + 0.001 * 75 = 0.015 + 0.075 = 0.09
-      assertEquals(metrics.estimatedCost, 0.09);
+      // Opus 4.5: $5/MTok input + $25/MTok output (0.005 + 0.025 per 1K)
+      // 1000 tokens = 1K
+      // Cost = 1 * 0.005 + 1 * 0.025 = 0.03
+      // Use toFixed to handle floating point precision
+      assertEquals(metrics.estimatedCost.toFixed(4), "0.0300");
     });
 
     it("should use Claude Haiku costs correctly", () => {

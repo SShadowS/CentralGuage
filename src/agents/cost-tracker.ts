@@ -7,23 +7,7 @@
 
 import type { TokenUsage } from "../llm/types.ts";
 import type { AgentCostMetrics, AgentTurn, ToolCallRecord } from "./types.ts";
-
-/**
- * Default cost per 1K tokens (fallback when model costs unknown)
- */
-const DEFAULT_COSTS = {
-  input: 0.003, // $3/MTok
-  output: 0.015, // $15/MTok
-};
-
-/**
- * Model-specific costs per 1K tokens
- */
-const MODEL_COSTS: Record<string, { input: number; output: number }> = {
-  "claude-sonnet-4-5-20250929": { input: 0.003, output: 0.015 },
-  "claude-opus-4-5-20251101": { input: 0.015, output: 0.075 },
-  "claude-haiku-3-5-20250514": { input: 0.0008, output: 0.004 },
-};
+import { PricingService } from "../llm/pricing-service.ts";
 
 /**
  * Tracks costs and metrics during agent execution
@@ -152,10 +136,12 @@ export class CostTracker {
    * Estimate cost based on token usage
    */
   private estimateCost(): number {
-    const costs = MODEL_COSTS[this._model] ?? DEFAULT_COSTS;
-    return (
-      (this._promptTokens / 1000) * costs.input +
-      (this._completionTokens / 1000) * costs.output
+    // For agent execution, use "anthropic" as the provider since agents use Claude
+    return PricingService.estimateCostSync(
+      "anthropic",
+      this._model,
+      this._promptTokens,
+      this._completionTokens,
     );
   }
 

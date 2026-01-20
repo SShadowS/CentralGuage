@@ -173,11 +173,14 @@ Deno.test("detectSuccess (unified)", async (t) => {
     assertEquals(result.detectionMethod, "test_patterns");
   });
 
-  await t.step("falls back to compile patterns when requiresTests=false", () => {
-    const result = detectSuccess("Compilation successful", false);
-    assertEquals(result.success, true);
-    assertEquals(result.detectionMethod, "compile_patterns");
-  });
+  await t.step(
+    "falls back to compile patterns when requiresTests=false",
+    () => {
+      const result = detectSuccess("Compilation successful", false);
+      assertEquals(result.success, true);
+      assertEquals(result.detectionMethod, "compile_patterns");
+    },
+  );
 
   await t.step("returns none when no patterns match", () => {
     const result = detectSuccess("Some random output", true);
@@ -186,7 +189,10 @@ Deno.test("detectSuccess (unified)", async (t) => {
   });
 
   await t.step("includes compileSuccess in result", () => {
-    const result = detectSuccess("Compilation successful\nAll tests passed", true);
+    const result = detectSuccess(
+      "Compilation successful\nAll tests passed",
+      true,
+    );
     assertEquals(result.compileSuccess, true);
   });
 
