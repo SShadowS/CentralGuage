@@ -43,6 +43,10 @@ export function generateHtmlTemplate(params: HtmlTemplateParams): string {
     <header>
       <h1>CentralGauge</h1>
       <p>LLM Benchmark Results for Microsoft Dynamics 365 Business Central AL Code</p>
+      <nav class="header-links">
+        <a href="https://github.com/SShadowS/CentralGuage" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://blog.sshadows.dk/" target="_blank" rel="noopener">Blog</a>
+      </nav>
       <p class="report-date">Report generated: ${params.generatedDate}</p>
     </header>
 
@@ -150,6 +154,10 @@ export function generateModelDetailPage(
   <script>${THEME_TOGGLE_SCRIPT}</script>
   <main class="container">
     <a href="index.html" class="back-link">&larr; Back to Benchmark Results</a>
+    <nav class="header-links">
+      <a href="https://github.com/SShadowS/CentralGuage" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://blog.sshadows.dk/" target="_blank" rel="noopener">Blog</a>
+    </nav>
 
     <div class="model-header">
       <h1>${escapeHtml(variantId)}</h1>

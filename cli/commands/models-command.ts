@@ -3,6 +3,7 @@
  * @module cli/commands/models
  */
 
+import * as colors from "@std/fmt/colors";
 import { Command } from "@cliffy/command";
 import {
   MODEL_PRESETS,
@@ -10,6 +11,8 @@ import {
   ModelPresetRegistry,
 } from "../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../src/llm/registry.ts";
+import type { CacheStats, DiscoveryResult } from "../../src/llm/mod.ts";
+import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
 
 /** Category display configuration */
@@ -63,16 +66,12 @@ function displayProviders(): void {
   console.log("\nAvailable Providers:");
   const providers = LLMAdapterRegistry.list();
   providers.forEach((provider) => {
-    const supportedModels = LLMAdapterRegistry.getSupportedModels(provider);
-    console.log(
-      `   ${provider}: ${supportedModels.slice(0, 3).join(", ")}${
-        supportedModels.length > 3 ? "..." : ""
-      }`,
-    );
+    console.log(`   ${provider}`);
   });
+  console.log(colors.dim("\n   Use --provider <name> --live to list models"));
 }
 
-function displayProviderModels(provider: string): void {
+function displayProviderModelsNotice(provider: string): void {
   const providers = LLMAdapterRegistry.list();
 
   if (!providers.includes(provider)) {
@@ -81,32 +80,125 @@ function displayProviderModels(provider: string): void {
     return;
   }
 
-  const supportedModels = LLMAdapterRegistry.listModelsForProvider(provider);
-
   console.log(`Models for ${provider} provider:\n`);
+  console.log(
+    colors.yellow(
+      "   Model lists are now fetched from provider APIs.\n" +
+        "   Use --live to fetch live models:\n",
+    ),
+  );
+  console.log(`   centralgauge models --provider ${provider} --live\n`);
 
-  if (supportedModels.length === 0) {
-    console.log("   No models found");
+  // Show aliases for this provider (these are known statically)
+  const providerPresets = Object.values(MODEL_PRESETS).filter(
+    (p) => p.provider === provider,
+  );
+
+  if (providerPresets.length > 0) {
+    console.log(`Known aliases for ${provider}:`);
+    providerPresets.forEach((p) => {
+      console.log(`   ${p.alias.padEnd(16)} -> ${p.model}`);
+      console.log(`   ${"".padEnd(16)}    ${p.description}`);
+    });
+  }
+
+  console.log(`\nUsage:`);
+  console.log(
+    `   centralgauge bench --llms ${provider}/<model-id>  (use --live to see available models)`,
+  );
+  if (providerPresets.length > 0) {
+    console.log(
+      `   centralgauge bench --llms ${
+        providerPresets[0]?.alias
+      }  (using alias)`,
+    );
+  }
+}
+
+/**
+ * Display provider models with dynamic discovery
+ */
+async function displayProviderModelsLive(
+  provider: string,
+  forceRefresh: boolean,
+): Promise<void> {
+  const providers = LLMAdapterRegistry.list();
+
+  if (!providers.includes(provider)) {
+    console.log(`Unknown provider: ${provider}`);
+    console.log(`\nAvailable providers: ${providers.join(", ")}`);
     return;
   }
 
-  // Find matching presets for each model
-  const modelDetails = supportedModels.map((model) => {
-    // Find presets that match this provider and model prefix
-    const matchingPreset = Object.values(MODEL_PRESETS).find(
-      (p) => p.provider === provider && p.model.startsWith(model),
-    );
-    return { model, preset: matchingPreset };
-  });
+  console.log(
+    `${colors.cyan("[Discovering]")} Models for ${provider} provider...\n`,
+  );
+
+  // Load environment to get API keys
+  await EnvLoader.loadEnvironment();
+
+  // Get appropriate API key from environment
+  const apiKeyEnvMap: Record<string, string> = {
+    openai: "OPENAI_API_KEY",
+    anthropic: "ANTHROPIC_API_KEY",
+    gemini: "GOOGLE_API_KEY",
+    "azure-openai": "AZURE_OPENAI_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
+  };
+
+  const envKey = apiKeyEnvMap[provider];
+  const apiKey = envKey ? Deno.env.get(envKey) : undefined;
+
+  const result = await LLMAdapterRegistry.discoverModels(
+    provider,
+    apiKey ? { provider, model: "", apiKey } : undefined,
+    { forceRefresh, skipCache: forceRefresh },
+  );
+
+  displayDiscoveryResult(provider, result);
+}
+
+/**
+ * Display discovery result
+ */
+function displayDiscoveryResult(
+  provider: string,
+  result: DiscoveryResult,
+): void {
+  const sourceLabel = result.source === "api"
+    ? colors.green("[API]")
+    : colors.yellow("[Cache]");
+
+  console.log(`Models for ${provider} provider ${sourceLabel}:\n`);
+
+  if (result.models.length === 0) {
+    console.log("   No models found");
+    if (result.error) {
+      console.log(colors.red(`   Error: ${result.error}`));
+    }
+    return;
+  }
 
   // Display models
-  modelDetails.forEach(({ model, preset }) => {
-    if (preset) {
-      console.log(`   ${model.padEnd(24)} (alias: ${preset.alias})`);
-    } else {
-      console.log(`   ${model}`);
-    }
+  result.discoveredModels.forEach((model) => {
+    const name = model.name && model.name !== model.id
+      ? ` (${model.name})`
+      : "";
+    console.log(`   ${model.id}${colors.dim(name)}`);
   });
+
+  console.log(
+    `\n${
+      colors.dim(
+        `Total: ${result.models.length} models (source: ${result.source})`,
+      )
+    }`,
+  );
+
+  if (result.fetchedAt) {
+    const fetchedDate = new Date(result.fetchedAt);
+    console.log(colors.dim(`Fetched: ${fetchedDate.toLocaleString()}`));
+  }
 
   // Show aliases for this provider
   const providerPresets = Object.values(MODEL_PRESETS).filter(
@@ -117,15 +209,57 @@ function displayProviderModels(provider: string): void {
     console.log(`\nAliases for ${provider}:`);
     providerPresets.forEach((p) => {
       console.log(`   ${p.alias.padEnd(16)} -> ${p.model}`);
-      console.log(`   ${"".padEnd(16)}    ${p.description}`);
     });
   }
 
   console.log(`\nUsage:`);
-  console.log(`   centralgauge bench --llms ${provider}/${supportedModels[0]}`);
-  if (providerPresets.length > 0) {
+  console.log(`   centralgauge bench --llms ${provider}/${result.models[0]}`);
+}
+
+/**
+ * Display cache statistics
+ */
+function displayCacheStats(stats: CacheStats): void {
+  console.log("Model Discovery Cache Statistics\n");
+
+  console.log(`Total providers cached: ${stats.totalProviders}`);
+  console.log(`  Valid: ${colors.green(String(stats.validCacheCount))}`);
+  console.log(`  Expired: ${colors.yellow(String(stats.expiredCacheCount))}`);
+
+  if (Object.keys(stats.providers).length > 0) {
+    console.log("\nPer-provider details:");
+
+    for (const [provider, info] of Object.entries(stats.providers)) {
+      const statusIcon = info.valid
+        ? colors.green("[Valid]")
+        : colors.yellow("[Expired]");
+      const sourceLabel = info.source === "api"
+        ? colors.green("API")
+        : colors.dim("Static");
+
+      console.log(`\n  ${provider}:`);
+      console.log(`    Status: ${statusIcon}`);
+      console.log(`    Source: ${sourceLabel}`);
+      console.log(`    Models: ${info.modelCount}`);
+
+      if (info.fetchedAt) {
+        const fetchedDate = new Date(info.fetchedAt);
+        console.log(`    Fetched: ${fetchedDate.toLocaleString()}`);
+      }
+
+      if (info.ttlMs !== undefined) {
+        const ttlHours = (info.ttlMs / (1000 * 60 * 60)).toFixed(1);
+        const ttlLabel = info.ttlMs > 0
+          ? colors.dim(`${ttlHours}h remaining`)
+          : colors.yellow("expired");
+        console.log(`    TTL: ${ttlLabel}`);
+      }
+    }
+  } else {
     console.log(
-      `   centralgauge bench --llms ${providerPresets[0]?.alias}  (using alias)`,
+      colors.dim(
+        "\nNo cached providers. Use --provider with --live to populate cache.",
+      ),
     );
   }
 }
@@ -198,6 +332,14 @@ function handleModelsList(testSpecs?: string[]): void {
     testModelSpecParsing(testSpecs);
   }
 
+  console.log("\nDynamic Discovery:");
+  console.log("   # Discover live models from provider APIs");
+  console.log("   centralgauge models --provider openrouter --live");
+  console.log("   \n   # Force refresh cached models");
+  console.log("   centralgauge models --provider openai --refresh");
+  console.log("   \n   # View cache statistics");
+  console.log("   centralgauge models --cache-stats");
+
   console.log("\nPro Tips:");
   console.log(
     "   - Use aliases like 'sonnet' instead of 'anthropic/claude-3-5-sonnet-20241022'",
@@ -207,6 +349,9 @@ function handleModelsList(testSpecs?: string[]): void {
   );
   console.log("   - Mix aliases, groups, and provider/model formats freely");
   console.log("   - Set ANTHROPIC_API_KEY, OPENAI_API_KEY etc. for API access");
+  console.log(
+    "   - Use --live to discover all available models from provider APIs",
+  );
 }
 
 export function registerModelsCommand(cli: Command): void {
@@ -215,11 +360,40 @@ export function registerModelsCommand(cli: Command): void {
       "-p, --provider <provider:string>",
       "Show all models for a specific provider (e.g., openai, anthropic)",
     )
-    .action((options, ...specs: string[]) => {
-      if (options.provider) {
-        displayProviderModels(options.provider);
-      } else {
-        handleModelsList(specs.length > 0 ? specs : undefined);
+    .option(
+      "--refresh",
+      "Force refresh from provider API, ignoring cache",
+    )
+    .option(
+      "--live",
+      "Fetch live models from provider API (uses cache if available, unless --refresh)",
+    )
+    .option(
+      "--cache-stats",
+      "Display model discovery cache statistics",
+    )
+    .action(async (options, ...specs: string[]) => {
+      // Handle cache stats
+      if (options.cacheStats) {
+        const stats = LLMAdapterRegistry.getModelCacheStats();
+        displayCacheStats(stats);
+        return;
       }
+
+      // Handle provider-specific listing
+      if (options.provider) {
+        if (options.live || options.refresh) {
+          await displayProviderModelsLive(
+            options.provider,
+            options.refresh ?? false,
+          );
+        } else {
+          displayProviderModelsNotice(options.provider);
+        }
+        return;
+      }
+
+      // Default: show all models
+      handleModelsList(specs.length > 0 ? specs : undefined);
     });
 }

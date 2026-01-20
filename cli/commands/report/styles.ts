@@ -14,6 +14,9 @@ export const INDEX_PAGE_STYLES = `
     header h1 { font-size: 2.5rem; margin: 0; color: #2563eb; }
     header p { font-size: 1.1rem; color: #6b7280; margin: 0.5rem 0; }
     .report-date { font-size: 0.875rem; color: #9ca3af; margin-top: 1rem; }
+    .header-links { margin: 1rem 0; }
+    .header-links a { color: #2563eb; text-decoration: none; margin: 0 0.75rem; font-weight: 500; }
+    .header-links a:hover { text-decoration: underline; }
     .stat-label[title] { cursor: help; border-bottom: 1px dotted #9ca3af; }
     .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin: 1rem 0 2rem; }
     .metric-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -98,6 +101,7 @@ export const INDEX_PAGE_STYLES = `
     body.dark { background: #111827; color: #f3f4f6; }
     body.dark header h1 { color: #60a5fa; }
     body.dark header p { color: #9ca3af; }
+    body.dark .header-links a { color: #60a5fa; }
     body.dark h2 { color: #f3f4f6; border-bottom-color: #374151; }
     body.dark .theme-toggle { background: #374151; color: #f3f4f6; }
     body.dark .theme-toggle:hover { background: #4b5563; }
@@ -144,6 +148,9 @@ export const MODEL_DETAIL_STYLES = `
     p { color: #6b7280; margin: 0.5rem 0; }
     .back-link { display: inline-block; margin-bottom: 1.5rem; color: #2563eb; text-decoration: none; font-weight: 500; }
     .back-link:hover { text-decoration: underline; }
+    .header-links { margin: 1rem 0; text-align: center; }
+    .header-links a { color: #2563eb; text-decoration: none; margin: 0 0.75rem; font-weight: 500; }
+    .header-links a:hover { text-decoration: underline; }
     .model-header { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .model-meta { display: flex; gap: 2rem; flex-wrap: wrap; margin-top: 1rem; }
     .model-meta .stat { font-size: 0.9rem; }
@@ -178,6 +185,7 @@ export const MODEL_DETAIL_STYLES = `
     body.dark h2 { border-bottom-color: #374151; }
     body.dark p { color: #9ca3af; }
     body.dark .back-link { color: #60a5fa; }
+    body.dark .header-links a { color: #60a5fa; }
     body.dark .theme-toggle { background: #374151; color: #f3f4f6; }
     body.dark .theme-toggle:hover { background: #4b5563; }
     body.dark .model-header { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
