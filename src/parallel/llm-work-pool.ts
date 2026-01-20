@@ -22,6 +22,7 @@ import { getGlobalRateLimiter, ProviderRateLimiter } from "./rate-limiter.ts";
 import { LLMAdapterRegistry } from "../llm/registry.ts";
 import { CodeExtractor } from "../llm/code-extractor.ts";
 import { TemplateRenderer } from "../templates/renderer.ts";
+import { PromptInjectionResolver } from "../prompts/mod.ts";
 import {
   type ContinuationResult,
   createTruncationWarning,
@@ -125,8 +126,13 @@ export class LLMWorkPool {
 
   /**
    * Execute a single work item with rate limiting
+   * @param item The work item to execute
+   * @param retryCount Number of immediate retries already attempted for transient errors
    */
-  private async executeWork(item: LLMWorkItem): Promise<LLMWorkResult> {
+  private async executeWork(
+    item: LLMWorkItem,
+    retryCount = 0,
+  ): Promise<LLMWorkResult> {
     const startTime = Date.now();
 
     // Acquire rate limit lease
@@ -188,10 +194,12 @@ export class LLMWorkPool {
 
       this.rateLimiter.release(lease);
 
-      // Retry once if it's a transient error
-      if (this.isTransientError(error) && item.attemptNumber <= 2) {
-        await this.delay(1000 * item.attemptNumber);
-        return this.executeWork(item);
+      // Retry up to 3 times for transient errors with escalating delays
+      const MAX_IMMEDIATE_RETRIES = 3;
+      if (this.isTransientError(error) && retryCount < MAX_IMMEDIATE_RETRIES) {
+        const delayMs = 1000 * (retryCount + 1); // 1s, 2s, 3s
+        await this.delay(delayMs);
+        return this.executeWork(item, retryCount + 1);
       }
 
       return {
@@ -395,10 +403,13 @@ export class LLMWorkPool {
     const previousAttempt =
       item.previousAttempts[item.previousAttempts.length - 1];
 
+    let basePrompt: string;
+    const stage = item.attemptNumber === 1 ? "generation" : "fix";
+
     if (item.attemptNumber === 1 || !previousAttempt) {
       // First attempt - render template with task description
       const promptTemplate = item.taskManifest.prompt_template || "code-gen.md";
-      const renderedPrompt = await this.templateRenderer.render(
+      basePrompt = await this.templateRenderer.render(
         promptTemplate,
         {
           description: item.context.instructions,
@@ -406,26 +417,39 @@ export class LLMWorkPool {
           max_attempts: item.taskManifest.max_attempts,
         },
       );
-      return {
-        prompt: renderedPrompt,
-        temperature: item.context.temperature,
-        maxTokens: item.context.maxTokens,
-      };
     } else {
       // Retry attempt - build fix prompt with errors
       const errors = this.extractErrors(previousAttempt);
-      const fixPrompt = this.buildFixPrompt(
+      basePrompt = this.buildFixPrompt(
         item.context.instructions,
         previousAttempt.extractedCode,
         errors,
         item.attemptNumber,
       );
-      return {
-        prompt: fixPrompt,
-        temperature: item.context.temperature,
-        maxTokens: item.context.maxTokens,
-      };
     }
+
+    // Apply prompt injections (knowledge bank, system prompt overrides)
+    const applied = PromptInjectionResolver.resolveAndApply(
+      basePrompt,
+      undefined, // globalConfig.prompts - not needed here
+      item.taskManifest.prompts,
+      item.context.promptOverrides,
+      item.llmProvider,
+      stage,
+    );
+
+    const request: LLMRequest = {
+      prompt: applied.prompt,
+      temperature: item.context.temperature,
+      maxTokens: item.context.maxTokens,
+    };
+
+    // Include system prompt if injection resolver produced one
+    if (applied.systemPrompt) {
+      request.systemPrompt = applied.systemPrompt;
+    }
+
+    return request;
   }
 
   /**

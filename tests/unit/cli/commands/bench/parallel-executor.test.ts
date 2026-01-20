@@ -6,8 +6,8 @@
 import { assertEquals, assertExists } from "@std/assert";
 import {
   buildParallelOptions,
-  toHashResult,
   type ExtendedBenchmarkOptions,
+  toHashResult,
 } from "../../../../../cli/commands/bench/mod.ts";
 import type { TaskSetHashResult } from "../../../../../src/stats/types.ts";
 

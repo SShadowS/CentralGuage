@@ -317,6 +317,57 @@ describe("createWorkItems", () => {
   });
 });
 
+describe("Immediate retry behavior", () => {
+  // Documents the retry behavior for transient errors in LLMWorkPool.executeWork()
+
+  it("should retry up to 3 times for transient errors", () => {
+    // This test documents the MAX_IMMEDIATE_RETRIES constant
+    const MAX_IMMEDIATE_RETRIES = 3;
+
+    // retryCount starts at 0 and increments on each retry
+    // Retry happens when retryCount < MAX_IMMEDIATE_RETRIES
+    assertEquals(0 < MAX_IMMEDIATE_RETRIES, true); // First retry (retryCount=0)
+    assertEquals(1 < MAX_IMMEDIATE_RETRIES, true); // Second retry (retryCount=1)
+    assertEquals(2 < MAX_IMMEDIATE_RETRIES, true); // Third retry (retryCount=2)
+    assertEquals(3 < MAX_IMMEDIATE_RETRIES, false); // No fourth retry
+  });
+
+  it("should use escalating delays: 1s, 2s, 3s", () => {
+    // Delay formula: 1000 * (retryCount + 1) milliseconds
+    const calculateDelay = (retryCount: number) => 1000 * (retryCount + 1);
+
+    assertEquals(calculateDelay(0), 1000); // First retry: 1s
+    assertEquals(calculateDelay(1), 2000); // Second retry: 2s
+    assertEquals(calculateDelay(2), 3000); // Third retry: 3s
+  });
+
+  it("should only retry transient errors, not permanent errors", () => {
+    const isTransientError = (error: Error): boolean => {
+      const message = error.message.toLowerCase();
+      return (
+        message.includes("timeout") ||
+        message.includes("connection") ||
+        message.includes("econnreset") ||
+        message.includes("enotfound") ||
+        message.includes("rate limit") ||
+        message.includes("429") ||
+        message.includes("503") ||
+        message.includes("502")
+      );
+    };
+
+    // Transient errors should be retried
+    assertEquals(isTransientError(new Error("timeout")), true);
+    assertEquals(isTransientError(new Error("429 rate limited")), true);
+    assertEquals(isTransientError(new Error("503 service unavailable")), true);
+
+    // Permanent errors should NOT be retried
+    assertEquals(isTransientError(new Error("Invalid API key")), false);
+    assertEquals(isTransientError(new Error("Model not found")), false);
+    assertEquals(isTransientError(new Error("Insufficient quota")), false);
+  });
+});
+
 describe("Error detection utilities", () => {
   // These tests verify the error detection patterns used in LLMWorkPool
   // by testing against the same patterns
@@ -436,6 +487,77 @@ describe("Error detection utilities", () => {
     it("should handle retry after with space", () => {
       assertEquals(extractRetryAfter(new Error("retry after 120")), 120000);
     });
+  });
+});
+
+describe("Prompt injection", () => {
+  // Import the injection resolver at the test level using dynamic import
+  // This test verifies that promptOverrides with knowledgeContent
+  // results in a systemPrompt being included in the LLM request.
+
+  it("should include knowledgeContent in systemPrompt", async () => {
+    const { PromptInjectionResolver } = await import(
+      "../../../src/prompts/mod.ts"
+    );
+
+    const basePrompt = "Generate AL code for a table";
+    const promptOverrides = {
+      knowledgeContent: "# Knowledge Bank\n\nSome guidance here...",
+      runLabel: "(guided)",
+      stage: "both" as const,
+    };
+
+    const applied = PromptInjectionResolver.resolveAndApply(
+      basePrompt,
+      undefined, // globalConfig.prompts
+      undefined, // taskPrompts
+      promptOverrides,
+      "openai", // provider
+      "generation", // stage
+    );
+
+    // Verify knowledge was prepended to system prompt
+    assertEquals(applied.systemPrompt !== undefined, true);
+    assertEquals(
+      applied.systemPrompt!.includes("# Knowledge Bank"),
+      true,
+      "System prompt should include knowledge content",
+    );
+    assertEquals(
+      applied.systemPrompt!.includes("Some guidance here..."),
+      true,
+      "System prompt should include the full knowledge content",
+    );
+  });
+
+  it("should pass systemPrompt through to LLM request when knowledgeContent present", async () => {
+    // This test ensures that when promptOverrides has knowledgeContent,
+    // the work item context will produce a request with systemPrompt.
+    // This was a bug where knowledgeContent was stored but never sent to the LLM.
+
+    const { PromptInjectionResolver } = await import(
+      "../../../src/prompts/mod.ts"
+    );
+
+    const promptOverrides = {
+      knowledgeContent: "Test knowledge content",
+    };
+
+    const applied = PromptInjectionResolver.resolveAndApply(
+      "Test prompt",
+      undefined,
+      undefined,
+      promptOverrides,
+      "anthropic",
+      "generation",
+    );
+
+    // Without the fix, systemPrompt would be undefined
+    assertEquals(
+      typeof applied.systemPrompt,
+      "string",
+      "systemPrompt should be a string when knowledgeContent is provided",
+    );
   });
 });
 

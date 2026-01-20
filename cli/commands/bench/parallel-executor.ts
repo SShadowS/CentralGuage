@@ -10,6 +10,7 @@ import { DebugLogger } from "../../../src/utils/debug-logger.ts";
 import { ConfigManager } from "../../../src/config/config.ts";
 import { ModelPresetRegistry } from "../../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../../src/llm/registry.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
 import {
   ModelValidationError,
@@ -78,8 +79,10 @@ export async function executeParallelBenchmark(
   jsonEvents = false,
   tuiMode = false,
 ): Promise<void> {
+  // Always load environment variables (API keys needed for model validation)
+  await EnvLoader.loadEnvironment();
+
   if (!quiet) {
-    await EnvLoader.loadEnvironment();
     await SplashScreen.display({
       showEnvironment: true,
       showConfiguration: true,
@@ -141,8 +144,11 @@ export async function executeParallelBenchmark(
       appConfig,
     );
 
-    // Validate all resolved models before starting
-    validateModels(variants, options.llms);
+    // Validate all resolved models before starting (uses dynamic discovery with cache)
+    await validateModels(variants, options.llms);
+
+    // Display pricing summary for all models being used
+    await displayPricingSummary(variants);
 
     log.info(
       `Running with ${variants.length} model variant(s): ${
@@ -655,14 +661,15 @@ export function buildParallelOptions(
 
 /**
  * Validate all resolved model variants before benchmark execution.
+ * Uses dynamic model discovery with caching for accurate validation.
  * Throws ModelValidationError if any models are invalid.
  * @param variants - Resolved model variants
  * @param originalSpecs - Original model spec strings from CLI
  */
-function validateModels(
+async function validateModels(
   variants: ModelVariant[],
   originalSpecs: string[],
-): void {
+): Promise<void> {
   const failures: ModelValidationFailure[] = [];
 
   // Build a map from variantId/model to original spec for error messages
@@ -676,12 +683,18 @@ function validateModels(
     specMap.set(variant.variantId, spec);
   }
 
-  for (const variant of variants) {
-    const result = LLMAdapterRegistry.validateModel(
-      variant.provider,
-      variant.model,
-    );
+  // Validate all variants concurrently using async validation
+  const validationResults = await Promise.all(
+    variants.map(async (variant) => {
+      const result = await LLMAdapterRegistry.validateModelAsync(
+        variant.provider,
+        variant.model,
+      );
+      return { variant, result };
+    }),
+  );
 
+  for (const { variant, result } of validationResults) {
     if (!result.valid) {
       const originalSpec =
         specMap.get(`${variant.provider}/${variant.model}`) ||
@@ -750,4 +763,69 @@ function validateModels(
 
     throw error;
   }
+}
+
+/**
+ * Display pricing summary for all model variants being used
+ */
+async function displayPricingSummary(variants: ModelVariant[]): Promise<void> {
+  // Initialize pricing service
+  await PricingService.initialize();
+
+  const pricingEntries: Array<{
+    display: string;
+    inputPrice: number;
+    outputPrice: number;
+    source: string;
+  }> = [];
+
+  for (const variant of variants) {
+    const result = await PricingService.getPrice(
+      variant.provider,
+      variant.model,
+    );
+    const sourceLabel = PricingService.getSourceLabel(result.source);
+
+    pricingEntries.push({
+      display: `${variant.provider}/${variant.model}`,
+      inputPrice: result.pricing.input,
+      outputPrice: result.pricing.output,
+      source: sourceLabel,
+    });
+  }
+
+  // Display summary
+  console.log("");
+  log.summary("Pricing Summary:");
+
+  for (const entry of pricingEntries) {
+    const inputFormatted = PricingService.formatPrice(entry.inputPrice);
+    const outputFormatted = PricingService.formatPrice(entry.outputPrice);
+
+    // Color code by source
+    const sourceColor = entry.source === "[API]"
+      ? colors.green
+      : entry.source === "[JSON]"
+      ? colors.cyan
+      : colors.yellow;
+
+    console.log(
+      `  ${colors.white(entry.display)}: ` +
+        `${colors.dim("input")} ${inputFormatted}, ` +
+        `${colors.dim("output")} ${outputFormatted} ` +
+        sourceColor(entry.source),
+    );
+  }
+
+  // Show warning if any are using default pricing
+  const defaultPricing = pricingEntries.filter((e) => e.source === "[Default]");
+  if (defaultPricing.length > 0) {
+    console.log(
+      colors.yellow(
+        `  [Warn] ${defaultPricing.length} model(s) using fallback pricing`,
+      ),
+    );
+  }
+
+  console.log("");
 }

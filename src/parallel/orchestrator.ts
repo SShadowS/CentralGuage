@@ -572,11 +572,17 @@ export class ParallelBenchmarkOrchestrator {
     const temperature = variant.config.temperature ?? options.temperature;
     const maxTokens = variant.config.maxTokens ?? options.maxTokens;
 
+    // Build variantId with runLabel suffix if knowledge/custom label is used
+    let variantId = variant.variantId;
+    if (options.promptOverrides?.runLabel) {
+      variantId = `${variantId}${options.promptOverrides.runLabel}`;
+    }
+
     return await TaskTransformer.createExecutionContext({
       taskManifest: manifest,
       llmProvider: variant.provider,
       llmModel: variant.model,
-      variantId: variant.variantId,
+      variantId,
       variantConfig: variant.hasVariant ? variant.config : undefined,
       containerProvider: options.containerProvider,
       containerName: options.containerName,
