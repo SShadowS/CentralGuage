@@ -6,7 +6,15 @@ import type {
   StreamResult,
   TokenUsage,
 } from "./types.ts";
+import type {
+  DiscoverableAdapter,
+  DiscoveredModel,
+} from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
+import { Logger } from "../logger/mod.ts";
+import { PricingService } from "./pricing-service.ts";
+
+const log = Logger.create("llm:azure");
 import {
   DEFAULT_API_TIMEOUT_MS,
   DEFAULT_MAX_TOKENS,
@@ -23,16 +31,9 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
-export class AzureOpenAIAdapter extends BaseLLMAdapter {
+export class AzureOpenAIAdapter extends BaseLLMAdapter
+  implements DiscoverableAdapter {
   readonly name = "azure-openai";
-  readonly supportedModels = [
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-4",
-    "gpt-35-turbo", // Azure uses 35 instead of 3.5
-    "gpt-3.5-turbo",
-  ];
 
   protected override config: LLMConfig = {
     provider: "azure-openai",
@@ -78,23 +79,77 @@ export class AzureOpenAIAdapter extends BaseLLMAdapter {
   }
 
   estimateCost(promptTokens: number, completionTokens: number): number {
-    // Azure OpenAI pricing varies by region and contract
-    // These are rough estimates based on standard pricing
-    const defaultCost = { input: 0.005, output: 0.015 };
-    const modelCosts: Record<string, { input: number; output: number }> = {
-      "gpt-4o": { input: 0.005, output: 0.015 },
-      "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-      "gpt-4-turbo": { input: 0.01, output: 0.03 },
-      "gpt-4": { input: 0.03, output: 0.06 },
-      "gpt-35-turbo": { input: 0.0005, output: 0.0015 },
-      "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
+    );
+  }
+
+  /**
+   * Discover available deployments from Azure OpenAI API
+   * Uses GET /openai/deployments endpoint
+   */
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const apiKey = this.ensureApiKey();
+    const endpoint = this.config.baseUrl ||
+      Deno.env.get("AZURE_OPENAI_ENDPOINT");
+
+    if (!endpoint) {
+      throw new LLMProviderError(
+        "Azure OpenAI endpoint not configured",
+        "azure-openai",
+        false,
+      );
+    }
+
+    const apiVersion = this.config.apiVersion || "2024-02-15-preview";
+    const url = `${endpoint}/openai/deployments?api-version=${apiVersion}`;
+
+    const response = await fetch(url, {
+      headers: {
+        "api-key": apiKey,
+      },
+      signal: AbortSignal.timeout(this.config.timeout || 10000),
+    });
+
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `Azure OpenAI API error (${response.status}): Failed to list deployments`,
+        "azure-openai",
+        response.status >= 500,
+      );
+    }
+
+    const data = await response.json() as {
+      data?: Array<{
+        id: string;
+        model: string;
+        created_at?: number;
+        owner?: string;
+        status?: string;
+      }>;
     };
 
-    const costs = modelCosts[this.config.model] ?? defaultCost;
-    const inputCost = (promptTokens / 1000) * costs.input;
-    const outputCost = (completionTokens / 1000) * costs.output;
+    const discoveredModels: DiscoveredModel[] = (data.data ?? []).map((d) => ({
+      id: d.id,
+      name: d.model,
+      createdAt: d.created_at ? d.created_at * 1000 : undefined,
+      metadata: {
+        model: d.model,
+        owner: d.owner,
+        status: d.status,
+      },
+    }));
 
-    return inputCost + outputCost;
+    // Sort by ID for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered Azure deployments", {
+      count: discoveredModels.length,
+    });
+    return discoveredModels;
   }
 
   // ============================================================================

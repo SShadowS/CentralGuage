@@ -7,8 +7,13 @@ import type {
   StreamResult,
   TokenUsage,
 } from "./types.ts";
+import type {
+  DiscoverableAdapter,
+  DiscoveredModel,
+} from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
+import { PricingService } from "./pricing-service.ts";
 
 const log = Logger.create("llm:anthropic");
 import {
@@ -25,31 +30,9 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
-export class AnthropicAdapter extends BaseLLMAdapter {
+export class AnthropicAdapter extends BaseLLMAdapter
+  implements DiscoverableAdapter {
   readonly name = "anthropic";
-  readonly supportedModels = [
-    // Claude 4.5 models (latest)
-    "claude-opus-4-5-20251101",
-    "claude-sonnet-4-5-20250929",
-    "claude-haiku-4-5-20251001",
-    // Claude 4.5 aliases
-    "claude-opus-4-5",
-    "claude-sonnet-4-5",
-    "claude-haiku-4-5",
-    // Claude 4 models (legacy)
-    "claude-opus-4-1-20250805",
-    "claude-opus-4-20250514",
-    "claude-sonnet-4-20250514",
-    "claude-3-7-sonnet-20250219",
-    // Claude 4 aliases
-    "claude-opus-4-1",
-    "claude-opus-4-0",
-    "claude-sonnet-4-0",
-    "claude-3-7-sonnet-latest",
-    // Claude 3.5 models (legacy)
-    "claude-3-5-haiku-20241022",
-    "claude-3-5-haiku-latest",
-  ];
 
   protected override config: LLMConfig = {
     provider: "anthropic",
@@ -79,14 +62,6 @@ export class AnthropicAdapter extends BaseLLMAdapter {
 
     if (!config.model) {
       errors.push("Model is required");
-    } else if (
-      !this.supportedModels.includes(config.model) &&
-      !this.isCustomModel(config.model)
-    ) {
-      log.warn("Custom/unknown model", {
-        model: config.model,
-        knownModels: this.supportedModels,
-      });
     }
 
     if (
@@ -118,45 +93,72 @@ export class AnthropicAdapter extends BaseLLMAdapter {
     return errors;
   }
 
-  private isCustomModel(model: string): boolean {
-    return (
-      model.includes("claude") ||
-      model.includes("sonnet") ||
-      model.includes("haiku") ||
-      model.includes("opus") ||
-      model.includes("think")
+  estimateCost(promptTokens: number, completionTokens: number): number {
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
     );
   }
 
-  estimateCost(promptTokens: number, completionTokens: number): number {
-    const defaultCost = { input: 0.003, output: 0.015 };
-    const modelCosts: Record<string, { input: number; output: number }> = {
-      // Claude 4.5 pricing (latest)
-      "claude-opus-4-5-20251101": { input: 0.005, output: 0.025 },
-      "claude-opus-4-5": { input: 0.005, output: 0.025 },
-      "claude-sonnet-4-5-20250929": { input: 0.003, output: 0.015 },
-      "claude-sonnet-4-5": { input: 0.003, output: 0.015 },
-      "claude-haiku-4-5-20251001": { input: 0.001, output: 0.005 },
-      "claude-haiku-4-5": { input: 0.001, output: 0.005 },
-      // Claude 4 pricing (legacy)
-      "claude-opus-4-1-20250805": { input: 0.015, output: 0.075 },
-      "claude-opus-4-1": { input: 0.015, output: 0.075 },
-      "claude-opus-4-20250514": { input: 0.015, output: 0.075 },
-      "claude-opus-4-0": { input: 0.015, output: 0.075 },
-      "claude-sonnet-4-20250514": { input: 0.003, output: 0.015 },
-      "claude-sonnet-4-0": { input: 0.003, output: 0.015 },
-      "claude-3-7-sonnet-20250219": { input: 0.003, output: 0.015 },
-      "claude-3-7-sonnet-latest": { input: 0.003, output: 0.015 },
-      // Claude 3.5 pricing (legacy)
-      "claude-3-5-haiku-20241022": { input: 0.0008, output: 0.004 },
-      "claude-3-5-haiku-latest": { input: 0.0008, output: 0.004 },
+  /**
+   * Discover available models from Anthropic API
+   * Uses GET /v1/models REST endpoint
+   */
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const apiKey = this.config.apiKey;
+
+    if (!apiKey) {
+      throw new LLMProviderError(
+        "Anthropic API key not configured",
+        "anthropic",
+        false,
+      );
+    }
+
+    const baseUrl = this.config.baseUrl || "https://api.anthropic.com";
+    const url = `${baseUrl}/v1/models`;
+
+    const response = await fetch(url, {
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      signal: AbortSignal.timeout(this.config.timeout || 10000),
+    });
+
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `Anthropic API error (${response.status}): Failed to list models`,
+        "anthropic",
+        response.status >= 500,
+      );
+    }
+
+    const data = await response.json() as {
+      data?: Array<{
+        id: string;
+        display_name?: string;
+        type?: string;
+        created_at?: string;
+      }>;
     };
 
-    const costs = modelCosts[this.config.model] ?? defaultCost;
-    const inputCost = (promptTokens / 1000) * costs.input;
-    const outputCost = (completionTokens / 1000) * costs.output;
+    const discoveredModels: DiscoveredModel[] = (data.data ?? []).map((m) => ({
+      id: m.id,
+      name: m.display_name,
+      createdAt: m.created_at ? new Date(m.created_at).getTime() : undefined,
+      metadata: {
+        type: m.type,
+      },
+    }));
 
-    return inputCost + outputCost;
+    // Sort by ID for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered Anthropic models", { count: discoveredModels.length });
+    return discoveredModels;
   }
 
   // ============================================================================

@@ -49,9 +49,6 @@ export abstract class BaseLLMAdapter implements StreamingLLMAdapter {
   /** Whether streaming is supported (all current adapters support it) */
   readonly supportsStreaming = true;
 
-  /** List of supported model identifiers */
-  abstract readonly supportedModels: string[];
-
   /** Current configuration */
   protected config!: LLMConfig;
 

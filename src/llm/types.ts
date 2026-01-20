@@ -78,7 +78,6 @@ export interface CodeGenerationResult {
 
 export interface LLMAdapter {
   readonly name: string;
-  readonly supportedModels: string[];
 
   // Configuration
   configure(config: LLMConfig): void;

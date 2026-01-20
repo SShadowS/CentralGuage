@@ -2,16 +2,20 @@
  * Unit tests for Azure OpenAI, Local LLM, and OpenRouter adapters
  *
  * These tests verify the adapters' behavior without making actual API calls:
- * 1. Public properties (name, supportedModels)
+ * 1. Public properties (name)
  * 2. Configuration validation (validateConfig)
  * 3. Cost estimation (estimateCost)
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertArrayIncludes, assertEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { AzureOpenAIAdapter } from "../../../src/llm/azure-openai-adapter.ts";
 import { LocalLLMAdapter } from "../../../src/llm/local-adapter.ts";
 import { OpenRouterAdapter } from "../../../src/llm/openrouter-adapter.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+// Initialize PricingService before tests run
+await PricingService.initialize();
 
 // =============================================================================
 // Azure OpenAI Adapter Tests
@@ -21,16 +25,6 @@ Deno.test("AzureOpenAIAdapter - Provider Properties", async (t) => {
   await t.step('name property returns "azure-openai"', () => {
     const adapter = new AzureOpenAIAdapter();
     assertEquals(adapter.name, "azure-openai");
-  });
-
-  await t.step("supportedModels contains GPT models", () => {
-    const adapter = new AzureOpenAIAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-4-turbo",
-      "gpt-4",
-    ]);
   });
 });
 
@@ -228,15 +222,6 @@ Deno.test("LocalLLMAdapter - Provider Properties", async (t) => {
   await t.step('name property returns "local"', () => {
     const adapter = new LocalLLMAdapter();
     assertEquals(adapter.name, "local");
-  });
-
-  await t.step("supportedModels contains Ollama models", () => {
-    const adapter = new LocalLLMAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "llama3.2:latest",
-      "codellama:latest",
-      "mistral:latest",
-    ]);
   });
 });
 
@@ -1425,16 +1410,6 @@ Deno.test("OpenRouterAdapter - Provider Properties", async (t) => {
   await t.step('name property returns "openrouter"', () => {
     const adapter = new OpenRouterAdapter();
     assertEquals(adapter.name, "openrouter");
-  });
-
-  await t.step("supportedModels contains multi-provider models", () => {
-    const adapter = new OpenRouterAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "openai/gpt-4o",
-      "anthropic/claude-sonnet-4",
-      "google/gemini-2.5-pro",
-      "meta-llama/llama-3.3-70b-instruct",
-    ]);
   });
 });
 

@@ -7,8 +7,13 @@ import type {
   StreamResult,
   TokenUsage,
 } from "./types.ts";
+import type {
+  DiscoverableAdapter,
+  DiscoveredModel,
+} from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
+import { PricingService } from "./pricing-service.ts";
 
 const log = Logger.create("llm:openai");
 import {
@@ -26,30 +31,9 @@ import {
   type StreamState,
 } from "./stream-handler.ts";
 
-export class OpenAIAdapter extends BaseLLMAdapter {
+export class OpenAIAdapter extends BaseLLMAdapter
+  implements DiscoverableAdapter {
   readonly name = "openai";
-  readonly supportedModels = [
-    // 2025 GPT-5 models
-    "gpt-5.1",
-    "gpt-5.2",
-    "gpt-5-pro",
-    // Codex models
-    "gpt-5.1-codex",
-    "gpt-5.1-codex-max",
-    "gpt-5.1-codex-mini",
-    // GPT-4 models
-    "gpt-4o",
-    "gpt-4o-mini",
-    "gpt-4-turbo",
-    "gpt-4",
-    // Reasoning models
-    "o1-preview",
-    "o1-mini",
-    "o3-high",
-    "o3-mini",
-    // Legacy
-    "gpt-3.5-turbo",
-  ];
 
   protected override config: LLMConfig = {
     provider: "openai",
@@ -79,14 +63,6 @@ export class OpenAIAdapter extends BaseLLMAdapter {
 
     if (!config.model) {
       errors.push("Model is required");
-    } else if (
-      !this.supportedModels.includes(config.model) &&
-      !this.isCustomModel(config.model)
-    ) {
-      log.warn("Custom/unknown model", {
-        model: config.model,
-        knownModels: this.supportedModels,
-      });
     }
 
     if (
@@ -101,19 +77,6 @@ export class OpenAIAdapter extends BaseLLMAdapter {
     }
 
     return errors;
-  }
-
-  private isCustomModel(model: string): boolean {
-    return (
-      model.startsWith("gpt-") ||
-      model.startsWith("o1-") ||
-      model.startsWith("o3-") ||
-      model.includes("turbo") ||
-      model.includes("high") ||
-      model.includes("low") ||
-      model.includes("medium") ||
-      model.includes("codex")
-    );
   }
 
   /**
@@ -151,35 +114,49 @@ export class OpenAIAdapter extends BaseLLMAdapter {
     return undefined;
   }
 
+  /**
+   * Discover available models from OpenAI API
+   * Filters to relevant models (GPT, o1, o3 series)
+   */
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const client = this.ensureClient();
+    const response = await client.models.list();
+
+    const discoveredModels: DiscoveredModel[] = [];
+
+    for await (const model of response) {
+      // Filter to relevant models (GPT, o1, o3, codex)
+      const id = model.id;
+      if (
+        id.includes("gpt") ||
+        id.startsWith("o1") ||
+        id.startsWith("o3") ||
+        id.includes("codex")
+      ) {
+        discoveredModels.push({
+          id: model.id,
+          createdAt: model.created ? model.created * 1000 : undefined,
+          metadata: {
+            owned_by: model.owned_by,
+          },
+        });
+      }
+    }
+
+    // Sort by ID for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered OpenAI models", { count: discoveredModels.length });
+    return discoveredModels;
+  }
+
   estimateCost(promptTokens: number, completionTokens: number): number {
-    const modelCosts: Record<string, { input: number; output: number }> = {
-      // 2025 GPT-5 pricing (estimated)
-      "gpt-5.1": { input: 0.01, output: 0.03 },
-      "gpt-5.2": { input: 0.015, output: 0.045 },
-      "gpt-5-pro": { input: 0.03, output: 0.09 },
-      // Codex models (estimated)
-      "gpt-5.1-codex": { input: 0.015, output: 0.06 },
-      "gpt-5.1-codex-max": { input: 0.01, output: 0.04 },
-      "gpt-5.1-codex-mini": { input: 0.003, output: 0.012 },
-      // GPT-4 pricing
-      "gpt-4o": { input: 0.0025, output: 0.01 },
-      "gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-      "gpt-4-turbo": { input: 0.01, output: 0.03 },
-      "gpt-4": { input: 0.03, output: 0.06 },
-      // Reasoning models
-      "o1-preview": { input: 0.015, output: 0.06 },
-      "o1-mini": { input: 0.003, output: 0.012 },
-      "o3-high": { input: 0.02, output: 0.08 },
-      "o3-mini": { input: 0.005, output: 0.02 },
-      // Legacy
-      "gpt-3.5-turbo": { input: 0.0005, output: 0.0015 },
-    };
-
-    const costs = modelCosts[this.config.model] ?? modelCosts["gpt-4o"];
-    const inputCost = (promptTokens / 1000) * costs!.input;
-    const outputCost = (completionTokens / 1000) * costs!.output;
-
-    return inputCost + outputCost;
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
+    );
   }
 
   // ============================================================================

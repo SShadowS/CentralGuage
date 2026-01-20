@@ -2,14 +2,18 @@
  * Unit tests for OpenAIAdapter
  *
  * These tests verify the adapter's behavior without making actual API calls:
- * 1. Public properties (name, supportedModels)
+ * 1. Public properties (name)
  * 2. Configuration validation (validateConfig)
  * 3. Cost estimation (estimateCost)
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertArrayIncludes, assertEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { OpenAIAdapter } from "../../../src/llm/openai-adapter.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+// Initialize pricing service before any tests run
+await PricingService.initialize();
 
 // =============================================================================
 // Provider Properties Tests
@@ -19,35 +23,6 @@ Deno.test("OpenAIAdapter - Provider Properties", async (t) => {
   await t.step('name property returns "openai"', () => {
     const adapter = new OpenAIAdapter();
     assertEquals(adapter.name, "openai");
-  });
-
-  await t.step("supportedModels contains GPT-4 models", () => {
-    const adapter = new OpenAIAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "gpt-4o",
-      "gpt-4o-mini",
-      "gpt-4-turbo",
-      "gpt-4",
-    ]);
-  });
-
-  await t.step("supportedModels contains reasoning models", () => {
-    const adapter = new OpenAIAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "o1-preview",
-      "o1-mini",
-      "o3-high",
-      "o3-mini",
-    ]);
-  });
-
-  await t.step("supportedModels contains GPT-5 models", () => {
-    const adapter = new OpenAIAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "gpt-5.1",
-      "gpt-5.2",
-      "gpt-5-pro",
-    ]);
   });
 });
 
@@ -71,8 +46,6 @@ Deno.test("OpenAIAdapter - implements LLMAdapter interface", async (t) => {
     const adapter = new OpenAIAdapter();
 
     assertEquals(typeof adapter.name, "string");
-    assertEquals(Array.isArray(adapter.supportedModels), true);
-    assertEquals(adapter.supportedModels.length > 0, true);
   });
 });
 

@@ -7,8 +7,14 @@ import type {
   StreamResult,
   TokenUsage,
 } from "./types.ts";
+import type {
+  DiscoverableAdapter,
+  DiscoveredModel,
+} from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
+import { PricingService } from "./pricing-service.ts";
+import type { ModelPricing } from "./pricing-types.ts";
 
 const log = Logger.create("llm:openrouter");
 import {
@@ -29,34 +35,9 @@ import {
  * OpenRouter adapter using the OpenAI SDK with custom base URL.
  * OpenRouter provides an OpenAI-compatible API for accessing 400+ models.
  */
-export class OpenRouterAdapter extends BaseLLMAdapter {
+export class OpenRouterAdapter extends BaseLLMAdapter
+  implements DiscoverableAdapter {
   readonly name = "openrouter";
-  readonly supportedModels = [
-    // OpenAI models via OpenRouter
-    "openai/gpt-4o",
-    "openai/gpt-4o-mini",
-    "openai/gpt-5.1",
-    "openai/o1-preview",
-    "openai/o3-mini",
-    // Anthropic models via OpenRouter
-    "anthropic/claude-sonnet-4",
-    "anthropic/claude-haiku-4",
-    "anthropic/claude-opus-4",
-    // Google models via OpenRouter
-    "google/gemini-2.5-pro",
-    "google/gemini-2.5-flash",
-    // Meta models via OpenRouter
-    "meta-llama/llama-3.3-70b-instruct",
-    "meta-llama/llama-3.1-405b-instruct",
-    // DeepSeek models
-    "deepseek/deepseek-chat",
-    "deepseek/deepseek-coder",
-    // Qwen models
-    "qwen/qwen-2.5-72b-instruct",
-    // Mistral models
-    "mistralai/mistral-large",
-    "mistralai/codestral-latest",
-  ];
 
   protected override config: LLMConfig = {
     provider: "openrouter",
@@ -92,14 +73,6 @@ export class OpenRouterAdapter extends BaseLLMAdapter {
 
     if (!config.model) {
       errors.push("Model is required");
-    } else if (
-      !this.supportedModels.includes(config.model) &&
-      !this.isCustomModel(config.model)
-    ) {
-      // OpenRouter supports 400+ models, so we allow most formats
-      log.warn("Custom/unknown model (OpenRouter supports 400+ models)", {
-        model: config.model,
-      });
     }
 
     if (
@@ -116,46 +89,111 @@ export class OpenRouterAdapter extends BaseLLMAdapter {
     return errors;
   }
 
-  private isCustomModel(model: string): boolean {
-    // OpenRouter models typically follow provider/model format
-    return model.includes("/");
+  estimateCost(promptTokens: number, completionTokens: number): number {
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
+    );
   }
 
-  estimateCost(promptTokens: number, completionTokens: number): number {
-    // OpenRouter pricing varies by model - use conservative estimate based on model
-    const modelCosts: Record<string, { input: number; output: number }> = {
-      // OpenAI via OpenRouter
-      "openai/gpt-4o": { input: 0.0025, output: 0.01 },
-      "openai/gpt-4o-mini": { input: 0.00015, output: 0.0006 },
-      "openai/gpt-5.1": { input: 0.01, output: 0.03 },
-      "openai/o1-preview": { input: 0.015, output: 0.06 },
-      "openai/o3-mini": { input: 0.005, output: 0.02 },
-      // Anthropic via OpenRouter
-      "anthropic/claude-sonnet-4": { input: 0.003, output: 0.015 },
-      "anthropic/claude-haiku-4": { input: 0.001, output: 0.005 },
-      "anthropic/claude-opus-4": { input: 0.015, output: 0.075 },
-      // Google via OpenRouter
-      "google/gemini-2.5-pro": { input: 0.00125, output: 0.005 },
-      "google/gemini-2.5-flash": { input: 0.000075, output: 0.0003 },
-      // Meta via OpenRouter
-      "meta-llama/llama-3.3-70b-instruct": { input: 0.0008, output: 0.0008 },
-      "meta-llama/llama-3.1-405b-instruct": { input: 0.003, output: 0.003 },
-      // DeepSeek
-      "deepseek/deepseek-chat": { input: 0.00014, output: 0.00028 },
-      "deepseek/deepseek-coder": { input: 0.00014, output: 0.00028 },
-      // Qwen
-      "qwen/qwen-2.5-72b-instruct": { input: 0.0009, output: 0.0009 },
-      // Mistral
-      "mistralai/mistral-large": { input: 0.002, output: 0.006 },
-      "mistralai/codestral-latest": { input: 0.001, output: 0.003 },
+  /**
+   * Discover available models from OpenRouter API
+   * OpenRouter provides 400+ models from various providers
+   * Also extracts pricing information and registers it with PricingService
+   */
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    // Use OpenRouter's native /models endpoint for pricing data
+    const apiKey = this.config.apiKey;
+    if (!apiKey) {
+      throw new LLMProviderError(
+        "OpenRouter API key not configured",
+        "openrouter",
+        false,
+      );
+    }
+
+    const baseUrl = this.config.baseUrl ?? "https://openrouter.ai/api/v1";
+    const url = `${baseUrl}/models`;
+
+    const response = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": this.config.siteUrl ?? "https://github.com/centralgauge",
+        "X-Title": this.config.siteName ?? "CentralGauge",
+      },
+      signal: AbortSignal.timeout(this.config.timeout || 10000),
+    });
+
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `OpenRouter API error (${response.status}): Failed to list models`,
+        "openrouter",
+        response.status >= 500,
+      );
+    }
+
+    const data = await response.json() as {
+      data?: Array<{
+        id: string;
+        name?: string;
+        description?: string;
+        created?: number;
+        pricing?: {
+          prompt?: string;
+          completion?: string;
+        };
+        context_length?: number;
+        top_provider?: { max_completion_tokens?: number };
+      }>;
     };
 
-    const defaultCost = { input: 0.005, output: 0.015 };
-    const costs = modelCosts[this.config.model] ?? defaultCost;
-    const inputCost = (promptTokens / 1000) * costs.input;
-    const outputCost = (completionTokens / 1000) * costs.output;
+    const discoveredModels: DiscoveredModel[] = [];
+    const pricingMap: Record<string, ModelPricing> = {};
 
-    return inputCost + outputCost;
+    for (const model of data.data ?? []) {
+      // Extract pricing - OpenRouter returns cost per token as strings
+      let pricing: { input: number; output: number } | undefined;
+      if (model.pricing?.prompt && model.pricing?.completion) {
+        const promptPrice = parseFloat(model.pricing.prompt);
+        const completionPrice = parseFloat(model.pricing.completion);
+        if (!isNaN(promptPrice) && !isNaN(completionPrice)) {
+          // Convert from per-token to per-1K tokens
+          pricing = {
+            input: promptPrice * 1000,
+            output: completionPrice * 1000,
+          };
+          pricingMap[model.id] = pricing;
+        }
+      }
+
+      discoveredModels.push({
+        id: model.id,
+        name: model.name,
+        description: model.description,
+        createdAt: model.created ? model.created * 1000 : undefined,
+        pricing,
+        metadata: {
+          context_length: model.context_length,
+          max_completion_tokens: model.top_provider?.max_completion_tokens,
+        },
+      });
+    }
+
+    // Register API pricing with PricingService
+    if (Object.keys(pricingMap).length > 0) {
+      PricingService.registerApiPricing(this.name, pricingMap);
+    }
+
+    // Sort by ID for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered OpenRouter models", {
+      count: discoveredModels.length,
+      withPricing: Object.keys(pricingMap).length,
+    });
+    return discoveredModels;
   }
 
   // ============================================================================

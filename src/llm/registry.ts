@@ -1,4 +1,9 @@
 import type { LLMAdapter, LLMConfig } from "./types.ts";
+import type {
+  CacheStats,
+  DiscoveryOptions,
+  DiscoveryResult,
+} from "./model-discovery-types.ts";
 import { MockLLMAdapter } from "./mock-adapter.ts";
 import { OpenAIAdapter } from "./openai-adapter.ts";
 import { AnthropicAdapter } from "./anthropic-adapter.ts";
@@ -6,6 +11,7 @@ import { GeminiAdapter } from "./gemini-adapter.ts";
 import { AzureOpenAIAdapter } from "./azure-openai-adapter.ts";
 import { LocalLLMAdapter } from "./local-adapter.ts";
 import { OpenRouterAdapter } from "./openrouter-adapter.ts";
+import { ModelDiscoveryService } from "./model-discovery.ts";
 import { ConfigurationError } from "../errors.ts";
 
 /**
@@ -185,140 +191,185 @@ export class LLMAdapterRegistry {
     return this.adapters.has(name);
   }
 
-  static getSupportedModels(adapterName: string): string[] {
-    if (!this.isAvailable(adapterName)) {
-      return [];
+  // ============================================================================
+  // Async Model Discovery Methods
+  // ============================================================================
+
+  /**
+   * Discover models from provider API with caching
+   * Throws error if provider is unknown or discovery fails
+   *
+   * @param provider - The provider name
+   * @param config - Optional LLM config with API key
+   * @param options - Discovery options
+   * @returns Discovery result with models and source
+   * @throws ConfigurationError if provider is unknown
+   */
+  static discoverModels(
+    provider: string,
+    config?: LLMConfig,
+    options?: DiscoveryOptions,
+  ): Promise<DiscoveryResult> {
+    if (!this.isAvailable(provider)) {
+      throw new ConfigurationError(
+        `Unknown provider '${provider}'. Available: ${this.list().join(", ")}`,
+        undefined,
+        { requestedProvider: provider, availableProviders: this.list() },
+      );
     }
 
-    const adapter = this.create(adapterName);
-    return adapter.supportedModels;
-  }
-
-  static getAllSupportedModels(): Record<string, string[]> {
-    const result: Record<string, string[]> = {};
-    for (const adapterName of this.list()) {
-      result[adapterName] = this.getSupportedModels(adapterName);
+    // Ensure API key is available from environment if not provided in config
+    const effectiveConfig: Partial<LLMConfig> = config
+      ? { ...config }
+      : { apiKey: this.getApiKeyForProvider(provider) };
+    if (config && !config.apiKey) {
+      effectiveConfig.apiKey = this.getApiKeyForProvider(provider);
     }
-    return result;
+
+    const adapter = this.create(provider, effectiveConfig as LLMConfig);
+    return ModelDiscoveryService.getModels(provider, adapter, options);
   }
 
   /**
-   * Validate a model specification against the adapter's supported models.
-   * Models match if they exactly match or start with a supported model prefix.
-   * @param provider - The provider name (e.g., "openai", "anthropic")
-   * @param model - The model ID (e.g., "gpt-5.2-2025-12-11")
-   * @returns Validation result with error message and suggestions if invalid
+   * Validate a model using dynamic discovery
+   * Checks against live API models
+   *
+   * @param provider - The provider name
+   * @param model - The model ID
+   * @param config - Optional LLM config with API key
+   * @param options - Discovery options
+   * @returns Validation result
+   * @throws ConfigurationError if provider is unknown
    */
-  static validateModel(
+  static validateModelAsync(
     provider: string,
     model: string,
-  ): {
+    config?: LLMConfig,
+    options?: DiscoveryOptions,
+  ): Promise<{
     valid: boolean;
     error?: string;
     suggestions?: string[];
     availableModels?: string[];
-  } {
-    // Check if provider exists
+    source: "api" | "cache";
+  }> {
     if (!this.isAvailable(provider)) {
-      return {
-        valid: false,
-        error: `Unknown provider '${provider}'`,
-        suggestions: this.list(),
-      };
+      throw new ConfigurationError(
+        `Unknown provider '${provider}'. Available: ${this.list().join(", ")}`,
+        undefined,
+        { requestedProvider: provider, availableProviders: this.list() },
+      );
     }
 
-    const supportedModels = this.getSupportedModels(provider);
+    // Ensure API key is available from environment if not provided in config
+    const effectiveConfig: Partial<LLMConfig> = config
+      ? { ...config }
+      : { apiKey: this.getApiKeyForProvider(provider) };
+    if (config && !config.apiKey) {
+      effectiveConfig.apiKey = this.getApiKeyForProvider(provider);
+    }
 
-    // Check exact match or prefix match
-    const isValid = supportedModels.some(
-      (supported) =>
-        model === supported || model.startsWith(supported + "-") ||
-        model.startsWith(supported),
+    const adapter = this.create(provider, effectiveConfig as LLMConfig);
+    return ModelDiscoveryService.validateModel(
+      provider,
+      model,
+      adapter,
+      options,
     );
-
-    if (isValid) {
-      return { valid: true };
-    }
-
-    // Find similar models for suggestions
-    const suggestions = this.findSimilarModels(model, supportedModels);
-
-    const result: {
-      valid: boolean;
-      error?: string;
-      suggestions?: string[];
-      availableModels?: string[];
-    } = {
-      valid: false,
-      error: `Model '${model}' not supported by ${provider} provider`,
-      availableModels: supportedModels,
-    };
-
-    if (suggestions.length > 0) {
-      result.suggestions = suggestions;
-    }
-
-    return result;
   }
 
   /**
-   * Find similar models using simple string matching
-   */
-  private static findSimilarModels(
-    target: string,
-    candidates: string[],
-  ): string[] {
-    const targetLower = target.toLowerCase();
-    const suggestions: Array<{ model: string; score: number }> = [];
-
-    for (const candidate of candidates) {
-      const candidateLower = candidate.toLowerCase();
-      let score = 0;
-
-      // Exact prefix match
-      if (targetLower.startsWith(candidateLower)) {
-        score += 50;
-      }
-      // Reverse prefix match
-      if (candidateLower.startsWith(targetLower)) {
-        score += 40;
-      }
-      // Contains match
-      if (targetLower.includes(candidateLower)) {
-        score += 30;
-      }
-      if (candidateLower.includes(targetLower)) {
-        score += 25;
-      }
-      // Check for common substrings (e.g., "gpt", "claude", "codex")
-      const targetParts = targetLower.split(/[-_./]/);
-      const candidateParts = candidateLower.split(/[-_./]/);
-      for (const part of targetParts) {
-        if (
-          part.length >= 3 && candidateParts.some((cp) => cp.includes(part))
-        ) {
-          score += 10;
-        }
-      }
-
-      if (score > 0) {
-        suggestions.push({ model: candidate, score });
-      }
-    }
-
-    // Sort by score descending and return top 3
-    return suggestions
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
-      .map((s) => s.model);
-  }
-
-  /**
-   * List all models for a specific provider
+   * Refresh the model cache for a specific provider
+   *
    * @param provider - The provider name
-   * @returns Array of supported model names, or empty array if provider not found
+   * @param config - Optional LLM config with API key
+   * @returns Discovery result
    */
-  static listModelsForProvider(provider: string): string[] {
-    return this.getSupportedModels(provider);
+  static refreshModelCache(
+    provider: string,
+    config?: LLMConfig,
+  ): Promise<DiscoveryResult> {
+    return this.discoverModels(provider, config, { forceRefresh: true });
+  }
+
+  /**
+   * Refresh model cache for all providers
+   *
+   * @param configMap - Optional map of provider name to config
+   * @returns Map of provider name to discovery result
+   */
+  static refreshAllModelCaches(
+    configMap?: Map<string, LLMConfig>,
+  ): Promise<Map<string, DiscoveryResult>> {
+    const adapters = new Map<string, LLMAdapter>();
+
+    for (const provider of this.list()) {
+      const config = configMap?.get(provider);
+      adapters.set(provider, this.create(provider, config));
+    }
+
+    return ModelDiscoveryService.refreshAll(adapters);
+  }
+
+  /**
+   * Get model discovery cache statistics
+   *
+   * @returns Cache statistics
+   */
+  static getModelCacheStats(): CacheStats {
+    return ModelDiscoveryService.getCacheStats();
+  }
+
+  /**
+   * Clear the model discovery cache
+   *
+   * @param provider - Optional provider name to clear only that provider's cache
+   */
+  static clearModelCache(provider?: string): void {
+    ModelDiscoveryService.clearCache(provider);
+  }
+
+  /**
+   * List models for a provider using dynamic discovery
+   * Returns live models from API
+   *
+   * @param provider - The provider name
+   * @param config - Optional LLM config with API key
+   * @param options - Discovery options
+   * @returns Array of model IDs
+   * @throws ConfigurationError if provider is unknown
+   */
+  static async listModelsForProviderAsync(
+    provider: string,
+    config?: LLMConfig,
+    options?: DiscoveryOptions,
+  ): Promise<string[]> {
+    const result = await this.discoverModels(provider, config, options);
+    return result.models;
+  }
+
+  /**
+   * Get API key for a provider from environment variables
+   * @param provider - The provider name
+   * @returns The API key or undefined if not found
+   */
+  private static getApiKeyForProvider(provider: string): string | undefined {
+    switch (provider) {
+      case "openai":
+        return Deno.env.get("OPENAI_API_KEY");
+      case "anthropic":
+        return Deno.env.get("ANTHROPIC_API_KEY");
+      case "gemini":
+        return Deno.env.get("GOOGLE_API_KEY") || Deno.env.get("GEMINI_API_KEY");
+      case "azure-openai":
+        return Deno.env.get("AZURE_OPENAI_API_KEY");
+      case "openrouter":
+        return Deno.env.get("OPENROUTER_API_KEY");
+      case "local":
+      case "mock":
+        return undefined; // No API key needed
+      default:
+        return undefined;
+    }
   }
 }

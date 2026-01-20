@@ -32,7 +32,6 @@ import type {
  */
 class MockConcreteAdapter extends BaseLLMAdapter {
   readonly name = "mock-concrete";
-  readonly supportedModels = ["mock-model-1", "mock-model-2"];
 
   // Track calls for verification
   callProviderCalls: Array<{ request: LLMRequest; includeRaw: boolean }> = [];
@@ -173,8 +172,6 @@ Deno.test("BaseLLMAdapter - Abstract Class Contract", async (t) => {
 
     assertEquals(typeof adapter.name, "string");
     assertEquals(adapter.name, "mock-concrete");
-    assertEquals(Array.isArray(adapter.supportedModels), true);
-    assertEquals(adapter.supportedModels.length > 0, true);
     assertEquals(adapter.supportsStreaming, true);
   });
 

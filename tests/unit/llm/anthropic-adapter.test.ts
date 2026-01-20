@@ -2,14 +2,18 @@
  * Unit tests for AnthropicAdapter
  *
  * These tests verify the adapter's behavior without making actual API calls:
- * 1. Public properties (name, supportedModels)
+ * 1. Public properties (name)
  * 2. Configuration validation (validateConfig)
  * 3. Cost estimation (estimateCost)
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertArrayIncludes, assertEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { AnthropicAdapter } from "../../../src/llm/anthropic-adapter.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+// Initialize pricing service before any tests run
+await PricingService.initialize();
 
 // =============================================================================
 // Provider Properties Tests
@@ -19,24 +23,6 @@ Deno.test("AnthropicAdapter - Provider Properties", async (t) => {
   await t.step('name property returns "anthropic"', () => {
     const adapter = new AnthropicAdapter();
     assertEquals(adapter.name, "anthropic");
-  });
-
-  await t.step("supportedModels contains Claude models", () => {
-    const adapter = new AnthropicAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "claude-opus-4-5-20251101",
-      "claude-sonnet-4-5-20250929",
-      "claude-haiku-4-5-20251001",
-    ]);
-  });
-
-  await t.step("supportedModels includes aliases", () => {
-    const adapter = new AnthropicAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "claude-opus-4-5",
-      "claude-sonnet-4-5",
-      "claude-haiku-4-5",
-    ]);
   });
 });
 
@@ -60,8 +46,6 @@ Deno.test("AnthropicAdapter - implements LLMAdapter interface", async (t) => {
     const adapter = new AnthropicAdapter();
 
     assertEquals(typeof adapter.name, "string");
-    assertEquals(Array.isArray(adapter.supportedModels), true);
-    assertEquals(adapter.supportedModels.length > 0, true);
   });
 });
 
@@ -609,39 +593,6 @@ Deno.test("AnthropicAdapter - configuration merging", async (t) => {
       apiKey: "test-key",
     });
     assertEquals(errors.length, 0);
-  });
-});
-
-// =============================================================================
-// All Supported Models Tests
-// =============================================================================
-
-Deno.test("AnthropicAdapter - all supported models", async (t) => {
-  const adapter = new AnthropicAdapter();
-
-  await t.step("supportedModels has expected count", () => {
-    // Should have at least 10 models (aliases + specific versions)
-    assertEquals(adapter.supportedModels.length >= 10, true);
-  });
-
-  await t.step("all listed models are unique", () => {
-    const uniqueModels = new Set(adapter.supportedModels);
-    assertEquals(uniqueModels.size, adapter.supportedModels.length);
-  });
-
-  await t.step("contains Claude 4 legacy models", () => {
-    assertArrayIncludes(adapter.supportedModels, [
-      "claude-opus-4-1-20250805",
-      "claude-opus-4-20250514",
-      "claude-sonnet-4-20250514",
-    ]);
-  });
-
-  await t.step("contains Claude 3.7 model", () => {
-    assertArrayIncludes(adapter.supportedModels, [
-      "claude-3-7-sonnet-20250219",
-      "claude-3-7-sonnet-latest",
-    ]);
   });
 });
 

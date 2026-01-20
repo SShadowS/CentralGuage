@@ -2,14 +2,18 @@
  * Unit tests for GeminiAdapter
  *
  * These tests verify the adapter's behavior without making actual API calls:
- * 1. Public properties (name, supportedModels)
+ * 1. Public properties (name)
  * 2. Configuration validation (validateConfig)
  * 3. Cost estimation (estimateCost)
  * 4. Interface compliance (LLMAdapter)
  */
 
-import { assertArrayIncludes, assertEquals } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { GeminiAdapter } from "../../../src/llm/gemini-adapter.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
+
+// Initialize pricing service before any tests run
+await PricingService.initialize();
 
 // =============================================================================
 // Provider Properties Tests
@@ -19,30 +23,6 @@ Deno.test("GeminiAdapter - Provider Properties", async (t) => {
   await t.step('name property returns "gemini"', () => {
     const adapter = new GeminiAdapter();
     assertEquals(adapter.name, "gemini");
-  });
-
-  await t.step("supportedModels contains Gemini 2.5 models", () => {
-    const adapter = new GeminiAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "gemini-2.5-pro",
-      "gemini-2.5-flash",
-    ]);
-  });
-
-  await t.step("supportedModels contains Gemini 2.0 models", () => {
-    const adapter = new GeminiAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "gemini-2.0-flash-exp",
-      "gemini-2.0-pro-exp",
-    ]);
-  });
-
-  await t.step("supportedModels contains Gemini 1.5 models", () => {
-    const adapter = new GeminiAdapter();
-    assertArrayIncludes(adapter.supportedModels, [
-      "gemini-1.5-pro",
-      "gemini-1.5-flash",
-    ]);
   });
 });
 
@@ -66,8 +46,6 @@ Deno.test("GeminiAdapter - implements LLMAdapter interface", async (t) => {
     const adapter = new GeminiAdapter();
 
     assertEquals(typeof adapter.name, "string");
-    assertEquals(Array.isArray(adapter.supportedModels), true);
-    assertEquals(adapter.supportedModels.length > 0, true);
   });
 });
 

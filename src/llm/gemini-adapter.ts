@@ -7,16 +7,20 @@ import type {
   StreamResult,
   TokenUsage,
 } from "./types.ts";
+import type {
+  DiscoverableAdapter,
+  DiscoveredModel,
+} from "./model-discovery-types.ts";
 import { BaseLLMAdapter, type ProviderCallResult } from "./base-adapter.ts";
 import { Logger } from "../logger/mod.ts";
-
-const log = Logger.create("llm:gemini");
+import { LLMProviderError } from "../errors.ts";
+import { PricingService } from "./pricing-service.ts";
 import {
   DEFAULT_API_TIMEOUT_MS,
   DEFAULT_TEMPERATURE,
   GEMINI_DEFAULT_MAX_TOKENS,
 } from "../constants.ts";
-import { LLMProviderError } from "../errors.ts";
+
 import {
   createChunk,
   createStreamState,
@@ -25,6 +29,8 @@ import {
   handleStreamError,
 } from "./stream-handler.ts";
 
+const log = Logger.create("llm:gemini");
+
 /** Token usage metadata from Gemini API responses */
 interface GeminiUsageMetadata {
   promptTokenCount?: number;
@@ -32,25 +38,9 @@ interface GeminiUsageMetadata {
   totalTokenCount?: number;
 }
 
-export class GeminiAdapter extends BaseLLMAdapter {
+export class GeminiAdapter extends BaseLLMAdapter
+  implements DiscoverableAdapter {
   readonly name = "gemini";
-  readonly supportedModels = [
-    // 2025 Gemini models
-    "gemini-3",
-    "gemini-3-flash-preview",
-    "gemini-2.5-pro",
-    "gemini-2.5-flash",
-    // Gemini 2.0 models
-    "gemini-2.0-flash-exp",
-    "gemini-2.0-pro-exp",
-    // Gemini 1.5 models
-    "gemini-1.5-pro",
-    "gemini-1.5-pro-002",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-002",
-    // Legacy
-    "gemini-1.0-pro",
-  ];
 
   protected override config: LLMConfig = {
     provider: "gemini",
@@ -78,14 +68,6 @@ export class GeminiAdapter extends BaseLLMAdapter {
 
     if (!config.model) {
       errors.push("Model is required");
-    } else if (
-      !this.supportedModels.includes(config.model) &&
-      !this.isCustomModel(config.model)
-    ) {
-      log.warn("Custom/unknown model", {
-        model: config.model,
-        knownModels: this.supportedModels,
-      });
     }
 
     if (
@@ -102,40 +84,76 @@ export class GeminiAdapter extends BaseLLMAdapter {
     return errors;
   }
 
-  private isCustomModel(model: string): boolean {
-    return (
-      model.includes("gemini") ||
-      model.includes("pro") ||
-      model.includes("flash") ||
-      model.includes("experimental") ||
-      model.includes("thinking")
+  estimateCost(promptTokens: number, completionTokens: number): number {
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
     );
   }
 
-  estimateCost(promptTokens: number, completionTokens: number): number {
-    const defaultCost = { input: 0.00125, output: 0.005 };
-    const modelCosts: Record<string, { input: number; output: number }> = {
-      // 2025 Gemini pricing (estimated)
-      "gemini-3": { input: 0.005, output: 0.015 },
-      "gemini-3-flash-preview": { input: 0.0001, output: 0.0004 },
-      "gemini-2.5-pro": { input: 0.00125, output: 0.005 },
-      "gemini-2.5-flash": { input: 0.000075, output: 0.0003 },
-      // Gemini 2.0 pricing
-      "gemini-2.0-flash-exp": { input: 0.0001, output: 0.0004 },
-      "gemini-2.0-pro-exp": { input: 0.00125, output: 0.005 },
-      // Gemini 1.5 pricing
-      "gemini-1.5-pro": { input: 0.00125, output: 0.005 },
-      "gemini-1.5-pro-002": { input: 0.00125, output: 0.005 },
-      "gemini-1.5-flash": { input: 0.000075, output: 0.0003 },
-      "gemini-1.5-flash-002": { input: 0.000075, output: 0.0003 },
-      "gemini-1.0-pro": { input: 0.0005, output: 0.0015 },
+  /**
+   * Discover available models from Google Gemini API
+   * Uses GET /v1beta/models REST endpoint
+   */
+  async discoverModels(): Promise<DiscoveredModel[]> {
+    const apiKey = this.config.apiKey;
+
+    if (!apiKey) {
+      throw new LLMProviderError(
+        "Google API key not configured",
+        "gemini",
+        false,
+      );
+    }
+
+    const url =
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(this.config.timeout || 10000),
+    });
+
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `Gemini API error (${response.status}): Failed to list models`,
+        "gemini",
+        response.status >= 500,
+      );
+    }
+
+    const data = await response.json() as {
+      models?: Array<{
+        name: string;
+        displayName?: string;
+        description?: string;
+        supportedGenerationMethods?: string[];
+        inputTokenLimit?: number;
+        outputTokenLimit?: number;
+      }>;
     };
 
-    const costs = modelCosts[this.config.model] ?? defaultCost;
-    const inputCost = (promptTokens / 1000) * costs.input;
-    const outputCost = (completionTokens / 1000) * costs.output;
+    // Filter to models that support content generation
+    const discoveredModels: DiscoveredModel[] = (data.models ?? [])
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => ({
+        // Strip "models/" prefix from name
+        id: m.name.replace("models/", ""),
+        name: m.displayName,
+        description: m.description,
+        metadata: {
+          supportedMethods: m.supportedGenerationMethods,
+          inputTokenLimit: m.inputTokenLimit,
+          outputTokenLimit: m.outputTokenLimit,
+        },
+      }));
 
-    return inputCost + outputCost;
+    // Sort by ID for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered Gemini models", { count: discoveredModels.length });
+    return discoveredModels;
   }
 
   // ============================================================================

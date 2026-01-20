@@ -2,9 +2,16 @@
  * Unit tests for Mock LLM Adapter
  */
 
-import { beforeEach, describe, it } from "@std/testing/bdd";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  it,
+} from "@std/testing/bdd";
 import { assert, assertEquals, assertExists } from "@std/assert";
 import { MockLLMAdapter } from "../../../src/llm/mock-adapter.ts";
+import { PricingService } from "../../../src/llm/pricing-service.ts";
 import {
   assertValidCostEstimate,
   assertValidLLMResponse,
@@ -16,6 +23,14 @@ import type { GenerationContext, LLMRequest } from "../../../src/llm/types.ts";
 describe("MockLLMAdapter", () => {
   let adapter: MockLLMAdapter;
   let config: ReturnType<typeof createMockLLMConfig>;
+
+  beforeAll(async () => {
+    await PricingService.initialize();
+  });
+
+  afterAll(() => {
+    PricingService.reset();
+  });
 
   beforeEach(() => {
     adapter = new MockLLMAdapter();
@@ -29,9 +44,6 @@ describe("MockLLMAdapter", () => {
   describe("Configuration", () => {
     it("should have correct adapter properties", () => {
       assertEquals(adapter.name, "mock");
-      assert(adapter.supportedModels.includes("mock-gpt-4"));
-      assert(adapter.supportedModels.includes("mock-claude-3"));
-      assert(adapter.supportedModels.includes("mock-local"));
     });
 
     it("should validate configuration correctly", () => {

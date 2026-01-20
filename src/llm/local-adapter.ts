@@ -10,7 +10,12 @@ import type {
   StreamResult,
   TokenUsage,
 } from "./types.ts";
+import type {
+  DiscoverableAdapter,
+  DiscoveredModel,
+} from "./model-discovery-types.ts";
 import { CodeExtractor } from "./code-extractor.ts";
+import { PricingService } from "./pricing-service.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import {
   DEFAULT_MAX_TOKENS,
@@ -35,29 +40,10 @@ import { Logger } from "../logger/mod.ts";
 
 const log = Logger.create("llm:local");
 
-export class LocalLLMAdapter implements StreamingLLMAdapter {
+export class LocalLLMAdapter
+  implements StreamingLLMAdapter, DiscoverableAdapter {
   readonly name = "local";
   readonly supportsStreaming = true;
-  readonly supportedModels = [
-    // Ollama models
-    "llama3.2:latest",
-    "llama3.1:latest",
-    "llama3:latest",
-    "codellama:latest",
-    "codellama:13b",
-    "codellama:7b",
-    "mistral:latest",
-    "qwen2.5-coder:latest",
-    "deepseek-coder:latest",
-    "starcoder2:latest",
-    // Generic patterns
-    "llama",
-    "codellama",
-    "mistral",
-    "qwen",
-    "deepseek",
-    "starcoder",
-  ];
 
   private config: LLMConfig = {
     provider: "local",
@@ -218,9 +204,13 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     return errors;
   }
 
-  estimateCost(_promptTokens: number, _completionTokens: number): number {
-    // Local models are typically free to run
-    return 0;
+  estimateCost(promptTokens: number, completionTokens: number): number {
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
+    );
   }
 
   async isHealthy(): Promise<boolean> {
@@ -237,6 +227,121 @@ export class LocalLLMAdapter implements StreamingLLMAdapter {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Discover available models from Ollama API
+   * Uses GET /api/tags endpoint
+   */
+  discoverModels(): Promise<DiscoveredModel[]> {
+    const endpoint = this.getEndpoint();
+    const isOllama = this.isOllamaEndpoint(endpoint);
+
+    if (isOllama) {
+      return this.discoverOllamaModels(endpoint);
+    } else {
+      return this.discoverOpenAICompatibleModels(endpoint);
+    }
+  }
+
+  /**
+   * Discover models from Ollama /api/tags endpoint
+   */
+  private async discoverOllamaModels(
+    endpoint: string,
+  ): Promise<DiscoveredModel[]> {
+    const url = `${endpoint}/api/tags`;
+
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(this.config.timeout || 10000),
+    });
+
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `Ollama API error (${response.status}): Failed to list models`,
+        "local",
+        response.status >= 500,
+      );
+    }
+
+    const data = await response.json() as {
+      models?: Array<{
+        name: string;
+        model?: string;
+        modified_at?: string;
+        size?: number;
+        digest?: string;
+        details?: Record<string, unknown>;
+      }>;
+    };
+
+    const discoveredModels: DiscoveredModel[] = (data.models ?? []).map((
+      m,
+    ) => ({
+      id: m.name,
+      name: m.model || m.name,
+      createdAt: m.modified_at ? new Date(m.modified_at).getTime() : undefined,
+      metadata: {
+        size: m.size,
+        digest: m.digest,
+        details: m.details,
+      },
+    }));
+
+    // Sort by name for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered Ollama models", { count: discoveredModels.length });
+    return discoveredModels;
+  }
+
+  /**
+   * Discover models from OpenAI-compatible /v1/models endpoint
+   */
+  private async discoverOpenAICompatibleModels(
+    endpoint: string,
+  ): Promise<DiscoveredModel[]> {
+    const url = `${endpoint}/v1/models`;
+
+    const headers: Record<string, string> = {};
+    if (this.config.apiKey) {
+      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
+    }
+
+    const response = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(this.config.timeout || 10000),
+    });
+
+    if (!response.ok) {
+      throw new LLMProviderError(
+        `Local LLM API error (${response.status}): Failed to list models`,
+        "local",
+        response.status >= 500,
+      );
+    }
+
+    const data = await response.json() as {
+      data?: Array<{
+        id: string;
+        created?: number;
+        owned_by?: string;
+      }>;
+    };
+
+    const discoveredModels: DiscoveredModel[] = (data.data ?? []).map((m) => ({
+      id: m.id,
+      createdAt: m.created ? m.created * 1000 : undefined,
+      metadata: {
+        owned_by: m.owned_by,
+      },
+    }));
+
+    // Sort by ID for consistent ordering
+    discoveredModels.sort((a, b) => a.id.localeCompare(b.id));
+
+    log.info("Discovered local models", { count: discoveredModels.length });
+    return discoveredModels;
   }
 
   private async callLocalLLM(

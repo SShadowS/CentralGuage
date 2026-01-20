@@ -10,12 +10,12 @@ import type {
 import { CodeExtractor } from "./code-extractor.ts";
 import { DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE } from "../constants.ts";
 import { Logger } from "../logger/mod.ts";
+import { PricingService } from "./pricing-service.ts";
 
 const log = Logger.create("llm:mock");
 
 export class MockLLMAdapter implements LLMAdapter {
   readonly name = "mock";
-  readonly supportedModels = ["mock-gpt-4", "mock-claude-3", "mock-local"];
 
   private config: LLMConfig = {
     provider: "mock",
@@ -203,12 +203,6 @@ export class MockLLMAdapter implements LLMAdapter {
 
     if (!config.model) {
       errors.push("Model is required");
-    } else if (!this.supportedModels.includes(config.model)) {
-      errors.push(
-        `Unsupported model: ${config.model}. Supported: ${
-          this.supportedModels.join(", ")
-        }`,
-      );
     }
 
     if (
@@ -225,9 +219,13 @@ export class MockLLMAdapter implements LLMAdapter {
     return errors;
   }
 
-  estimateCost(_promptTokens: number, _completionTokens: number): number {
-    // Mock cost estimation (free for mock)
-    return 0;
+  estimateCost(promptTokens: number, completionTokens: number): number {
+    return PricingService.estimateCostSync(
+      this.name,
+      this.config.model,
+      promptTokens,
+      completionTokens,
+    );
   }
 
   isHealthy(): Promise<boolean> {

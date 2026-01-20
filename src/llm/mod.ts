@@ -27,6 +27,31 @@ export { DEFAULT_CONTINUATION_CONFIG, isStreamingAdapter } from "./types.ts";
 // Registry
 export { LLMAdapterRegistry } from "./registry.ts";
 
+// Model Discovery
+export type {
+  CachedModelList,
+  CacheStats,
+  DiscoverableAdapter,
+  DiscoveredModel,
+  DiscoveredModelPricing,
+  DiscoveryOptions,
+  DiscoveryResult,
+} from "./model-discovery-types.ts";
+export { isDiscoverableAdapter } from "./model-discovery-types.ts";
+export { ModelDiscoveryService } from "./model-discovery.ts";
+
+// Pricing
+export type {
+  CachedApiPricing,
+  ModelPricing,
+  PricingConfig,
+  PricingLookupResult,
+  PricingSource,
+  PricingSummaryEntry,
+  ProviderPricing,
+} from "./pricing-types.ts";
+export { PricingService } from "./pricing-service.ts";
+
 // Model Presets
 export type { ModelPreset } from "./model-presets.ts";
 export {
