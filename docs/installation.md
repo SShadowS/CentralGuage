@@ -4,20 +4,20 @@
 
 ### Required
 
-| Requirement | Version | Notes |
-|-------------|---------|-------|
-| Deno | 1.44+ | Runtime for CentralGauge |
-| Windows | 10/11 or Server | Required for BC containers |
-| Docker Desktop | Latest | For container management |
-| bccontainerhelper | Latest | PowerShell module for BC |
+| Requirement       | Version         | Notes                      |
+| ----------------- | --------------- | -------------------------- |
+| Deno              | 1.44+           | Runtime for CentralGauge   |
+| Windows           | 10/11 or Server | Required for BC containers |
+| Docker Desktop    | Latest          | For container management   |
+| bccontainerhelper | Latest          | PowerShell module for BC   |
 
 ### Optional
 
-| Requirement | Notes |
-|-------------|-------|
-| Git Bash | Recommended shell on Windows |
-| jq | For inspecting JSON files |
-| Visual Studio Code | For AL development |
+| Requirement        | Notes                        |
+| ------------------ | ---------------------------- |
+| Git Bash           | Recommended shell on Windows |
+| jq                 | For inspecting JSON files    |
+| Visual Studio Code | For AL development           |
 
 ## Step 1: Install Deno
 
@@ -221,7 +221,7 @@ Add rate limiting configuration:
 ```yaml
 # .centralgauge.yml
 llm:
-  timeout: 60000  # Increase timeout to 60s
+  timeout: 60000 # Increase timeout to 60s
 ```
 
 ## Next Steps

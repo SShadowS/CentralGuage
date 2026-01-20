@@ -26,13 +26,13 @@ centralgauge bench --llms <models> --tasks <patterns>
 centralgauge bench --llms sonnet,opus,gpt-4o
 ```
 
-| Alias | Resolves To |
-|-------|-------------|
-| opus | claude-4.5-opus |
-| sonnet | claude-sonnet-4 |
-| gpt-5 | gpt-5.2 |
-| gpt-4o | gpt-4o |
-| o3 | o3 |
+| Alias  | Resolves To          |
+| ------ | -------------------- |
+| opus   | claude-4.5-opus      |
+| sonnet | claude-sonnet-4      |
+| gpt-5  | gpt-5.2              |
+| gpt-4o | gpt-4o               |
+| o3     | o3                   |
 | gemini | gemini-3-pro-preview |
 
 #### Groups
@@ -41,11 +41,11 @@ centralgauge bench --llms sonnet,opus,gpt-4o
 centralgauge bench --llms flagship
 ```
 
-| Group | Models |
-|-------|--------|
+| Group    | Models                    |
+| -------- | ------------------------- |
 | flagship | opus, gpt-5, gemini-3-pro |
-| coding | sonnet, gpt-4o |
-| budget | gpt-4o-mini, gemini-flash |
+| coding   | sonnet, gpt-4o            |
+| budget   | gpt-4o-mini, gemini-flash |
 
 #### Provider/Model Format
 
@@ -107,78 +107,78 @@ centralgauge bench --agents default --sandbox --container Cronus27
 
 ### Model Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `-l, --llms` | string[] | - | Models to benchmark |
-| `--temperature` | number | 0.1 | Generation temperature |
-| `--max-tokens` | number | 4000 | Max response tokens |
+| Option          | Type     | Default | Description            |
+| --------------- | -------- | ------- | ---------------------- |
+| `-l, --llms`    | string[] | -       | Models to benchmark    |
+| `--temperature` | number   | 0.1     | Generation temperature |
+| `--max-tokens`  | number   | 4000    | Max response tokens    |
 
 ### Agent Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--agents` | string[] | - | Agent configurations |
-| `--container` | string | Cronus27 | BC container name |
-| `-s, --sandbox` | boolean | false | Run in sandbox |
+| Option          | Type     | Default  | Description          |
+| --------------- | -------- | -------- | -------------------- |
+| `--agents`      | string[] | -        | Agent configurations |
+| `--container`   | string   | Cronus27 | BC container name    |
+| `-s, --sandbox` | boolean  | false    | Run in sandbox       |
 
 ### Task Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `-t, --tasks` | string[] | tasks/**/*.yml | Task patterns |
-| `-a, --attempts` | number | 2 | Attempts per task |
+| Option           | Type     | Default        | Description       |
+| ---------------- | -------- | -------------- | ----------------- |
+| `-t, --tasks`    | string[] | tasks/**/*.yml | Task patterns     |
+| `-a, --attempts` | number   | 2              | Attempts per task |
 
 ### Execution Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--sequential` | boolean | false | Disable parallelism |
-| `--max-concurrency` | number | 10 | Max concurrent calls |
-| `--no-continuation` | boolean | false | Disable continuation |
-| `--stream` | boolean | false | Enable streaming |
-| `--retry` | string | - | Retry from results file |
+| Option              | Type    | Default | Description             |
+| ------------------- | ------- | ------- | ----------------------- |
+| `--sequential`      | boolean | false   | Disable parallelism     |
+| `--max-concurrency` | number  | 10      | Max concurrent calls    |
+| `--no-continuation` | boolean | false   | Disable continuation    |
+| `--stream`          | boolean | false   | Enable streaming        |
+| `--retry`           | string  | -       | Retry from results file |
 
 ### Output Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `-o, --output` | string | results/ | Output directory |
-| `-f, --format` | string | verbose | Output format |
-| `--json-events` | boolean | false | JSON line output |
-| `--tui` | boolean | false | Enable TUI |
-| `-q, --quiet` | boolean | false | Minimal output |
+| Option          | Type    | Default  | Description      |
+| --------------- | ------- | -------- | ---------------- |
+| `-o, --output`  | string  | results/ | Output directory |
+| `-f, --format`  | string  | verbose  | Output format    |
+| `--json-events` | boolean | false    | JSON line output |
+| `--tui`         | boolean | false    | Enable TUI       |
+| `-q, --quiet`   | boolean | false    | Minimal output   |
 
 ### Debug Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--debug` | boolean | false | Enable debug logging |
-| `--debug-output` | string | debug/ | Debug directory |
-| `--debug-level` | string | basic | Log level |
+| Option           | Type    | Default | Description          |
+| ---------------- | ------- | ------- | -------------------- |
+| `--debug`        | boolean | false   | Enable debug logging |
+| `--debug-output` | string  | debug/  | Debug directory      |
+| `--debug-level`  | string  | basic   | Log level            |
 
 ### Container Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--container-provider` | string | auto | Provider to use |
+| Option                 | Type   | Default | Description     |
+| ---------------------- | ------ | ------- | --------------- |
+| `--container-provider` | string | auto    | Provider to use |
 
 ### Prompt Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--system-prompt` | string | - | Override system prompt |
-| `--prompt-prefix` | string | - | Add prefix to prompt |
-| `--prompt-suffix` | string | - | Add suffix to prompt |
-| `--prompt-stage` | string | both | Stage to apply (generation, fix, both) |
-| `--prompt-provider` | string | - | Provider to apply to |
+| Option              | Type   | Default | Description                            |
+| ------------------- | ------ | ------- | -------------------------------------- |
+| `--system-prompt`   | string | -       | Override system prompt                 |
+| `--prompt-prefix`   | string | -       | Add prefix to prompt                   |
+| `--prompt-suffix`   | string | -       | Add suffix to prompt                   |
+| `--prompt-stage`    | string | both    | Stage to apply (generation, fix, both) |
+| `--prompt-provider` | string | -       | Provider to apply to                   |
 
 ### Knowledge Bank Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--knowledge` | string[] | - | Markdown files to inject as knowledge bank |
-| `--knowledge-dir` | string | - | Directory of .md files to inject |
-| `--run-label` | string | auto | Custom label for this run |
+| Option            | Type     | Default | Description                                |
+| ----------------- | -------- | ------- | ------------------------------------------ |
+| `--knowledge`     | string[] | -       | Markdown files to inject as knowledge bank |
+| `--knowledge-dir` | string   | -       | Directory of .md files to inject           |
+| `--run-label`     | string   | auto    | Custom label for this run                  |
 
 Knowledge files are prepended to the system prompt to provide model-specific guidance. When knowledge is provided without a custom `--run-label`, the run is automatically labeled with "(guided)" suffix for easy comparison in reports.
 
@@ -250,6 +250,7 @@ centralgauge bench --llms sonnet --tasks "tasks/**/*.yml" --tui
 ```
 
 Features:
+
 - Progress bar
 - Active LLM calls
 - Compile queue status
@@ -388,11 +389,11 @@ centralgauge bench --llms gpt-5 --knowledge model-shortcomings/gpt-5.rules.md
 
 ## Exit Codes
 
-| Code | Description |
-|------|-------------|
-| 0 | Success |
-| 1 | Error (with results) |
-| 2 | Invalid arguments |
+| Code | Description          |
+| ---- | -------------------- |
+| 0    | Success              |
+| 1    | Error (with results) |
+| 2    | Invalid arguments    |
 
 ## See Also
 

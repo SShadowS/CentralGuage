@@ -86,19 +86,19 @@ expected:
 
 # Metrics to collect
 metrics:
-  - compile_pass      # Did it compile?
-  - tests_pass        # Did tests pass?
-  - pass_attempt      # Which attempt passed?
+  - compile_pass # Did it compile?
+  - tests_pass # Did tests pass?
+  - pass_attempt # Which attempt passed?
 
 # Optional metadata
 metadata:
-  difficulty: easy          # easy | medium | hard
-  category: table           # Object type being tested
-  tags:                     # For filtering
+  difficulty: easy # easy | medium | hard
+  category: table # Object type being tested
+  tags: # For filtering
     - basic-syntax
     - table-definition
-  estimatedTokens: 500      # Expected token usage
-  target: Cloud             # Cloud | OnPrem (for HttpClient, etc.)
+  estimatedTokens: 500 # Expected token usage
+  target: Cloud # Cloud | OnPrem (for HttpClient, etc.)
 
 # Task-specific prompt injections (optional)
 prompts:
@@ -119,9 +119,9 @@ Unique identifier following the pattern `CG-AL-{difficulty}{number}`:
 - `H` = Hard (001-999)
 
 ```yaml
-id: CG-AL-E001    # Easy task 001
-id: CG-AL-M015    # Medium task 015
-id: CG-AL-H003    # Hard task 003
+id: CG-AL-E001 # Easy task 001
+id: CG-AL-M015 # Medium task 015
+id: CG-AL-H003 # Hard task 003
 ```
 
 ### prompt_template / fix_template
@@ -129,11 +129,12 @@ id: CG-AL-H003    # Hard task 003
 References to prompt templates in the `templates/` directory:
 
 ```yaml
-prompt_template: code-gen.md     # For first attempt
-fix_template: bugfix.md          # For retry after errors
+prompt_template: code-gen.md # For first attempt
+fix_template: bugfix.md # For retry after errors
 ```
 
 Default templates:
+
 - `code-gen.md` - Standard code generation prompt
 - `bugfix.md` - Error fix prompt with compilation errors
 
@@ -142,9 +143,9 @@ Default templates:
 Maximum number of generation attempts:
 
 ```yaml
-max_attempts: 2    # First try + one retry (default)
-max_attempts: 1    # Single attempt only
-max_attempts: 3    # First try + two retries
+max_attempts: 2 # First try + one retry (default)
+max_attempts: 1 # Single attempt only
+max_attempts: 3 # First try + two retries
 ```
 
 ### description
@@ -210,9 +211,9 @@ Metrics to track for this task:
 
 ```yaml
 metrics:
-  - compile_pass      # Boolean: compilation succeeded
-  - tests_pass        # Boolean: all tests passed
-  - pass_attempt      # Integer: which attempt succeeded (0=none)
+  - compile_pass # Boolean: compilation succeeded
+  - tests_pass # Boolean: all tests passed
+  - pass_attempt # Integer: which attempt succeeded (0=none)
 ```
 
 ### metadata
@@ -222,10 +223,10 @@ Optional task metadata:
 ```yaml
 metadata:
   # Difficulty classification
-  difficulty: easy    # easy | medium | hard
+  difficulty: easy # easy | medium | hard
 
   # Primary AL object type
-  category: table     # table | page | codeunit | report | etc.
+  category: table # table | page | codeunit | report | etc.
 
   # Tags for filtering
   tags:
@@ -237,7 +238,7 @@ metadata:
   estimatedTokens: 500
 
   # Target platform (for OnPrem-only features)
-  target: Cloud       # Cloud | OnPrem
+  target: Cloud # Cloud | OnPrem
 ```
 
 ### prompts
@@ -266,12 +267,12 @@ prompts:
 
 Objects in generated code and tests should use specific ID ranges:
 
-| Range | Purpose |
-|-------|---------|
-| 50000-59999 | Standard Business Central |
-| 69000-69999 | Prereq app objects |
+| Range       | Purpose                          |
+| ----------- | -------------------------------- |
+| 50000-59999 | Standard Business Central        |
+| 69000-69999 | Prereq app objects               |
 | 70000-79999 | Generated code (benchmark tasks) |
-| 80000-89999 | Test codeunits |
+| 80000-89999 | Test codeunits                   |
 
 ## Test File Naming
 
@@ -282,6 +283,7 @@ tests/al/{difficulty}/CG-AL-{ID}.Test.al
 ```
 
 Example:
+
 ```
 tests/al/easy/CG-AL-E001.Test.al
 tests/al/medium/CG-AL-M005.Test.al
@@ -398,6 +400,7 @@ deno run --allow-all cli/centralgauge.ts validate-tasks tasks/
 ```
 
 This checks:
+
 - YAML syntax
 - Required fields present
 - ID format correct

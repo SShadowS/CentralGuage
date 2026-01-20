@@ -43,14 +43,14 @@ Run multiple models and tasks concurrently for faster benchmark completion. The 
 
 Works with any LLM provider:
 
-| Provider | Models |
-|----------|--------|
-| Anthropic | Claude 4.5 Opus, Claude 4 Sonnet |
-| OpenAI | GPT-5, GPT-4o, o3, o1 |
-| Google | Gemini 3 Pro, Gemini 2 Flash |
-| Azure | Azure OpenAI deployments |
-| OpenRouter | 200+ models via unified API |
-| Local | Ollama, vLLM, any OpenAI-compatible |
+| Provider   | Models                              |
+| ---------- | ----------------------------------- |
+| Anthropic  | Claude 4.5 Opus, Claude 4 Sonnet    |
+| OpenAI     | GPT-5, GPT-4o, o3, o1               |
+| Google     | Gemini 3 Pro, Gemini 2 Flash        |
+| Azure      | Azure OpenAI deployments            |
+| OpenRouter | 200+ models via unified API         |
+| Local      | Ollama, vLLM, any OpenAI-compatible |
 
 ### Agent Benchmarking
 
@@ -127,15 +127,15 @@ deno task bench --agents my-agent --tasks tasks/easy/*.yml
 
 ## Technology Stack
 
-| Component | Technology |
-|-----------|------------|
-| Runtime | Deno 1.44+ |
-| Language | TypeScript 5 |
-| CLI Framework | Cliffy Command |
-| Containers | bccontainerhelper + Docker |
-| Task Format | YAML 1.2 |
-| Reports | JSON + HTML (SvelteKit) |
-| Database | SQLite (for stats) |
+| Component     | Technology                 |
+| ------------- | -------------------------- |
+| Runtime       | Deno 1.44+                 |
+| Language      | TypeScript 5               |
+| CLI Framework | Cliffy Command             |
+| Containers    | bccontainerhelper + Docker |
+| Task Format   | YAML 1.2                   |
+| Reports       | JSON + HTML (SvelteKit)    |
+| Database      | SQLite (for stats)         |
 
 ## Project Structure
 

@@ -69,7 +69,7 @@ Deno.test("FeatureName", async (t) => {
     assertThrows(
       () => myFunction(null),
       Error,
-      "Input required"
+      "Input required",
     );
   });
 });
@@ -108,9 +108,9 @@ const response = createMockLLMResponse({
 
 ```typescript
 import {
-  createMockTaskManifest,
-  createMockTaskExecutionContext,
   createMockExecutionAttempt,
+  createMockTaskExecutionContext,
+  createMockTaskManifest,
 } from "../utils/test-helpers.ts";
 
 const manifest = createMockTaskManifest({
@@ -134,10 +134,10 @@ const attempt = createMockExecutionAttempt({
 
 ```typescript
 import {
-  createMockCompilationResult,
   createMockCompilationError,
-  createMockTestResult,
+  createMockCompilationResult,
   createMockTestCaseResult,
+  createMockTestResult,
 } from "../utils/test-helpers.ts";
 
 const compileResult = createMockCompilationResult({
@@ -172,9 +172,8 @@ Deno.test("uses API key from env", async () => {
     // Test code that reads env vars
     const key = Deno.env.get("ANTHROPIC_API_KEY");
     assertEquals(key, "test-key-123");
-
   } finally {
-    mockEnv.restore();  // Always restore
+    mockEnv.restore(); // Always restore
   }
 });
 ```
@@ -217,9 +216,9 @@ Deno.test("emits correct events", async () => {
 
 ```typescript
 import {
-  assertValidLLMResponse,
-  assertValidCostEstimate,
   assertThrowsWithMessage,
+  assertValidCostEstimate,
+  assertValidLLMResponse,
 } from "../utils/test-helpers.ts";
 
 // Validate response structure
@@ -233,7 +232,7 @@ assertValidCostEstimate(cost);
 // Assert error message
 await assertThrowsWithMessage(
   () => riskyOperation(),
-  "expected error substring"
+  "expected error substring",
 );
 ```
 
@@ -244,15 +243,15 @@ Pre-built AL code for testing:
 ```typescript
 import { MockALCode } from "../utils/test-helpers.ts";
 
-const code = MockALCode.table;     // Complete table definition
-const page = MockALCode.page;      // Complete page definition
-const codeunit = MockALCode.codeunit;  // Complete codeunit
+const code = MockALCode.table; // Complete table definition
+const page = MockALCode.page; // Complete page definition
+const codeunit = MockALCode.codeunit; // Complete codeunit
 ```
 
 ## Temporary Directories
 
 ```typescript
-import { createTempDir, cleanupTempDir } from "../utils/test-helpers.ts";
+import { cleanupTempDir, createTempDir } from "../utils/test-helpers.ts";
 
 Deno.test("writes output files", async () => {
   const tempDir = await createTempDir("my-test");
@@ -262,7 +261,6 @@ Deno.test("writes output files", async () => {
 
     const files = Array.from(Deno.readDirSync(tempDir));
     assertEquals(files.length, 1);
-
   } finally {
     await cleanupTempDir(tempDir);
   }
@@ -278,7 +276,7 @@ const isWindows = Deno.build.os === "windows";
 
 Deno.test({
   name: "bccontainer compiles AL code",
-  ignore: !isWindows,  // Skip on non-Windows
+  ignore: !isWindows, // Skip on non-Windows
   fn: async () => {
     // Windows-only test
   },
@@ -314,7 +312,7 @@ Deno.test("handles errors correctly", async (t) => {
     assertThrows(
       () => validate(null),
       ValidationError,
-      "Input is required"
+      "Input is required",
     );
   });
 
@@ -410,7 +408,7 @@ Deno.test("test A", () => {
   sharedData = "from A";
 });
 Deno.test("test B", () => {
-  assertEquals(sharedData, "from A");  // Depends on A
+  assertEquals(sharedData, "from A"); // Depends on A
 });
 ```
 
@@ -418,11 +416,11 @@ Deno.test("test B", () => {
 
 ```typescript
 Deno.test("handles edge cases", async (t) => {
-  await t.step("empty input", () => { /* ... */ });
-  await t.step("null input", () => { /* ... */ });
-  await t.step("very long input", () => { /* ... */ });
-  await t.step("special characters", () => { /* ... */ });
-  await t.step("unicode", () => { /* ... */ });
+  await t.step("empty input", () => {/* ... */});
+  await t.step("null input", () => {/* ... */});
+  await t.step("very long input", () => {/* ... */});
+  await t.step("special characters", () => {/* ... */});
+  await t.step("unicode", () => {/* ... */});
 });
 ```
 

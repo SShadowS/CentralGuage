@@ -90,12 +90,12 @@ Each attempt records:
 
 Tasks are scored on a 0.0 to 1.0 scale:
 
-| Outcome | Score | Description |
-|---------|-------|-------------|
-| Compilation failed | 0.0 | Code did not compile |
-| Compilation only | 0.5 | Compiled but no tests ran |
-| Partial tests | 0.5-0.9 | Some tests passed |
-| All tests pass | 1.0 | Full success |
+| Outcome            | Score   | Description               |
+| ------------------ | ------- | ------------------------- |
+| Compilation failed | 0.0     | Code did not compile      |
+| Compilation only   | 0.5     | Compiled but no tests ran |
+| Partial tests      | 0.5-0.9 | Some tests passed         |
+| All tests pass     | 1.0     | Full success              |
 
 ### Attempt Weighting
 
@@ -114,11 +114,11 @@ The `finalScore` reflects the best attempt outcome, while `passedAttemptNumber` 
 
 ```json
 {
-  "overallPassRate": 0.85,    // 85% of tasks passed
-  "passRate1": 0.70,          // 70% passed on first attempt
-  "passRate2": 0.15,          // 15% passed on second attempt (after failing first)
-  "passNum1": 7,              // Count passed on attempt 1
-  "passNum2": 2               // Count passed on attempt 2
+  "overallPassRate": 0.85, // 85% of tasks passed
+  "passRate1": 0.70, // 70% passed on first attempt
+  "passRate2": 0.15, // 15% passed on second attempt (after failing first)
+  "passNum1": 7, // Count passed on attempt 1
+  "passNum2": 2 // Count passed on attempt 2
 }
 ```
 
@@ -136,7 +136,7 @@ The `finalScore` reflects the best attempt outcome, while `passedAttemptNumber` 
 
 ```json
 {
-  "totalCost": 0.2345    // USD
+  "totalCost": 0.2345 // USD
 }
 ```
 
@@ -144,11 +144,11 @@ The `finalScore` reflects the best attempt outcome, while `passedAttemptNumber` 
 
 ```json
 {
-  "totalDuration": 120000,        // Total wall-clock time (ms)
-  "totalLLMDuration": 80000,      // Time in LLM calls
-  "totalCompileDuration": 25000,  // Time compiling
-  "totalTestDuration": 15000,     // Time running tests
-  "secondsPerTask": 12.5          // Average per task
+  "totalDuration": 120000, // Total wall-clock time (ms)
+  "totalLLMDuration": 80000, // Time in LLM calls
+  "totalCompileDuration": 25000, // Time compiling
+  "totalTestDuration": 15000, // Time running tests
+  "secondsPerTask": 12.5 // Average per task
 }
 ```
 
@@ -221,9 +221,9 @@ The `hashInfo` helps identify comparable runs:
 ```json
 {
   "hashInfo": {
-    "taskSetHash": "c71a992f",           // Unique hash of all tasks
-    "testAppManifestHash": "abc123",     // Hash of test app.json
-    "totalFilesHashed": 25,              // Number of files included
+    "taskSetHash": "c71a992f", // Unique hash of all tasks
+    "testAppManifestHash": "abc123", // Hash of test app.json
+    "totalFilesHashed": 25, // Number of files included
     "computedAt": "2025-01-05T10:00:00Z"
   }
 }
@@ -263,6 +263,7 @@ deno task report results/ --html --output reports/
 ```
 
 Reports include:
+
 - Model comparison charts
 - Task-by-task breakdown
 - Pass rate visualizations
@@ -328,6 +329,7 @@ deno run --allow-all cli/centralgauge.ts stats-regression --threshold 10
 ### All Tasks Failed
 
 Check:
+
 1. Container is running: `docker ps`
 2. API keys are set: `source .env && echo $ANTHROPIC_API_KEY`
 3. Debug logs: Run with `--debug` flag
@@ -335,6 +337,7 @@ Check:
 ### Inconsistent Results
 
 If the same model produces different results:
+
 1. Check temperature setting (0.0 for deterministic)
 2. Verify task set hash matches
 3. Check for rate limiting or timeouts

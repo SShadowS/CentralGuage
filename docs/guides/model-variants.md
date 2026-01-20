@@ -32,14 +32,14 @@ deno task bench --llms "opus@temp=0.1,opus@temp=0.5,opus@temp=0.9"
 
 ## Supported Parameters
 
-| Parameter | Aliases | Type | Description |
-|-----------|---------|------|-------------|
-| `temperature` | `temp` | number | Generation temperature (0.0-1.0) |
-| `maxTokens` | `max_tokens`, `tokens` | number | Maximum response tokens |
-| `systemPromptName` | `prompt`, `system_prompt` | string | Named prompt from config |
-| `thinkingBudget` | `thinking`, `reasoning` | number | Extended thinking/reasoning budget |
-| `timeout` | - | number | Request timeout in ms |
-| `profile` | - | string | Named variant profile from config |
+| Parameter          | Aliases                   | Type   | Description                        |
+| ------------------ | ------------------------- | ------ | ---------------------------------- |
+| `temperature`      | `temp`                    | number | Generation temperature (0.0-1.0)   |
+| `maxTokens`        | `max_tokens`, `tokens`    | number | Maximum response tokens            |
+| `systemPromptName` | `prompt`, `system_prompt` | string | Named prompt from config           |
+| `thinkingBudget`   | `thinking`, `reasoning`   | number | Extended thinking/reasoning budget |
+| `timeout`          | -                         | number | Request timeout in ms              |
+| `profile`          | -                         | string | Named variant profile from config  |
 
 ## Temperature Comparison
 
@@ -50,12 +50,12 @@ Temperature controls the randomness of model outputs:
 deno task bench --llms "sonnet@temp=0.0,sonnet@temp=0.3,sonnet@temp=0.7,sonnet@temp=1.0"
 ```
 
-| Temperature | Behavior |
-|-------------|----------|
-| 0.0 | Most deterministic, repeatable |
-| 0.1-0.3 | Low variance, consistent code style |
-| 0.5-0.7 | Balanced creativity and consistency |
-| 0.8-1.0 | High variance, more creative |
+| Temperature | Behavior                            |
+| ----------- | ----------------------------------- |
+| 0.0         | Most deterministic, repeatable      |
+| 0.1-0.3     | Low variance, consistent code style |
+| 0.5-0.7     | Balanced creativity and consistency |
+| 0.8-1.0     | High variance, more creative        |
 
 For AL code generation, lower temperatures (0.1-0.3) typically produce more consistent results.
 
@@ -69,11 +69,13 @@ deno task bench --llms "opus@tokens=4000,opus@tokens=8000,opus@tokens=16000"
 ```
 
 Higher token limits allow for:
+
 - More complete code
 - Better comments and documentation
 - More detailed error handling
 
 But may also lead to:
+
 - Higher costs
 - More verbose unnecessary content
 - Slower response times
@@ -192,6 +194,7 @@ provider/model@param1=value1;param2=value2
 ```
 
 Examples:
+
 - `anthropic/claude-opus-4-5-20251101@temp=0.5`
 - `openai/gpt-4o@temp=0.1;tokens=8000`
 - `anthropic/claude-opus-4-5-20251101@profile=reasoning`

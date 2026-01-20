@@ -6,28 +6,28 @@ CentralGauge provides a comprehensive CLI for benchmarking, reporting, and analy
 
 These options are available for all commands:
 
-| Option | Description |
-|--------|-------------|
-| `-v, --verbose` | Enable verbose output |
-| `-q, --quiet` | Disable splash screen and minimize output |
-| `--help` | Show help for command |
-| `--version` | Show version |
+| Option          | Description                               |
+| --------------- | ----------------------------------------- |
+| `-v, --verbose` | Enable verbose output                     |
+| `-q, --quiet`   | Disable splash screen and minimize output |
+| `--help`        | Show help for command                     |
+| `--version`     | Show version                              |
 
 ## Commands Overview
 
-| Command | Description |
-|---------|-------------|
-| `bench` | Run benchmark evaluation |
-| `report` | Generate reports from results |
-| `report-from-db` | Generate reports from stats database |
-| `verify` | Analyze and fix failing benchmarks |
-| `rules` | Generate rules from model shortcomings |
-| `models` | List and test model resolution |
-| `config` | Configuration management |
-| `stats-*` | Historical statistics commands |
-| `container` | Container management |
-| `compile` | Compile AL code |
-| `test` | Run AL tests |
+| Command          | Description                            |
+| ---------------- | -------------------------------------- |
+| `bench`          | Run benchmark evaluation               |
+| `report`         | Generate reports from results          |
+| `report-from-db` | Generate reports from stats database   |
+| `verify`         | Analyze and fix failing benchmarks     |
+| `rules`          | Generate rules from model shortcomings |
+| `models`         | List and test model resolution         |
+| `config`         | Configuration management               |
+| `stats-*`        | Historical statistics commands         |
+| `container`      | Container management                   |
+| `compile`        | Compile AL code                        |
+| `test`           | Run AL tests                           |
 
 ## bench
 
@@ -41,37 +41,37 @@ centralgauge bench [options]
 
 ### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `-l, --llms` | string[] | - | LLM models to test |
-| `--agents` | string[] | - | Agent configurations to use |
-| `--container` | string | Cronus27 | BC container name |
-| `-s, --sandbox` | boolean | false | Run agents in isolated containers |
-| `-t, --tasks` | string[] | tasks/**/*.yml | Task file patterns |
-| `-a, --attempts` | number | 2 | Number of attempts per task |
-| `-o, --output` | string | results/ | Output directory |
-| `--temperature` | number | 0.1 | LLM temperature |
-| `--max-tokens` | number | 4000 | Maximum tokens per request |
-| `--debug` | boolean | false | Enable debug logging |
-| `--debug-output` | string | debug/ | Debug output directory |
-| `--debug-level` | string | basic | Debug log level |
-| `--container-provider` | string | auto | Container provider |
-| `--sequential` | boolean | false | Disable parallel execution |
-| `--max-concurrency` | number | 10 | Max concurrent LLM calls |
-| `-f, --format` | string | verbose | Output format |
-| `--system-prompt` | string | - | Override system prompt |
-| `--prompt-prefix` | string | - | Prefix for user prompt |
-| `--prompt-suffix` | string | - | Suffix for user prompt |
-| `--prompt-stage` | string | both | Apply overrides to stage |
-| `--prompt-provider` | string | - | Apply overrides to provider |
-| `--knowledge` | string[] | - | Markdown files to inject as knowledge bank |
-| `--knowledge-dir` | string | - | Directory of .md files to inject |
-| `--run-label` | string | auto | Custom label for this run |
-| `--no-continuation` | boolean | false | Disable continuation |
-| `--stream` | boolean | false | Enable streaming mode |
-| `--json-events` | boolean | false | Output JSON lines |
-| `--tui` | boolean | false | Enable TUI mode |
-| `--retry` | string | - | Retry from previous results |
+| Option                 | Type     | Default        | Description                                |
+| ---------------------- | -------- | -------------- | ------------------------------------------ |
+| `-l, --llms`           | string[] | -              | LLM models to test                         |
+| `--agents`             | string[] | -              | Agent configurations to use                |
+| `--container`          | string   | Cronus27       | BC container name                          |
+| `-s, --sandbox`        | boolean  | false          | Run agents in isolated containers          |
+| `-t, --tasks`          | string[] | tasks/**/*.yml | Task file patterns                         |
+| `-a, --attempts`       | number   | 2              | Number of attempts per task                |
+| `-o, --output`         | string   | results/       | Output directory                           |
+| `--temperature`        | number   | 0.1            | LLM temperature                            |
+| `--max-tokens`         | number   | 4000           | Maximum tokens per request                 |
+| `--debug`              | boolean  | false          | Enable debug logging                       |
+| `--debug-output`       | string   | debug/         | Debug output directory                     |
+| `--debug-level`        | string   | basic          | Debug log level                            |
+| `--container-provider` | string   | auto           | Container provider                         |
+| `--sequential`         | boolean  | false          | Disable parallel execution                 |
+| `--max-concurrency`    | number   | 10             | Max concurrent LLM calls                   |
+| `-f, --format`         | string   | verbose        | Output format                              |
+| `--system-prompt`      | string   | -              | Override system prompt                     |
+| `--prompt-prefix`      | string   | -              | Prefix for user prompt                     |
+| `--prompt-suffix`      | string   | -              | Suffix for user prompt                     |
+| `--prompt-stage`       | string   | both           | Apply overrides to stage                   |
+| `--prompt-provider`    | string   | -              | Apply overrides to provider                |
+| `--knowledge`          | string[] | -              | Markdown files to inject as knowledge bank |
+| `--knowledge-dir`      | string   | -              | Directory of .md files to inject           |
+| `--run-label`          | string   | auto           | Custom label for this run                  |
+| `--no-continuation`    | boolean  | false          | Disable continuation                       |
+| `--stream`             | boolean  | false          | Enable streaming mode                      |
+| `--json-events`        | boolean  | false          | Output JSON lines                          |
+| `--tui`                | boolean  | false          | Enable TUI mode                            |
+| `--retry`              | string   | -              | Retry from previous results                |
 
 ### Examples
 
@@ -113,17 +113,17 @@ centralgauge report <input> [options]
 
 ### Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `input` | Input directory or file with results |
+| Argument | Description                          |
+| -------- | ------------------------------------ |
+| `input`  | Input directory or file with results |
 
 ### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--html` | boolean | false | Generate HTML report |
-| `--output` | string | - | Output directory |
-| `--format` | string | json | Output format (json, csv) |
+| Option     | Type    | Default | Description               |
+| ---------- | ------- | ------- | ------------------------- |
+| `--html`   | boolean | false   | Generate HTML report      |
+| `--output` | string  | -       | Output directory          |
+| `--format` | string  | json    | Output format (json, csv) |
 
 ### Examples
 
@@ -147,16 +147,16 @@ centralgauge report-from-db [options]
 
 ### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--db` | string | results/centralgauge.db | Database path |
-| `--html` | boolean | false | Generate HTML report |
-| `--output` | string | - | Output directory |
-| `--task-set` | string | - | Filter by task set hash |
-| `--current-tasks` | boolean | false | Filter by current task files |
-| `--tasks` | string[] | - | Task patterns for current-tasks |
-| `--interactive` | boolean | false | Interactive run selection |
-| `--list-sets` | boolean | false | List available task sets |
+| Option            | Type     | Default                 | Description                     |
+| ----------------- | -------- | ----------------------- | ------------------------------- |
+| `--db`            | string   | results/centralgauge.db | Database path                   |
+| `--html`          | boolean  | false                   | Generate HTML report            |
+| `--output`        | string   | -                       | Output directory                |
+| `--task-set`      | string   | -                       | Filter by task set hash         |
+| `--current-tasks` | boolean  | false                   | Filter by current task files    |
+| `--tasks`         | string[] | -                       | Task patterns for current-tasks |
+| `--interactive`   | boolean  | false                   | Interactive run selection       |
+| `--list-sets`     | boolean  | false                   | List available task sets        |
 
 ### Examples
 
@@ -183,18 +183,18 @@ centralgauge verify <debug-dir> [options]
 
 ### Arguments
 
-| Argument | Description |
-|----------|-------------|
+| Argument    | Description                     |
+| ----------- | ------------------------------- |
 | `debug-dir` | Directory containing debug logs |
 
 ### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--session` | string | - | Specific session ID |
-| `--filter` | string | - | Filter by failure type (compile, test) |
-| `--dry-run` | boolean | false | Show fixes without applying |
-| `--task` | string | - | Analyze specific task |
+| Option      | Type    | Default | Description                            |
+| ----------- | ------- | ------- | -------------------------------------- |
+| `--session` | string  | -       | Specific session ID                    |
+| `--filter`  | string  | -       | Filter by failure type (compile, test) |
+| `--dry-run` | boolean | false   | Show fixes without applying            |
+| `--task`    | string  | -       | Analyze specific task                  |
 
 ### Examples
 
@@ -224,16 +224,16 @@ centralgauge rules <input> [options]
 
 ### Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `input` | Path to model shortcomings JSON file |
+| Argument | Description                          |
+| -------- | ------------------------------------ |
+| `input`  | Path to model shortcomings JSON file |
 
 ### Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `-o, --output` | string | {input}.rules.md | Output file path |
-| `--min-occurrences` | number | 1 | Only include shortcomings with N+ occurrences |
+| Option              | Type   | Default          | Description                                   |
+| ------------------- | ------ | ---------------- | --------------------------------------------- |
+| `-o, --output`      | string | {input}.rules.md | Output file path                              |
+| `--min-occurrences` | number | 1                | Only include shortcomings with N+ occurrences |
 
 ### Examples
 
@@ -260,9 +260,9 @@ centralgauge models [spec]
 
 ### Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `spec` | Model specification to resolve (optional) |
+| Argument | Description                               |
+| -------- | ----------------------------------------- |
+| `spec`   | Model specification to resolve (optional) |
 
 ### Examples
 
@@ -320,8 +320,8 @@ Import JSON results into the database.
 centralgauge stats-import <results-dir> [options]
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
+| Option | Type   | Default                 | Description   |
+| ------ | ------ | ----------------------- | ------------- |
 | `--db` | string | results/centralgauge.db | Database path |
 
 ### stats-runs
@@ -332,12 +332,12 @@ View benchmark run history.
 centralgauge stats-runs [options]
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--db` | string | results/centralgauge.db | Database path |
-| `--task-set` | string | - | Filter by task set hash |
-| `--model` | string | - | Filter by model |
-| `--limit` | number | 20 | Maximum runs to show |
+| Option       | Type   | Default                 | Description             |
+| ------------ | ------ | ----------------------- | ----------------------- |
+| `--db`       | string | results/centralgauge.db | Database path           |
+| `--task-set` | string | -                       | Filter by task set hash |
+| `--model`    | string | -                       | Filter by model         |
+| `--limit`    | number | 20                      | Maximum runs to show    |
 
 ### stats-compare
 
@@ -347,10 +347,10 @@ Compare two models head-to-head.
 centralgauge stats-compare <model1> <model2> [options]
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--db` | string | results/centralgauge.db | Database path |
-| `--task-set` | string | - | Filter by task set hash |
+| Option       | Type   | Default                 | Description             |
+| ------------ | ------ | ----------------------- | ----------------------- |
+| `--db`       | string | results/centralgauge.db | Database path           |
+| `--task-set` | string | -                       | Filter by task set hash |
 
 ### stats-regression
 
@@ -360,10 +360,10 @@ Detect performance regressions.
 centralgauge stats-regression [options]
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--db` | string | results/centralgauge.db | Database path |
-| `--threshold` | number | 10 | Regression threshold (%) |
+| Option        | Type   | Default                 | Description              |
+| ------------- | ------ | ----------------------- | ------------------------ |
+| `--db`        | string | results/centralgauge.db | Database path            |
+| `--threshold` | number | 10                      | Regression threshold (%) |
 
 ### stats-cost
 
@@ -373,10 +373,10 @@ View cost breakdown.
 centralgauge stats-cost [options]
 ```
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--db` | string | results/centralgauge.db | Database path |
-| `--group` | string | model | Group by (model, task) |
+| Option    | Type   | Default                 | Description            |
+| --------- | ------ | ----------------------- | ---------------------- |
+| `--db`    | string | results/centralgauge.db | Database path          |
+| `--group` | string | model                   | Group by (model, task) |
 
 ## Container Commands
 
@@ -424,14 +424,14 @@ centralgauge test <project-path> --container <name> [--codeunit <id>]
 
 ## Exit Codes
 
-| Code | Description |
-|------|-------------|
-| 0 | Success |
-| 1 | General error |
-| 2 | Invalid arguments |
-| 3 | Configuration error |
-| 4 | Container error |
-| 5 | LLM provider error |
+| Code | Description         |
+| ---- | ------------------- |
+| 0    | Success             |
+| 1    | General error       |
+| 2    | Invalid arguments   |
+| 3    | Configuration error |
+| 4    | Container error     |
+| 5    | LLM provider error  |
 
 ## Environment Variables
 

@@ -16,14 +16,14 @@ Easy tasks test basic AL syntax and simple object creation. A model with foundat
 
 ### Examples
 
-| Task Type | Description |
-|-----------|-------------|
-| Simple table | 3-4 fields with basic types |
-| Basic enum | 3-5 values with captions |
-| Simple page | Card or List for existing table |
-| Basic codeunit | One procedure with simple logic |
-| Interface definition | 2-3 method signatures |
-| Simple extension | Add 1-2 fields to existing object |
+| Task Type            | Description                       |
+| -------------------- | --------------------------------- |
+| Simple table         | 3-4 fields with basic types       |
+| Basic enum           | 3-5 values with captions          |
+| Simple page          | Card or List for existing table   |
+| Basic codeunit       | One procedure with simple logic   |
+| Interface definition | 2-3 method signatures             |
+| Simple extension     | Add 1-2 fields to existing object |
 
 ### Sample Easy Task
 
@@ -64,14 +64,14 @@ Medium tasks require understanding of multiple AL concepts and often involve obj
 
 ### Examples
 
-| Task Type | Description |
-|-----------|-------------|
-| API page | Full CRUD with proper configuration |
-| Multi-object | Table + Page + Codeunit together |
-| Interface implementation | Implement a defined interface |
-| Complex validation | Multiple triggers with rules |
-| State machines | Status transitions with validation |
-| Integration | HTTP calls, JSON handling |
+| Task Type                | Description                         |
+| ------------------------ | ----------------------------------- |
+| API page                 | Full CRUD with proper configuration |
+| Multi-object             | Table + Page + Codeunit together    |
+| Interface implementation | Implement a defined interface       |
+| Complex validation       | Multiple triggers with rules        |
+| State machines           | Status transitions with validation  |
+| Integration              | HTTP calls, JSON handling           |
 
 ### Sample Medium Task
 
@@ -121,14 +121,14 @@ Hard tasks test advanced AL patterns, edge cases, and deep platform knowledge.
 
 ### Examples
 
-| Task Type | Description |
-|-----------|-------------|
-| Tax calculator | Tiered rates by country/product |
-| Currency conversion | Rounding rules and edge cases |
-| FlowField/CalcFormula | Complex aggregations |
-| RecordRef operations | Dynamic field access |
-| Event patterns | Integration and business events |
-| Enum ordinal traps | Testing AL-specific gotchas |
+| Task Type             | Description                     |
+| --------------------- | ------------------------------- |
+| Tax calculator        | Tiered rates by country/product |
+| Currency conversion   | Rounding rules and edge cases   |
+| FlowField/CalcFormula | Complex aggregations            |
+| RecordRef operations  | Dynamic field access            |
+| Event patterns        | Integration and business events |
+| Enum ordinal traps    | Testing AL-specific gotchas     |
 
 ### Sample Hard Task
 
@@ -202,14 +202,14 @@ description: >-
 
 When creating a new task, score it on these factors:
 
-| Factor | Easy | Medium | Hard |
-|--------|------|--------|------|
-| Object count | 1 | 2-3 | 3+ |
-| Code paths | 1-2 | 3-5 | 6+ |
-| Edge cases | 0-1 | 2-4 | 5+ |
-| AL concepts | Basic | Intermediate | Advanced |
-| BC knowledge | Minimal | Moderate | Deep |
-| Business logic | Simple | Moderate | Complex |
+| Factor         | Easy    | Medium       | Hard     |
+| -------------- | ------- | ------------ | -------- |
+| Object count   | 1       | 2-3          | 3+       |
+| Code paths     | 1-2     | 3-5          | 6+       |
+| Edge cases     | 0-1     | 2-4          | 5+       |
+| AL concepts    | Basic   | Intermediate | Advanced |
+| BC knowledge   | Minimal | Moderate     | Deep     |
+| Business logic | Simple  | Moderate     | Complex  |
 
 ### Scoring Guide
 
@@ -236,10 +236,10 @@ A good benchmark should include:
 ### Depth (Difficulty Spread)
 
 | Difficulty | Percentage |
-|------------|------------|
-| Easy | 30-40% |
-| Medium | 40-50% |
-| Hard | 20-30% |
+| ---------- | ---------- |
+| Easy       | 30-40%     |
+| Medium     | 40-50%     |
+| Hard       | 20-30%     |
 
 ### Coverage (AL Concepts)
 

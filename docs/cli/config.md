@@ -36,6 +36,7 @@ centralgauge config show
 ```
 
 Shows merged configuration from:
+
 1. CLI arguments
 2. Environment variables
 3. Local config file
@@ -79,6 +80,7 @@ centralgauge config validate
 ```
 
 Checks:
+
 - YAML syntax
 - Required fields
 - Valid values

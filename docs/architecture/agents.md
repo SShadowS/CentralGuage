@@ -112,7 +112,7 @@ interface AgentConfig {
   description?: string;
 
   // Model
-  model: string;  // Preset alias or provider/model
+  model: string; // Preset alias or provider/model
 
   // Execution limits
   maxTurns: number;
@@ -150,19 +150,19 @@ interface MCPServerConfig {
 
 ```typescript
 type SystemPromptConfig =
-  | string  // Custom system prompt
+  | string // Custom system prompt
   | {
-      preset: "claude_code";  // Use Claude Code's built-in
-      append?: string;        // Optional text to append
-    };
+    preset: "claude_code"; // Use Claude Code's built-in
+    append?: string; // Optional text to append
+  };
 ```
 
 ### AgentLimits
 
 ```typescript
 interface AgentLimits {
-  maxCompileAttempts?: number;  // Max compilation attempts
-  timeoutMs?: number;           // Overall timeout
+  maxCompileAttempts?: number; // Max compilation attempts
+  timeoutMs?: number; // Overall timeout
 }
 ```
 
@@ -385,6 +385,7 @@ limits:
 ```
 
 Resolution order:
+
 1. Agent's own settings
 2. Parent agent's settings
 3. Default values
@@ -399,7 +400,7 @@ interface AgentCostMetrics {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  estimatedCost: number;  // USD
+  estimatedCost: number; // USD
   compileAttempts: number;
   testRuns: number;
 }
@@ -506,6 +507,7 @@ Create `agents/my-project/CLAUDE.md`:
 # AL Development Guide
 
 ## Code Style
+
 - Use PascalCase for all identifiers
 - Include proper captions
 - Add data classification

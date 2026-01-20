@@ -22,14 +22,14 @@ Use convenient short names:
 deno task bench --llms sonnet,opus,gpt-5
 ```
 
-| Alias | Full Model |
-|-------|------------|
-| `opus` | claude-4.5-opus |
-| `sonnet` | claude-sonnet-4 |
-| `gpt-5` | gpt-5.2 |
-| `gpt-4o` | gpt-4o |
-| `o3` | o3 |
-| `o1` | o1 |
+| Alias    | Full Model           |
+| -------- | -------------------- |
+| `opus`   | claude-4.5-opus      |
+| `sonnet` | claude-sonnet-4      |
+| `gpt-5`  | gpt-5.2              |
+| `gpt-4o` | gpt-4o               |
+| `o3`     | o3                   |
+| `o1`     | o1                   |
 | `gemini` | gemini-3-pro-preview |
 
 #### Provider/Model Format
@@ -180,6 +180,7 @@ deno task bench --llms sonnet --tasks tasks/*.yml --tui
 ```
 
 The TUI shows:
+
 - Progress bar
 - Active LLM calls
 - Compile queue status
@@ -260,6 +261,7 @@ deno task bench \
 ```
 
 Sandbox mode:
+
 - Isolates agent execution
 - Provides MCP tools via HTTP
 - Prevents interference between runs
@@ -290,12 +292,12 @@ deno task bench --agents default --tasks tasks/*.yml --stream
 
 Each task execution receives a score from 0.0 to 1.0:
 
-| Score | Meaning |
-|-------|---------|
-| 1.0 | Compilation successful, all tests pass |
+| Score   | Meaning                                 |
+| ------- | --------------------------------------- |
+| 1.0     | Compilation successful, all tests pass  |
 | 0.7-0.9 | Compilation successful, some tests pass |
-| 0.3-0.5 | Compilation successful, no tests |
-| 0.0 | Compilation failed |
+| 0.3-0.5 | Compilation successful, no tests        |
+| 0.0     | Compilation failed                      |
 
 ### Cost Tracking
 
@@ -371,10 +373,11 @@ The following guidance should inform your code generation:
 
 ---
 ## filename.md
-{content of filename.md}
-
+{ content of filename.md }
 ---
+
 ## another-file.md
+
 {content of another-file.md}
 
 # End Knowledge Bank
@@ -403,11 +406,11 @@ deno task bench --llms gpt-5 --knowledge model-shortcomings/gpt-5.rules.md \
 
 ### Use Cases
 
-| Use Case | Command |
-|----------|---------|
-| Test model-specific rules | `--knowledge model-shortcomings/gpt-5.rules.md` |
-| Test Claude Code rules | `--knowledge-dir .claude/rules/` |
-| A/B test guidance | Run with/without `--knowledge`, compare reports |
+| Use Case                    | Command                                             |
+| --------------------------- | --------------------------------------------------- |
+| Test model-specific rules   | `--knowledge model-shortcomings/gpt-5.rules.md`     |
+| Test Claude Code rules      | `--knowledge-dir .claude/rules/`                    |
+| A/B test guidance           | Run with/without `--knowledge`, compare reports     |
 | Custom prompting strategies | `--knowledge strategy.md --run-label "strategy-v2"` |
 
 ## Historical Stats

@@ -24,20 +24,20 @@ codeunit 80001 "CG-AL-E001 Test"
 
 ### Required Elements
 
-| Element | Description |
-|---------|-------------|
-| `Subtype = Test` | Marks as test codeunit |
+| Element                      | Description                 |
+| ---------------------------- | --------------------------- |
+| `Subtype = Test`             | Marks as test codeunit      |
 | `TestPermissions = Disabled` | Allows unrestricted testing |
-| `[Test]` attribute | Marks each test procedure |
-| `Assert` codeunit | Provides assertion methods |
+| `[Test]` attribute           | Marks each test procedure   |
+| `Assert` codeunit            | Provides assertion methods  |
 
 ## Test Codeunit IDs
 
-| Range | Difficulty |
-|-------|------------|
-| 80001-80099 | Easy tasks |
+| Range       | Difficulty   |
+| ----------- | ------------ |
+| 80001-80099 | Easy tasks   |
 | 80100-80199 | Medium tasks |
-| 80200-80299 | Hard tasks |
+| 80200-80299 | Hard tasks   |
 
 ## Assertion Methods
 
@@ -380,14 +380,14 @@ end;
 
 Use standard BC test libraries:
 
-| Library | Purpose |
-|---------|---------|
-| `Assert` | Assertions |
-| `Library - Random` | Random test data |
-| `Library - Sales` | Sales document helpers |
-| `Library - Purchase` | Purchase document helpers |
-| `Library - Inventory` | Item/inventory helpers |
-| `Library - Report Dataset` | Report testing |
+| Library                    | Purpose                   |
+| -------------------------- | ------------------------- |
+| `Assert`                   | Assertions                |
+| `Library - Random`         | Random test data          |
+| `Library - Sales`          | Sales document helpers    |
+| `Library - Purchase`       | Purchase document helpers |
+| `Library - Inventory`      | Item/inventory helpers    |
+| `Library - Report Dataset` | Report testing            |
 
 ```al
 var

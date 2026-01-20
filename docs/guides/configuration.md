@@ -31,40 +31,40 @@ This creates `.centralgauge.yml` in your current directory.
 
 # Default models for different scenarios
 defaultModels:
-  benchmark: [sonnet, gpt-4o]      # Models for production benchmarks
-  development: [mock]              # Models for development/testing
-  comparison: [flagship]           # Models for side-by-side comparison
+  benchmark: [sonnet, gpt-4o] # Models for production benchmarks
+  development: [mock] # Models for development/testing
+  comparison: [flagship] # Models for side-by-side comparison
 
 # LLM provider settings
 llm:
-  temperature: 0.1                 # Lower = more deterministic
-  maxTokens: 4000                  # Maximum response length
-  timeout: 30000                   # Request timeout in milliseconds
+  temperature: 0.1 # Lower = more deterministic
+  maxTokens: 4000 # Maximum response length
+  timeout: 30000 # Request timeout in milliseconds
 
 # Benchmark execution settings
 benchmark:
-  attempts: 2                      # Number of attempts per task
-  outputDir: results               # Directory for benchmark results
-  templateDir: templates           # Directory for prompt templates
+  attempts: 2 # Number of attempts per task
+  outputDir: results # Directory for benchmark results
+  templateDir: templates # Directory for prompt templates
 
 # Container settings
 container:
-  provider: bccontainer            # Container provider (mock, bccontainer, docker)
-  name: Cronus27                   # Container name
-  bcVersion: "24.0"               # Business Central version
-  memoryLimit: 8G                  # Container memory limit
+  provider: bccontainer # Container provider (mock, bccontainer, docker)
+  name: Cronus27 # Container name
+  bcVersion: "24.0" # Business Central version
+  memoryLimit: 8G # Container memory limit
   credentials:
-    username: admin                # Container authentication username
-    password: admin                # Container authentication password
+    username: admin # Container authentication username
+    password: admin # Container authentication password
 
 # Debug settings
 debug:
-  enabled: false                   # Enable debug logging
-  outputDir: debug                 # Debug output directory
-  logLevel: basic                  # basic | detailed | verbose
-  includeRawResponse: false        # Include full API responses
-  includeRequestHeaders: false     # Include request headers
-  maxFileSize: 100                 # Max log file size in MB
+  enabled: false # Enable debug logging
+  outputDir: debug # Debug output directory
+  logLevel: basic # basic | detailed | verbose
+  includeRawResponse: false # Include full API responses
+  includeRequestHeaders: false # Include request headers
+  maxFileSize: 100 # Max log file size in MB
 
 # Named system prompts for model variants
 systemPrompts:

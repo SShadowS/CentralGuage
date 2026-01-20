@@ -10,17 +10,17 @@ centralgauge report <input> [options]
 
 ## Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `input` | Input directory or file containing benchmark results |
+| Argument | Description                                          |
+| -------- | ---------------------------------------------------- |
+| `input`  | Input directory or file containing benchmark results |
 
 ## Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `--html` | boolean | false | Generate HTML report |
-| `--output` | string | - | Output directory for generated files |
-| `--format` | string | json | Output format (json, csv) |
+| Option     | Type    | Default | Description                          |
+| ---------- | ------- | ------- | ------------------------------------ |
+| `--html`   | boolean | false   | Generate HTML report                 |
+| `--output` | string  | -       | Output directory for generated files |
+| `--format` | string  | json    | Output format (json, csv)            |
 
 ## Examples
 
@@ -31,6 +31,7 @@ centralgauge report results/ --html --output reports/
 ```
 
 This generates an interactive HTML report with:
+
 - Model comparison charts
 - Task-by-task breakdown
 - Pass rate visualizations
@@ -110,6 +111,7 @@ centralgauge report "results/benchmark-results-*.json"
 ## Multiple Runs
 
 When multiple result files are found, the report:
+
 - Shows latest results prominently
 - Provides comparison across runs
 - Tracks historical performance

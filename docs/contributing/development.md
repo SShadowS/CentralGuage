@@ -118,7 +118,7 @@ Each module has a `mod.ts` with explicit exports:
 
 ```typescript
 // src/llm/mod.ts
-export type { LLMConfig, LLMAdapter, LLMResponse } from "./types.ts";
+export type { LLMAdapter, LLMConfig, LLMResponse } from "./types.ts";
 export { LLMAdapterRegistry } from "./registry.ts";
 ```
 
@@ -150,7 +150,7 @@ throw new TaskExecutionError(
   `Compilation failed for ${taskId}`,
   taskId,
   attemptNumber,
-  { errors: compilationErrors }
+  { errors: compilationErrors },
 );
 
 // Avoid - generic error
@@ -287,8 +287,8 @@ Use helpers from `tests/utils/test-helpers.ts`:
 import {
   createMockLLMConfig,
   createMockTaskManifest,
-  MockEnv,
   EventCollector,
+  MockEnv,
 } from "../utils/test-helpers.ts";
 
 Deno.test("my test", async () => {
@@ -394,6 +394,7 @@ deno task build:all
 ```
 
 Outputs to `dist/`:
+
 - `centralgauge` (Linux)
 - `centralgauge.exe` (Windows)
 - `centralgauge-macos` (macOS x64)

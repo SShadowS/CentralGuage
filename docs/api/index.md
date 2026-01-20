@@ -28,6 +28,7 @@ src/
 LLM adapter interfaces and implementations.
 
 **Exports:**
+
 - `LLMAdapterRegistry` - Adapter management
 - `LLMAdapter` - Adapter interface
 - `LLMConfig`, `LLMRequest`, `LLMResponse` - Types
@@ -43,6 +44,7 @@ import type { LLMConfig, LLMResponse } from "./src/llm/types.ts";
 Container provider interfaces and implementations.
 
 **Exports:**
+
 - `ContainerProviderRegistry` - Provider management
 - `ContainerProvider` - Provider interface
 - `CompilationResult`, `TestResult` - Types
@@ -57,6 +59,7 @@ import type { CompilationResult, TestResult } from "./src/container/types.ts";
 Task loading and execution.
 
 **Exports:**
+
 - `loadTaskManifest` - Load YAML manifests
 - `TaskExecutorV2` - Execute tasks
 - `TaskTransformer` - Transform manifests to contexts
@@ -64,7 +67,10 @@ Task loading and execution.
 ```typescript
 import { loadTaskManifest } from "./src/tasks/loader.ts";
 import { TaskExecutorV2 } from "./src/tasks/executor-v2.ts";
-import type { TaskManifest, TaskExecutionResult } from "./src/tasks/interfaces.ts";
+import type {
+  TaskExecutionResult,
+  TaskManifest,
+} from "./src/tasks/interfaces.ts";
 ```
 
 ### Parallel Module (`src/parallel/`)
@@ -72,12 +78,16 @@ import type { TaskManifest, TaskExecutionResult } from "./src/tasks/interfaces.t
 Parallel benchmark orchestration.
 
 **Exports:**
+
 - `ParallelBenchmarkOrchestrator` - Orchestrate parallel runs
 - `createDefaultConfig` - Default configuration
 - Event types for progress tracking
 
 ```typescript
-import { ParallelBenchmarkOrchestrator, createDefaultConfig } from "./src/parallel/mod.ts";
+import {
+  createDefaultConfig,
+  ParallelBenchmarkOrchestrator,
+} from "./src/parallel/mod.ts";
 import type { ParallelExecutionEvent } from "./src/parallel/mod.ts";
 ```
 
@@ -86,6 +96,7 @@ import type { ParallelExecutionEvent } from "./src/parallel/mod.ts";
 Agent configuration and execution.
 
 **Exports:**
+
 - `AgentRegistry` - Agent management
 - `AgentTaskExecutor` - Execute agents
 - Agent types
@@ -101,6 +112,7 @@ import type { AgentConfig, AgentExecutionResult } from "./src/agents/types.ts";
 Configuration management.
 
 **Exports:**
+
 - `ConfigManager` - Load and merge configuration
 
 ```typescript
@@ -113,6 +125,7 @@ import type { CentralGaugeConfig } from "./src/config/config.ts";
 Markdown rules generation from model shortcomings.
 
 **Exports:**
+
 - `generateRulesMarkdown` - Convert shortcomings to markdown
 - `loadShortcomingsFile` - Load JSON shortcomings file
 - `getDefaultOutputPath` - Compute default output path
@@ -121,8 +134,8 @@ Markdown rules generation from model shortcomings.
 ```typescript
 import {
   generateRulesMarkdown,
-  loadShortcomingsFile,
   getDefaultOutputPath,
+  loadShortcomingsFile,
 } from "./src/rules/mod.ts";
 import type { RulesGeneratorOptions } from "./src/rules/mod.ts";
 
@@ -137,13 +150,17 @@ await Deno.writeTextFile("rules.md", markdown);
 Prompt injection and knowledge bank management.
 
 **Exports:**
+
 - `PromptInjectionResolver` - Resolve and apply prompt injections
 - `loadKnowledgeFiles` - Load markdown files as knowledge bank
 - `hasKnowledgeOptions` - Check if knowledge options are provided
 - `CLIPromptOverrides` - CLI prompt override options type
 
 ```typescript
-import { loadKnowledgeFiles, hasKnowledgeOptions } from "./src/prompts/knowledge-loader.ts";
+import {
+  hasKnowledgeOptions,
+  loadKnowledgeFiles,
+} from "./src/prompts/knowledge-loader.ts";
 import { PromptInjectionResolver } from "./src/prompts/injection-resolver.ts";
 import type { CLIPromptOverrides } from "./src/prompts/types.ts";
 
@@ -286,7 +303,9 @@ interface AgentExecutionResult {
 import { loadTaskManifest } from "./src/tasks/loader.ts";
 import { TaskExecutorV2 } from "./src/tasks/executor-v2.ts";
 
-const manifest = await loadTaskManifest("tasks/easy/CG-AL-E001-basic-table.yml");
+const manifest = await loadTaskManifest(
+  "tasks/easy/CG-AL-E001-basic-table.yml",
+);
 const executor = new TaskExecutorV2();
 
 const result = await executor.executeTask({
@@ -303,7 +322,10 @@ console.log(`Success: ${result.success}, Score: ${result.finalScore}`);
 ### Run Parallel Benchmark
 
 ```typescript
-import { ParallelBenchmarkOrchestrator, createDefaultConfig } from "./src/parallel/mod.ts";
+import {
+  createDefaultConfig,
+  ParallelBenchmarkOrchestrator,
+} from "./src/parallel/mod.ts";
 import { loadTaskManifest } from "./src/tasks/loader.ts";
 
 const config = createDefaultConfig();
@@ -313,7 +335,9 @@ const orchestrator = new ParallelBenchmarkOrchestrator(config);
 
 orchestrator.on((event) => {
   if (event.type === "result") {
-    console.log(`${event.result.taskId}: ${event.result.success ? "pass" : "fail"}`);
+    console.log(
+      `${event.result.taskId}: ${event.result.success ? "pass" : "fail"}`,
+    );
   }
 });
 
@@ -322,13 +346,21 @@ const manifests = [
 ];
 
 const variants = [
-  { provider: "anthropic", model: "claude-sonnet-4-20250514", variantId: "sonnet" },
+  {
+    provider: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    variantId: "sonnet",
+  },
 ];
 
-const { results, summary } = await orchestrator.runParallel(manifests, variants, {
-  containerName: "Cronus27",
-  attemptLimit: 2,
-});
+const { results, summary } = await orchestrator.runParallel(
+  manifests,
+  variants,
+  {
+    containerName: "Cronus27",
+    attemptLimit: 2,
+  },
+);
 ```
 
 ### Execute an Agent
@@ -340,7 +372,9 @@ import { loadTaskManifest } from "./src/tasks/loader.ts";
 
 await AgentRegistry.load("agents");
 const agentConfig = AgentRegistry.get("default");
-const taskManifest = await loadTaskManifest("tasks/easy/CG-AL-E001-basic-table.yml");
+const taskManifest = await loadTaskManifest(
+  "tasks/easy/CG-AL-E001-basic-table.yml",
+);
 
 const executor = new AgentTaskExecutor();
 const result = await executor.execute(agentConfig, taskManifest, {
@@ -349,22 +383,32 @@ const result = await executor.execute(agentConfig, taskManifest, {
   containerProvider: "bccontainer",
 });
 
-console.log(`Turns: ${result.metrics.turns}, Cost: $${result.metrics.estimatedCost}`);
+console.log(
+  `Turns: ${result.metrics.turns}, Cost: $${result.metrics.estimatedCost}`,
+);
 ```
 
 ### Create Custom LLM Adapter
 
 ```typescript
-import type { LLMAdapter, LLMConfig, LLMRequest, CodeGenerationResult } from "./src/llm/types.ts";
+import type {
+  CodeGenerationResult,
+  LLMAdapter,
+  LLMConfig,
+  LLMRequest,
+} from "./src/llm/types.ts";
 import { LLMAdapterRegistry } from "./src/llm/registry.ts";
 
 class MyAdapter implements LLMAdapter {
   readonly name = "my-adapter";
   readonly supportedModels = ["my-model"];
 
-  configure(config: LLMConfig): void { /* ... */ }
+  configure(config: LLMConfig): void {/* ... */}
 
-  async generateCode(request: LLMRequest, context: GenerationContext): Promise<CodeGenerationResult> {
+  async generateCode(
+    request: LLMRequest,
+    context: GenerationContext,
+  ): Promise<CodeGenerationResult> {
     // Implementation
   }
 
@@ -377,7 +421,12 @@ LLMAdapterRegistry.register("my-adapter", () => new MyAdapter());
 ## Error Handling
 
 ```typescript
-import { CentralGaugeError, LLMProviderError, ContainerError, isRetryableError } from "./src/errors.ts";
+import {
+  CentralGaugeError,
+  ContainerError,
+  isRetryableError,
+  LLMProviderError,
+} from "./src/errors.ts";
 
 try {
   const result = await executor.executeTask(request);

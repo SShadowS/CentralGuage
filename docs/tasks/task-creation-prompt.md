@@ -11,6 +11,7 @@ Create challenging but fair benchmark tasks that test whether LLMs truly underst
 ## What is AL?
 
 AL (Application Language) is the programming language for Microsoft Dynamics 365 Business Central. It's used to create:
+
 - **Tables** - Data storage with fields, keys, triggers, and relations
 - **Pages** - User interfaces (Cards, Lists, API pages)
 - **Codeunits** - Business logic containers
@@ -29,10 +30,10 @@ AL (Application Language) is the programming language for Microsoft Dynamics 365
 Each task is defined in a `.yml` file with this structure:
 
 ```yaml
-id: CG-AL-XXXX                    # Unique ID (E=Easy, M=Medium, H=Hard)
-prompt_template: code-gen.md      # Always use this
-fix_template: bugfix.md           # Always use this
-max_attempts: 2                   # Always 2 (first attempt + one retry)
+id: CG-AL-XXXX # Unique ID (E=Easy, M=Medium, H=Hard)
+prompt_template: code-gen.md # Always use this
+fix_template: bugfix.md # Always use this
+max_attempts: 2 # Always 2 (first attempt + one retry)
 description: >-
   Clear description of what to build.
   Include specific requirements:
@@ -51,11 +52,13 @@ metrics:
 ```
 
 ### ID Format
+
 - `CG-AL-E###` - Easy tasks (001-999)
 - `CG-AL-M###` - Medium tasks (001-999)
 - `CG-AL-H###` - Hard tasks (001-999)
 
 ### File Naming
+
 - Task YAML: `tasks/{difficulty}/CG-AL-{ID}-{short-name}.yml`
 - Test file: `tests/al/{difficulty}/CG-AL-{ID}.Test.al`
 - Helper files: `tests/al/{difficulty}/CG-AL-{ID}.{HelperName}.al`
@@ -94,11 +97,13 @@ codeunit 80XXX "CG-AL-XXXX Test"
 ```
 
 ### Test Codeunit IDs
+
 - Easy tests: 80001-80099
 - Medium tests: 80100-80199
 - Hard tests: 80200-80299
 
 ### Helper Object IDs
+
 - Mock codeunits/enums: 70090-70099
 
 ---
@@ -139,13 +144,16 @@ enum 70098 "CG Product Type"
 ## Difficulty Levels
 
 ### Easy (CG-AL-E###)
+
 **What makes it Easy:**
+
 - Single object creation
 - Standard patterns with minimal complexity
 - Basic syntax knowledge
 - Few or no edge cases
 
 **Examples:**
+
 - Create a simple table with 3-4 fields
 - Create a basic enum with options
 - Create a page for an existing table
@@ -154,7 +162,9 @@ enum 70098 "CG Product Type"
 - Create a simple table extension
 
 ### Medium (CG-AL-M###)
+
 **What makes it Medium:**
+
 - Multiple related objects
 - Complex validation logic
 - Triggers with business rules
@@ -163,6 +173,7 @@ enum 70098 "CG Product Type"
 - API pages with CRUD operations
 
 **Examples:**
+
 - Table with complex validation triggers (date ranges, status transitions)
 - Multi-object scenarios (table + page + codeunit)
 - Interface implementation
@@ -171,7 +182,9 @@ enum 70098 "CG Product Type"
 - Integration scenarios with HTTP calls
 
 ### Hard (CG-AL-H###)
+
 **What makes it Hard:**
+
 - Complex conditional logic with many branches
 - Multiple interacting rules
 - Precise mathematical calculations
@@ -181,6 +194,7 @@ enum 70098 "CG Product Type"
 - Advanced patterns (dependency injection, events)
 
 **Examples:**
+
 - Tax calculator with tiered rates by country and product type
 - Multi-currency conversion with rounding rules
 - Complex discount engines
@@ -194,6 +208,7 @@ enum 70098 "CG Product Type"
 ### DO NOT Add Guidance or Hints
 
 **BAD - This guides the model:**
+
 ```yaml
 description: >-
   Create an interface called "Payment Processor"
@@ -201,6 +216,7 @@ description: >-
 ```
 
 **GOOD - This tests the model's knowledge:**
+
 ```yaml
 description: >-
   Create an interface called "Payment Processor"
@@ -211,6 +227,7 @@ If a model incorrectly adds an ID to an interface, that's a valid test failure -
 ### DO Specify Exact Error Messages
 
 If you're testing validation, specify the exact error message:
+
 ```yaml
 description: >-
   OnDelete trigger to prevent deletion of Active contracts.
@@ -244,6 +261,7 @@ description: >-
 ### NEVER Use Placeholder Assertions
 
 **BAD:**
+
 ```al
 [Test]
 procedure TestSomething()
@@ -253,6 +271,7 @@ end;
 ```
 
 **GOOD:**
+
 ```al
 [Test]
 procedure TestSomething()
@@ -267,6 +286,7 @@ end;
 ### Test Everything Specified
 
 If the task says "Active field defaults to true", test it:
+
 ```al
 [Test]
 procedure TestActiveDefaultValue()
@@ -294,6 +314,7 @@ end;
 ### Test Boundary Conditions
 
 If the task says "tax is 7% for amounts >= 100 and < 1000":
+
 ```al
 [Test]
 procedure TestUS_JustBelowLowerThreshold_NoTax()
@@ -323,6 +344,7 @@ end;
 ### Interface Tests Need Mock Implementations
 
 Interfaces can't be instantiated directly:
+
 ```al
 [Test]
 procedure TestProcessPayment()
@@ -340,6 +362,7 @@ end;
 ## AL Object Types Reference
 
 ### Table
+
 ```al
 table 70000 "Product Category"
 {
@@ -377,6 +400,7 @@ table 70000 "Product Category"
 ```
 
 ### Page (Card)
+
 ```al
 page 70000 "Product Category Card"
 {
@@ -401,6 +425,7 @@ page 70000 "Product Category Card"
 ```
 
 ### Codeunit
+
 ```al
 codeunit 70000 "Calculator"
 {
@@ -414,6 +439,7 @@ codeunit 70000 "Calculator"
 ```
 
 ### Enum
+
 ```al
 enum 70000 "Order Status"
 {
@@ -426,6 +452,7 @@ enum 70000 "Order Status"
 ```
 
 ### Interface (NO ID!)
+
 ```al
 interface "Payment Processor"
 {
@@ -437,6 +464,7 @@ interface "Payment Processor"
 ```
 
 ### Table Extension
+
 ```al
 tableextension 70000 "Item Extension" extends Item
 {
@@ -452,6 +480,7 @@ tableextension 70000 "Item Extension" extends Item
 ```
 
 ### Event Subscriber
+
 ```al
 codeunit 70001 "Item Event Subscriber"
 {
@@ -470,6 +499,7 @@ codeunit 70001 "Item Event Subscriber"
 ## Ideas for Challenging Tasks
 
 ### Test AL-Specific Knowledge
+
 - Interfaces don't have IDs (unlike most AL objects)
 - CalcFormula syntax for flowfields
 - TableRelation with conditions
@@ -478,6 +508,7 @@ codeunit 70001 "Item Event Subscriber"
 - FlowField vs normal field behaviors
 
 ### Test Business Central Conventions
+
 - Proper naming conventions (spaces, quotes)
 - Caption requirements
 - ApplicationArea and UsageCategory
@@ -485,6 +516,7 @@ codeunit 70001 "Item Event Subscriber"
 - TestPermissions in test codeunits
 
 ### Test Complex Logic
+
 - Multi-condition validations
 - State machines (Draft -> Active -> Completed)
 - Calculations with rounding
@@ -493,6 +525,7 @@ codeunit 70001 "Item Event Subscriber"
 - Tiered pricing/tax rules
 
 ### Test Error Handling
+
 - Specific error messages
 - Error vs Confirm dialogs
 - Try functions
@@ -505,6 +538,7 @@ codeunit 70001 "Item Event Subscriber"
 For each task you create, provide:
 
 ### 1. Task YAML File
+
 ```yaml
 id: CG-AL-XXXX
 prompt_template: code-gen.md
@@ -522,6 +556,7 @@ metrics:
 ```
 
 ### 2. Test AL File
+
 ```al
 codeunit 80XXX "CG-AL-XXXX Test"
 {
@@ -533,6 +568,7 @@ codeunit 80XXX "CG-AL-XXXX Test"
 ```
 
 ### 3. Helper Files (if needed)
+
 Any mock implementations, enums, or other supporting objects.
 
 ---
@@ -554,6 +590,7 @@ Any mock implementations, enums, or other supporting objects.
 ## Example Complete Task
 
 ### Task YAML (`tasks/easy/CG-AL-E020-discount-calculator.yml`)
+
 ```yaml
 id: CG-AL-E020
 prompt_template: code-gen.md
@@ -584,6 +621,7 @@ metrics:
 ```
 
 ### Test File (`tests/al/easy/CG-AL-E020.Test.al`)
+
 ```al
 codeunit 80020 "CG-AL-E020 Test"
 {

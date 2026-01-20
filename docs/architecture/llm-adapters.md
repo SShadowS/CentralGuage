@@ -23,15 +23,15 @@ const adapters = LLMAdapterRegistry.list();
 
 ## Available Adapters
 
-| Adapter | Provider | Models |
-|---------|----------|--------|
-| `anthropic` | Anthropic | Claude 4.5 Opus, Claude 4 Sonnet |
-| `openai` | OpenAI | GPT-5, GPT-4o, o3, o1 |
-| `gemini` | Google | Gemini 3 Pro, Gemini 2 Flash |
-| `azure-openai` | Azure | Azure OpenAI deployments |
-| `openrouter` | OpenRouter | 200+ models |
-| `local` | Local | Ollama, vLLM, etc. |
-| `mock` | Testing | Deterministic mock responses |
+| Adapter        | Provider   | Models                           |
+| -------------- | ---------- | -------------------------------- |
+| `anthropic`    | Anthropic  | Claude 4.5 Opus, Claude 4 Sonnet |
+| `openai`       | OpenAI     | GPT-5, GPT-4o, o3, o1            |
+| `gemini`       | Google     | Gemini 3 Pro, Gemini 2 Flash     |
+| `azure-openai` | Azure      | Azure OpenAI deployments         |
+| `openrouter`   | OpenRouter | 200+ models                      |
+| `local`        | Local      | Ollama, vLLM, etc.               |
+| `mock`         | Testing    | Deterministic mock responses     |
 
 ## Adapter Interface
 
@@ -50,7 +50,7 @@ interface LLMAdapter {
   // Code generation
   generateCode(
     request: LLMRequest,
-    context: GenerationContext
+    context: GenerationContext,
   ): Promise<CodeGenerationResult>;
 
   // Fix generation (for retry attempts)
@@ -58,7 +58,7 @@ interface LLMAdapter {
     originalCode: string,
     errors: string[],
     request: LLMRequest,
-    context: GenerationContext
+    context: GenerationContext,
   ): Promise<CodeGenerationResult>;
 
   // Utilities
@@ -172,8 +172,8 @@ const stats = LLMAdapterRegistry.getPoolStats();
 
 // Configure pool limits
 LLMAdapterRegistry.configurePool({
-  maxSize: 50,        // Maximum pooled adapters
-  maxIdleMs: 300000,  // 5 minute idle timeout
+  maxSize: 50, // Maximum pooled adapters
+  maxIdleMs: 300000, // 5 minute idle timeout
 });
 
 // Clear pool (for testing)
@@ -201,7 +201,7 @@ interface LLMResponse {
   content: string;
   model: string;
   usage: TokenUsage;
-  duration: number;  // milliseconds
+  duration: number; // milliseconds
   finishReason: "stop" | "length" | "content_filter" | "error";
 }
 
@@ -209,7 +209,7 @@ interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  estimatedCost?: number;  // USD
+  estimatedCost?: number; // USD
 }
 ```
 
@@ -236,6 +236,7 @@ const result = CodeExtractor.extract(response.content);
 ```
 
 Extraction rules:
+
 1. Look for \`\`\`al code blocks
 2. Fall back to \`\`\` generic code blocks
 3. Fall back to full response content
@@ -251,7 +252,7 @@ interface StreamingLLMAdapter extends LLMAdapter {
   generateCodeStream(
     request: LLMRequest,
     context: GenerationContext,
-    options?: StreamOptions
+    options?: StreamOptions,
   ): AsyncGenerator<StreamChunk, StreamResult>;
 }
 
@@ -273,7 +274,7 @@ For reasoning models, configure thinking budget:
 const config: LLMConfig = {
   provider: "anthropic",
   model: "claude-opus-4-5-20251101",
-  thinkingBudget: 50000,  // Token budget for thinking
+  thinkingBudget: 50000, // Token budget for thinking
 };
 ```
 
@@ -283,7 +284,7 @@ const config: LLMConfig = {
 const config: LLMConfig = {
   provider: "openai",
   model: "o3",
-  thinkingBudget: "high",  // "low" | "medium" | "high"
+  thinkingBudget: "high", // "low" | "medium" | "high"
 };
 ```
 
@@ -295,7 +296,12 @@ To add a new provider:
 
 ```typescript
 // src/llm/my-adapter.ts
-import type { LLMAdapter, LLMConfig, LLMRequest, LLMResponse } from "./types.ts";
+import type {
+  LLMAdapter,
+  LLMConfig,
+  LLMRequest,
+  LLMResponse,
+} from "./types.ts";
 
 export class MyAdapter implements LLMAdapter {
   readonly name = "my-provider";
@@ -307,11 +313,19 @@ export class MyAdapter implements LLMAdapter {
     this.config = config;
   }
 
-  async generateCode(request: LLMRequest, context: GenerationContext): Promise<CodeGenerationResult> {
+  async generateCode(
+    request: LLMRequest,
+    context: GenerationContext,
+  ): Promise<CodeGenerationResult> {
     // Implementation
   }
 
-  async generateFix(code: string, errors: string[], request: LLMRequest, context: GenerationContext): Promise<CodeGenerationResult> {
+  async generateFix(
+    code: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+  ): Promise<CodeGenerationResult> {
     // Implementation
   }
 
@@ -356,7 +370,11 @@ import { MyAdapter } from "../../../src/llm/my-adapter.ts";
 
 Deno.test("MyAdapter generates code", async () => {
   const adapter = new MyAdapter();
-  adapter.configure({ provider: "my-provider", model: "model-a", apiKey: "test" });
+  adapter.configure({
+    provider: "my-provider",
+    model: "model-a",
+    apiKey: "test",
+  });
 
   const result = await adapter.generateCode(request, context);
   assertEquals(result.language, "al");
@@ -368,7 +386,11 @@ Deno.test("MyAdapter generates code", async () => {
 Adapters throw `LLMProviderError` for provider-specific errors:
 
 ```typescript
-import { LLMProviderError, isRetryableError, getRetryDelay } from "../src/errors.ts";
+import {
+  getRetryDelay,
+  isRetryableError,
+  LLMProviderError,
+} from "../src/errors.ts";
 
 try {
   const result = await adapter.generateCode(request, context);

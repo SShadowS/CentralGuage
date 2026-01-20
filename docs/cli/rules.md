@@ -19,16 +19,16 @@ During benchmark evaluation, CentralGauge tracks common mistakes that each model
 
 ## Arguments
 
-| Argument | Description |
-|----------|-------------|
-| `input` | Path to a model shortcomings JSON file |
+| Argument | Description                            |
+| -------- | -------------------------------------- |
+| `input`  | Path to a model shortcomings JSON file |
 
 ## Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `-o, --output` | string | {input}.rules.md | Override the output file path |
-| `--min-occurrences` | number | 1 | Only include shortcomings with at least N occurrences |
+| Option              | Type   | Default          | Description                                           |
+| ------------------- | ------ | ---------------- | ----------------------------------------------------- |
+| `-o, --output`      | string | {input}.rules.md | Override the output file path                         |
+| `--min-occurrences` | number | 1                | Only include shortcomings with at least N occurrences |
 
 ## Input Format
 
@@ -56,18 +56,18 @@ The input JSON file must follow the `ModelShortcomingsFile` format:
 
 ### Input Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `model` | string | Model identifier |
-| `lastUpdated` | string | ISO 8601 timestamp |
-| `shortcomings[].concept` | string | Short slug describing the issue |
-| `shortcomings[].alConcept` | string | AL category for grouping (e.g., "json-handling", "table-definition") |
-| `shortcomings[].description` | string | Detailed explanation of the issue |
-| `shortcomings[].correctPattern` | string | Example of correct AL code |
-| `shortcomings[].incorrectPattern` | string | Example of incorrect pattern the model used |
-| `shortcomings[].errorCodes` | string[] | AL compiler error codes |
-| `shortcomings[].affectedTasks` | string[] | Task IDs where this issue occurred |
-| `shortcomings[].occurrences` | number | How many times this issue was seen |
+| Field                             | Type     | Description                                                          |
+| --------------------------------- | -------- | -------------------------------------------------------------------- |
+| `model`                           | string   | Model identifier                                                     |
+| `lastUpdated`                     | string   | ISO 8601 timestamp                                                   |
+| `shortcomings[].concept`          | string   | Short slug describing the issue                                      |
+| `shortcomings[].alConcept`        | string   | AL category for grouping (e.g., "json-handling", "table-definition") |
+| `shortcomings[].description`      | string   | Detailed explanation of the issue                                    |
+| `shortcomings[].correctPattern`   | string   | Example of correct AL code                                           |
+| `shortcomings[].incorrectPattern` | string   | Example of incorrect pattern the model used                          |
+| `shortcomings[].errorCodes`       | string[] | AL compiler error codes                                              |
+| `shortcomings[].affectedTasks`    | string[] | Task IDs where this issue occurred                                   |
+| `shortcomings[].occurrences`      | number   | How many times this issue was seen                                   |
 
 ## Output Format
 
@@ -80,7 +80,7 @@ The generated markdown file includes:
 
 ### Example Output
 
-```markdown
+````markdown
 # AL Code Generation Rules for gpt-5.2-2025-12-11
 
 > Auto-generated from benchmark shortcomings on 12/29/2025.
@@ -102,12 +102,15 @@ The generated markdown file includes:
 The model failed to generate valid JSON getter patterns...
 
 **Incorrect:**
+
 ```al
 // Direct GetText() call that doesn't exist
 Name := CustomerJson.GetText('name');
 ```
+````
 
 **Correct:**
+
 ```al
 if CustomerJson.Get('name', JToken) then begin
     JValue := JToken.AsValue();
@@ -116,8 +119,8 @@ end;
 ```
 
 ---
-```
 
+````
 ## Examples
 
 ### Basic Usage
@@ -126,7 +129,7 @@ Generate rules file next to the input JSON:
 
 ```bash
 centralgauge rules model-shortcomings/gpt-5.2-2025-12-11.json
-```
+````
 
 Output: `model-shortcomings/gpt-5.2-2025-12-11.rules.md`
 
@@ -213,19 +216,19 @@ The guided run is automatically labeled with "(guided)" suffix for easy comparis
 
 ## Source Files
 
-| File | Purpose |
-|------|---------|
-| `src/rules/generator.ts` | Core markdown generation logic |
-| `src/rules/mod.ts` | Module barrel export |
-| `cli/commands/rules-command.ts` | CLI command handler |
-| `src/verify/types.ts` | Type definitions for shortcomings |
+| File                            | Purpose                           |
+| ------------------------------- | --------------------------------- |
+| `src/rules/generator.ts`        | Core markdown generation logic    |
+| `src/rules/mod.ts`              | Module barrel export              |
+| `cli/commands/rules-command.ts` | CLI command handler               |
+| `src/verify/types.ts`           | Type definitions for shortcomings |
 
 ## Exit Codes
 
-| Code | Description |
-|------|-------------|
-| 0 | Success |
-| 1 | Error (invalid input, file not found, etc.) |
+| Code | Description                                 |
+| ---- | ------------------------------------------- |
+| 0    | Success                                     |
+| 1    | Error (invalid input, file not found, etc.) |
 
 ## See Also
 

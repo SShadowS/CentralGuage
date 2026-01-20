@@ -57,6 +57,7 @@ The CLI layer handles user interaction:
 - **TUI** - Terminal UI for progress visualization
 
 Key components:
+
 - `cli/centralgauge.ts` - Main entry point
 - `cli/commands/` - Individual command implementations
 - `cli/helpers/` - Shared utilities (logging, formatting)
@@ -213,8 +214,16 @@ interface LLMAdapter {
   readonly supportedModels: string[];
 
   configure(config: LLMConfig): void;
-  generateCode(request: LLMRequest, context: GenerationContext): Promise<CodeGenerationResult>;
-  generateFix(code: string, errors: string[], request: LLMRequest, context: GenerationContext): Promise<CodeGenerationResult>;
+  generateCode(
+    request: LLMRequest,
+    context: GenerationContext,
+  ): Promise<CodeGenerationResult>;
+  generateFix(
+    code: string,
+    errors: string[],
+    request: LLMRequest,
+    context: GenerationContext,
+  ): Promise<CodeGenerationResult>;
   validateConfig(config: LLMConfig): string[];
   estimateCost(promptTokens: number, completionTokens: number): number;
   isHealthy(): Promise<boolean>;
@@ -258,6 +267,7 @@ class Registry {
 ```
 
 Benefits:
+
 - Pluggable providers
 - Late binding
 - Easy testing with mocks
@@ -307,7 +317,7 @@ Each module has a `mod.ts` that exports public interface:
 
 ```typescript
 // src/llm/mod.ts
-export type { LLMConfig, LLMAdapter, LLMResponse } from "./types.ts";
+export type { LLMAdapter, LLMConfig, LLMResponse } from "./types.ts";
 export { LLMAdapterRegistry } from "./registry.ts";
 export { AnthropicAdapter } from "./anthropic-adapter.ts";
 ```
@@ -337,13 +347,13 @@ class CentralGaugeError extends Error {
   constructor(
     message: string,
     public readonly code: string,
-    public readonly context?: Record<string, unknown>
+    public readonly context?: Record<string, unknown>,
   ) {}
 }
 
-class TaskExecutionError extends CentralGaugeError { }
-class LLMProviderError extends CentralGaugeError { }
-class ContainerError extends CentralGaugeError { }
+class TaskExecutionError extends CentralGaugeError {}
+class LLMProviderError extends CentralGaugeError {}
+class ContainerError extends CentralGaugeError {}
 ```
 
 See [Error Handling](./error-handling.md) for details.

@@ -22,11 +22,11 @@ const providers = ContainerProviderRegistry.list();
 
 ## Available Providers
 
-| Provider | Platform | Description |
-|----------|----------|-------------|
-| `bccontainer` | Windows | Uses bccontainerhelper PowerShell module |
-| `docker` | All | Direct Docker API calls |
-| `mock` | All | Testing mock (no real container) |
+| Provider      | Platform | Description                              |
+| ------------- | -------- | ---------------------------------------- |
+| `bccontainer` | Windows  | Uses bccontainerhelper PowerShell module |
+| `docker`      | All      | Direct Docker API calls                  |
+| `mock`        | All      | Testing mock (no real container)         |
 
 ### Auto-Detection
 
@@ -52,7 +52,11 @@ interface ContainerProvider {
 
   // Operations
   compile(name: string, projectPath: string): Promise<CompilationResult>;
-  runTests(name: string, extensionId: string, testCodeunitId?: number): Promise<TestResult>;
+  runTests(
+    name: string,
+    extensionId: string,
+    testCodeunitId?: number,
+  ): Promise<TestResult>;
 
   // Status
   status(name: string): Promise<ContainerStatus>;
@@ -124,7 +128,10 @@ const compileResult = await provider.compile("Cronus27", "U:/Git/MyProject");
 console.log(compileResult.success, compileResult.errors);
 
 // Run tests
-const testResult = await provider.runTests("Cronus27", "12345678-1234-1234-1234-123456789012");
+const testResult = await provider.runTests(
+  "Cronus27",
+  "12345678-1234-1234-1234-123456789012",
+);
 console.log(testResult.passedTests, testResult.failedTests);
 ```
 
@@ -133,7 +140,9 @@ console.log(testResult.passedTests, testResult.failedTests);
 Set container credentials:
 
 ```typescript
-const provider = ContainerProviderRegistry.create("bccontainer") as BcContainerProvider;
+const provider = ContainerProviderRegistry.create(
+  "bccontainer",
+) as BcContainerProvider;
 provider.setCredentials("Cronus27", {
   username: "admin",
   password: "admin",
@@ -187,12 +196,12 @@ interface CompilationResult {
   errors: CompilationError[];
   warnings: CompilationWarning[];
   output: string;
-  duration: number;  // milliseconds
-  artifactPath?: string;  // Path to compiled .app file
+  duration: number; // milliseconds
+  artifactPath?: string; // Path to compiled .app file
 }
 
 interface CompilationError {
-  code: string;       // e.g., "AL0001"
+  code: string; // e.g., "AL0001"
   message: string;
   file: string;
   line: number;
@@ -209,7 +218,7 @@ interface TestResult {
   totalTests: number;
   passedTests: number;
   failedTests: number;
-  duration: number;  // milliseconds
+  duration: number; // milliseconds
   results: TestCaseResult[];
   output: string;
 }
@@ -315,7 +324,12 @@ To add a new container provider:
 
 ```typescript
 // src/container/my-provider.ts
-import type { ContainerProvider, ContainerConfig, CompilationResult, TestResult } from "./types.ts";
+import type {
+  CompilationResult,
+  ContainerConfig,
+  ContainerProvider,
+  TestResult,
+} from "./types.ts";
 
 export class MyContainerProvider implements ContainerProvider {
   readonly name = "my-container";
@@ -340,7 +354,11 @@ export class MyContainerProvider implements ContainerProvider {
     // Compile implementation
   }
 
-  async runTests(name: string, extensionId: string, testCodeunitId?: number): Promise<TestResult> {
+  async runTests(
+    name: string,
+    extensionId: string,
+    testCodeunitId?: number,
+  ): Promise<TestResult> {
     // Test implementation
   }
 
@@ -390,7 +408,7 @@ try {
 } catch (error) {
   if (error instanceof ContainerError) {
     console.log(`Container: ${error.containerName}`);
-    console.log(`Operation: ${error.operation}`);  // "compile" | "test" | etc.
+    console.log(`Operation: ${error.operation}`); // "compile" | "test" | etc.
   }
 }
 ```

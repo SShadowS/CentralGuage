@@ -19,6 +19,7 @@ deno task bench --llms sonnet,gpt-4o --tasks "tasks/easy/CG-AL-E001*.yml"
 ```
 
 This will:
+
 1. Load the task manifest
 2. Send prompts to both models
 3. Extract AL code from responses
@@ -82,6 +83,7 @@ deno task report results/ --html --output reports/
 ```
 
 Open `reports/index.html` in your browser to see:
+
 - Model comparison charts
 - Task-by-task breakdown
 - Cost analysis

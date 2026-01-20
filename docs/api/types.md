@@ -492,7 +492,7 @@ class CentralGaugeError extends Error {
   constructor(
     message: string,
     public readonly code: string,
-    public readonly context?: Record<string, unknown>
+    public readonly context?: Record<string, unknown>,
   );
 }
 
@@ -501,7 +501,7 @@ class TaskExecutionError extends CentralGaugeError {
     message: string,
     public readonly taskId: string,
     public readonly attemptNumber?: number,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
   );
 }
 
@@ -511,7 +511,7 @@ class LLMProviderError extends CentralGaugeError {
     public readonly provider: string,
     public readonly isRetryable: boolean,
     public readonly retryAfterMs?: number,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
   );
 }
 
@@ -519,8 +519,14 @@ class ContainerError extends CentralGaugeError {
   constructor(
     message: string,
     public readonly containerName: string,
-    public readonly operation: "setup" | "start" | "stop" | "compile" | "test" | "health",
-    context?: Record<string, unknown>
+    public readonly operation:
+      | "setup"
+      | "start"
+      | "stop"
+      | "compile"
+      | "test"
+      | "health",
+    context?: Record<string, unknown>,
   );
 }
 ```

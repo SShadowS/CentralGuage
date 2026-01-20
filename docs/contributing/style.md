@@ -28,12 +28,12 @@ Always annotate function return types and complex parameters:
 ```typescript
 // Good
 function calculateScore(results: TestResult[]): number {
-  return results.filter(r => r.passed).length / results.length;
+  return results.filter((r) => r.passed).length / results.length;
 }
 
 // Avoid - missing return type
 function calculateScore(results: TestResult[]) {
-  return results.filter(r => r.passed).length / results.length;
+  return results.filter((r) => r.passed).length / results.length;
 }
 ```
 
@@ -96,7 +96,7 @@ Each module has a `mod.ts` with explicit exports:
 // src/llm/mod.ts
 
 // Types first
-export type { LLMConfig, LLMAdapter, LLMResponse } from "./types.ts";
+export type { LLMAdapter, LLMConfig, LLMResponse } from "./types.ts";
 
 // Then implementations
 export { LLMAdapterRegistry } from "./registry.ts";
@@ -129,9 +129,9 @@ import { helper } from "./utils";
 - Descriptive suffixes: `Adapter`, `Provider`, `Registry`, `Config`
 
 ```typescript
-class AnthropicAdapter { }
-interface LLMConfig { }
-class ContainerProviderRegistry { }
+class AnthropicAdapter {}
+interface LLMConfig {}
+class ContainerProviderRegistry {}
 ```
 
 ### Functions and Variables
@@ -140,9 +140,9 @@ class ContainerProviderRegistry { }
 - Verb prefixes for functions: `create`, `get`, `load`, `parse`
 
 ```typescript
-function createAdapter() { }
-function loadTaskManifest() { }
-const defaultConfig = { };
+function createAdapter() {}
+function loadTaskManifest() {}
+const defaultConfig = {};
 ```
 
 ### Constants
@@ -176,7 +176,7 @@ console.log(colors.yellow("[WARN]"), "Warning message");
 console.log(colors.blue("[Info]"), "Information");
 
 // Avoid emojis
-console.log("✅ Task completed");  // Don't do this
+console.log("✅ Task completed"); // Don't do this
 ```
 
 ### Structured Logging
@@ -200,14 +200,18 @@ log.fail("Task failed");
 Use the structured error hierarchy:
 
 ```typescript
-import { CentralGaugeError, TaskExecutionError, LLMProviderError } from "../src/errors.ts";
+import {
+  CentralGaugeError,
+  LLMProviderError,
+  TaskExecutionError,
+} from "../src/errors.ts";
 
 // Good - specific error with context
 throw new TaskExecutionError(
   `Compilation failed for ${taskId}`,
   taskId,
   attemptNumber,
-  { errors: compilationErrors }
+  { errors: compilationErrors },
 );
 
 // Avoid - generic error
@@ -217,7 +221,7 @@ throw new Error("Compilation failed");
 ### Error Checking
 
 ```typescript
-import { isRetryableError, getRetryDelay } from "../src/errors.ts";
+import { getRetryDelay, isRetryableError } from "../src/errors.ts";
 
 try {
   await operation();
@@ -247,7 +251,9 @@ async function loadManifest(path: string): Promise<TaskManifest> {
 
 // Avoid
 function loadManifest(path: string): Promise<TaskManifest> {
-  return Deno.readTextFile(path).then(content => parseYaml(content) as TaskManifest);
+  return Deno.readTextFile(path).then((content) =>
+    parseYaml(content) as TaskManifest
+  );
 }
 ```
 
@@ -263,7 +269,7 @@ async function processGenerator<Y, R>(gen: AsyncGenerator<Y, R>): Promise<R> {
     console.log("Yield:", result.value);
     result = await gen.next();
   }
-  return result.value;  // Return value captured correctly
+  return result.value; // Return value captured correctly
 }
 ```
 
@@ -295,13 +301,13 @@ Prefer pure functions where possible:
 ```typescript
 // Good - pure function
 function calculateScore(results: TestResult[]): number {
-  return results.filter(r => r.passed).length / results.length;
+  return results.filter((r) => r.passed).length / results.length;
 }
 
 // Avoid - side effects
 function calculateScore(results: TestResult[]): number {
-  console.log("Calculating...");  // Side effect
-  globalState.lastScore = score;   // Side effect
+  console.log("Calculating..."); // Side effect
+  globalState.lastScore = score; // Side effect
   return score;
 }
 ```
@@ -315,17 +321,17 @@ Each class should have one primary responsibility:
 ```typescript
 // Good - focused class
 class CodeExtractor {
-  extract(response: string): string { }
-  detectLanguage(code: string): "al" | "diff" { }
+  extract(response: string): string {}
+  detectLanguage(code: string): "al" | "diff" {}
 }
 
 // Avoid - multiple responsibilities
 class TaskProcessor {
-  loadTask() { }
-  compileCode() { }
-  runTests() { }
-  formatResults() { }
-  sendNotification() { }
+  loadTask() {}
+  compileCode() {}
+  runTests() {}
+  formatResults() {}
+  sendNotification() {}
 }
 ```
 
@@ -338,7 +344,7 @@ Use constructor injection for dependencies:
 class TaskExecutor {
   constructor(
     private llmAdapter: LLMAdapter,
-    private containerProvider: ContainerProvider
+    private containerProvider: ContainerProvider,
   ) {}
 }
 
@@ -354,7 +360,7 @@ class TaskExecutor {
 
 Use JSDoc for public APIs:
 
-```typescript
+````typescript
 /**
  * Loads a task manifest from a YAML file
  *
@@ -370,7 +376,7 @@ Use JSDoc for public APIs:
 export async function loadTaskManifest(path: string): Promise<TaskManifest> {
   // ...
 }
-```
+````
 
 ### Inline Comments
 
