@@ -7,6 +7,7 @@ import type {
   ModelShortcomingEntry,
   ModelShortcomingsFile,
 } from "../verify/types.ts";
+import { LLMAdapterRegistry } from "../llm/registry.ts";
 
 /**
  * Options for generating rules markdown
@@ -14,6 +15,16 @@ import type {
 export interface RulesGeneratorOptions {
   /** Minimum occurrences to include (default: 1) */
   minOccurrences?: number;
+}
+
+/**
+ * Options for generating optimized rules via LLM summarization
+ */
+export interface OptimizedRulesOptions extends RulesGeneratorOptions {
+  /** LLM provider for summarization (default: anthropic) */
+  llmProvider?: string;
+  /** LLM model for summarization (default: claude-opus-4-5-20251101) */
+  llmModel?: string;
 }
 
 /**
@@ -228,4 +239,85 @@ export async function loadShortcomingsFile(
  */
 export function getDefaultOutputPath(inputPath: string): string {
   return inputPath.replace(/\.json$/i, ".rules.md");
+}
+
+/**
+ * Build the LLM prompt for rules summarization
+ */
+function buildOptimizationPrompt(
+  shortcomings: ModelShortcomingEntry[],
+): string {
+  const jsonData = JSON.stringify(shortcomings, null, 2);
+
+  return `You are condensing AL programming rules for injection into another LLM's system prompt.
+
+Given these model shortcomings from a Business Central AL code benchmark, produce a minimal set of rules that will help an LLM avoid these mistakes.
+
+Requirements:
+- Each rule must be ONE line with inline code examples using backticks
+- Use positive framing: "Use X" not "Don't use Y"
+- Group related rules under short category headers (## Header)
+- No explanations - just the rule and code
+- Deduplicate and merge similar rules
+- Output plain markdown, no TOC, no metadata, no intro text
+- Start directly with the first category header
+
+Example format:
+## Collections
+- Use \`Clear(MyList)\` function; the \`.Clear()\` method doesn't exist in AL
+
+## FlowFields
+- Call \`CalcFields(FieldName)\` before reading FlowField values; direct access returns 0
+
+Input shortcomings:
+${jsonData}`;
+}
+
+/**
+ * Generate optimized rules via LLM summarization
+ * Produces concise, actionable rules suitable for system prompt injection
+ */
+export async function generateOptimizedRules(
+  data: ModelShortcomingsFile,
+  options: OptimizedRulesOptions = {},
+): Promise<string> {
+  const {
+    minOccurrences = 1,
+    llmProvider = "anthropic",
+    llmModel = "claude-opus-4-5-20251101",
+  } = options;
+
+  // Filter by minimum occurrences and actionability
+  const filtered = data.shortcomings
+    .filter((s) => s.occurrences >= minOccurrences)
+    .filter(isActionableShortcoming);
+
+  if (filtered.length === 0) {
+    return `# AL Rules for ${data.model}\n\nNo actionable shortcomings found.\n`;
+  }
+
+  // Build the prompt
+  const prompt = buildOptimizationPrompt(filtered);
+
+  // Get LLM adapter
+  const adapter = LLMAdapterRegistry.create(llmProvider, {
+    provider: llmProvider,
+    model: llmModel,
+  });
+
+  // Call the LLM
+  const response = await adapter.generateCode(
+    { prompt, temperature: 0.3, maxTokens: 4000 },
+    {
+      taskId: "rules-generation",
+      attempt: 1,
+      description:
+        `Summarize ${filtered.length} AL shortcomings into injection-ready rules`,
+    },
+  );
+
+  // Add header with model name
+  const header = `# AL Rules for ${data.model}\n\n`;
+
+  return header + response.code.trim() + "\n";
 }

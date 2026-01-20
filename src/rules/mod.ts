@@ -3,8 +3,12 @@
  * @module src/rules
  */
 
-export type { RulesGeneratorOptions } from "./generator.ts";
+export type {
+  OptimizedRulesOptions,
+  RulesGeneratorOptions,
+} from "./generator.ts";
 export {
+  generateOptimizedRules,
   generateRulesMarkdown,
   getDefaultOutputPath,
   isActionableShortcoming,
