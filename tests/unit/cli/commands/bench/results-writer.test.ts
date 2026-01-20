@@ -114,24 +114,30 @@ Deno.test("buildScoreLines", async (t) => {
 
   await t.step("should include per-model scores when models exist", () => {
     const perModel = new Map<string, ModelStats>();
-    perModel.set("sonnet", createMockModelStats({
-      model: "sonnet",
-      tasksPassed: 6,
-      tasksFailed: 1,
-      passedOnAttempt1: 5,
-      passedOnAttempt2: 6,
-      avgScore: 90.0,
-      cost: 0.15,
-    }));
-    perModel.set("gpt-4o", createMockModelStats({
-      model: "gpt-4o",
-      tasksPassed: 4,
-      tasksFailed: 3,
-      passedOnAttempt1: 3,
-      passedOnAttempt2: 4,
-      avgScore: 75.0,
-      cost: 0.10,
-    }));
+    perModel.set(
+      "sonnet",
+      createMockModelStats({
+        model: "sonnet",
+        tasksPassed: 6,
+        tasksFailed: 1,
+        passedOnAttempt1: 5,
+        passedOnAttempt2: 6,
+        avgScore: 90.0,
+        cost: 0.15,
+      }),
+    );
+    perModel.set(
+      "gpt-4o",
+      createMockModelStats({
+        model: "gpt-4o",
+        tasksPassed: 4,
+        tasksFailed: 3,
+        passedOnAttempt1: 3,
+        passedOnAttempt2: 4,
+        avgScore: 75.0,
+        cost: 0.10,
+      }),
+    );
 
     const input: ScoreLineInput = {
       stats: createMockAggregateStats({ perModel }),
@@ -180,30 +186,36 @@ Deno.test("buildScoreLines", async (t) => {
     assertStringIncludes(content, "avg_attempts: 0.00");
   });
 
-  await t.step("should handle zero total tasks for pass rate calculation", () => {
-    const perModel = new Map<string, ModelStats>();
-    perModel.set("test-model", createMockModelStats({
-      tasksPassed: 0,
-      tasksFailed: 0,
-      passedOnAttempt1: 0,
-      passedOnAttempt2: 0,
-    }));
+  await t.step(
+    "should handle zero total tasks for pass rate calculation",
+    () => {
+      const perModel = new Map<string, ModelStats>();
+      perModel.set(
+        "test-model",
+        createMockModelStats({
+          tasksPassed: 0,
+          tasksFailed: 0,
+          passedOnAttempt1: 0,
+          passedOnAttempt2: 0,
+        }),
+      );
 
-    const input: ScoreLineInput = {
-      stats: createMockAggregateStats({ perModel }),
-      taskCount: 0,
-      modelNames: ["test-model"],
-      attempts: 2,
-      resultCount: 0,
-      timestamp: new Date("2025-01-06T12:00:00Z"),
-    };
+      const input: ScoreLineInput = {
+        stats: createMockAggregateStats({ perModel }),
+        taskCount: 0,
+        modelNames: ["test-model"],
+        attempts: 2,
+        resultCount: 0,
+        timestamp: new Date("2025-01-06T12:00:00Z"),
+      };
 
-    const lines = buildScoreLines(input);
-    const content = lines.join("\n");
+      const lines = buildScoreLines(input);
+      const content = lines.join("\n");
 
-    // Should show 0.0% when total is 0
-    assertStringIncludes(content, "test-model: pr1=0.0% pr2=0.0%");
-  });
+      // Should show 0.0% when total is 0
+      assertStringIncludes(content, "test-model: pr1=0.0% pr2=0.0%");
+    },
+  );
 
   await t.step("should calculate avg_attempts across multiple models", () => {
     const perModel = new Map<string, ModelStats>();

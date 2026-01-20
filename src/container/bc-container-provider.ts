@@ -30,10 +30,7 @@ import {
   parseStatusOutput,
   parseTestResults,
 } from "./bc-output-parsers.ts";
-import {
-  buildCompileScript,
-  buildTestScript,
-} from "./bc-script-builders.ts";
+import { buildCompileScript, buildTestScript } from "./bc-script-builders.ts";
 
 /**
  * Parse timing markers from PowerShell output and log sub-timings.

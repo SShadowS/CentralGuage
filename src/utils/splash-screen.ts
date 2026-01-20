@@ -170,11 +170,9 @@ export class SplashScreen {
       for (const provider of llmProviders) {
         const isAvailable = availableProviders.includes(provider);
         const status = isAvailable ? brightGreen("✓") : gray("○");
-        const models = LLMAdapterRegistry.getSupportedModels(provider);
-        const modelCount = models.length;
 
         if (isAvailable) {
-          console.log(`      ${status} ${provider} (${modelCount} models)`);
+          console.log(`      ${status} ${provider}`);
         } else {
           const reason = provider === "mock" || provider === "local"
             ? "always available"
