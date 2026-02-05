@@ -120,7 +120,8 @@ export class OpenRouterAdapter extends BaseLLMAdapter
     const response = await fetch(url, {
       headers: {
         "Authorization": `Bearer ${apiKey}`,
-        "HTTP-Referer": this.config.siteUrl ?? "https://github.com/centralgauge",
+        "HTTP-Referer": this.config.siteUrl ??
+          "https://github.com/centralgauge",
         "X-Title": this.config.siteName ?? "CentralGauge",
       },
       signal: AbortSignal.timeout(this.config.timeout || 10000),
