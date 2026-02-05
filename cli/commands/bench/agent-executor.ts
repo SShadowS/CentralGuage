@@ -16,6 +16,7 @@ import { formatFailureReason } from "../../../src/agents/failure-parser.ts";
 import { formatDurationMs, log } from "../../helpers/mod.ts";
 import { BenchTui } from "../../tui/bench-tui.ts";
 import type { AgentBenchmarkOptions } from "./types.ts";
+import { sendBenchmarkNotificationIfConfigured } from "../../../src/notifications/mod.ts";
 
 /**
  * Run benchmark using agent configurations
@@ -339,4 +340,31 @@ export async function executeAgentBenchmark(
     ),
   );
   console.log(`  Saved: ${colors.gray(resultsFile)}`);
+
+  // Send notification if configured (auto-notify when token present)
+  if (!options.noNotify) {
+    // Calculate overall pass rate
+    let totalPassed = 0;
+    let totalFailed = 0;
+    for (const stats of agentStats.values()) {
+      totalPassed += stats.passed;
+      totalFailed += stats.failed;
+    }
+    const passRate = totalPassed / (totalPassed + totalFailed) || 0;
+
+    // Calculate total cost
+    let totalCost = 0;
+    for (const stats of agentStats.values()) {
+      totalCost += stats.totalCost;
+    }
+
+    await sendBenchmarkNotificationIfConfigured({
+      mode: "agent",
+      passRate,
+      totalTasks: taskManifests.length,
+      duration: totalDuration,
+      totalCost,
+      agents: options.agents,
+    });
+  }
 }

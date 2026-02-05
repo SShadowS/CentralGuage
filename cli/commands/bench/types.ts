@@ -18,6 +18,8 @@ export interface AgentBenchmarkOptions {
   sandbox?: boolean;
   /** Show detailed failure output */
   verbose?: boolean;
+  /** Disable Pushbullet notification even if token is configured */
+  noNotify?: boolean;
 }
 
 /**

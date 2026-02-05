@@ -25,6 +25,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   jsonEvents?: boolean;
   // Retry mode: path to previous results file
   retry?: string;
+  // Disable Pushbullet notification even if token is configured
+  noNotify?: boolean;
 }
 
 /**

@@ -76,6 +76,14 @@ export interface CentralGaugeConfig {
 
   // Named variant profiles for comparing same model with different configs
   variantProfiles?: Record<string, VariantProfile>;
+
+  // Notification settings
+  notifications?: {
+    pushbullet?: {
+      enabled?: boolean;
+      accessToken?: string;
+    };
+  };
 }
 
 export class ConfigManager {
@@ -480,6 +488,15 @@ export class ConfigManager {
         ...override.variantProfiles,
       };
     }
+    if (override.notifications) {
+      result.notifications = {
+        ...result.notifications,
+        pushbullet: {
+          ...result.notifications?.pushbullet,
+          ...override.notifications.pushbullet,
+        },
+      };
+    }
 
     return result;
   }
@@ -617,6 +634,13 @@ logging:
 #     config:
 #       temperature: 0.2
 #       thinkingBudget: 50000
+
+# Notification settings
+# Pushbullet notifications are sent when benchmarks complete
+# notifications:
+#   pushbullet:
+#     enabled: true                       # Enable/disable notifications
+#     accessToken: "o.xxxxx"              # Or use PUSHBULLET_ACCESS_TOKEN env var
 `;
   }
 }

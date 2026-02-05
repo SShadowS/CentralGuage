@@ -50,6 +50,7 @@ import {
   saveResultsJson,
   saveScoresFile,
 } from "./results-writer.ts";
+import { sendBenchmarkNotificationIfConfigured } from "../../../src/notifications/mod.ts";
 
 /**
  * Convert TaskSetHashResult to HashResult for results serialization
@@ -339,6 +340,18 @@ export async function executeParallelBenchmark(
       resultsFile,
       scoreFile,
     );
+
+    // Send notification if configured (auto-notify when token present)
+    if (!options.noNotify) {
+      await sendBenchmarkNotificationIfConfigured({
+        mode: "llm",
+        passRate: summary.stats.overallPassRate,
+        totalTasks: taskManifests.length,
+        duration: summary.stats.totalDuration,
+        totalCost: summary.stats.totalCost,
+        models: variants.map((v) => getVariantDisplayName(v)),
+      });
+    }
 
     // Display formatted output
     await displayFormattedOutput(

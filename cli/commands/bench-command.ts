@@ -138,6 +138,11 @@ export function registerBenchCommand(cli: Command): void {
       "--retry <file:string>",
       "Retry missing task+model combinations from a previous results file",
     )
+    .option(
+      "--no-notify",
+      "Disable Pushbullet notification (even if token configured)",
+      { default: false },
+    )
     .action(async (options) => {
       // Validate that at least one of --llms or --agents is provided
       if (
@@ -160,6 +165,7 @@ export function registerBenchCommand(cli: Command): void {
           containerName: options.container,
           sandbox: options.sandbox ?? false,
           verbose: options.debug ?? false,
+          noNotify: !options.notify,
         };
         await executeAgentBenchmark(agentBenchOptions, options.quiet);
         Deno.exit(0);
@@ -247,6 +253,7 @@ export function registerBenchCommand(cli: Command): void {
           ? options.maxConcurrency
           : parseInt(String(options.maxConcurrency), 10),
         stream: options.stream,
+        noNotify: !options.notify,
       };
       if (options.retry) {
         benchOptions.retry = options.retry;
