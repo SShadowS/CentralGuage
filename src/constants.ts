@@ -37,6 +37,13 @@ export const DEFAULT_API_TIMEOUT_MS = 30000;
  */
 export const LOCAL_MODEL_TIMEOUT_MS = 60000;
 
+/**
+ * Timeout for streaming chunk reception in milliseconds.
+ * If no chunk arrives within this time, the stream is aborted.
+ * Set higher than API timeout since some chunks can take longer during reasoning.
+ */
+export const STREAM_CHUNK_TIMEOUT_MS = 120000; // 2 minutes
+
 // =============================================================================
 // Timeout Values (Milliseconds)
 // =============================================================================
