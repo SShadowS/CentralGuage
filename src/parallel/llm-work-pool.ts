@@ -172,15 +172,32 @@ export class LLMWorkPool {
         continuationResult.wasTruncated,
       );
 
+      // Determine success based on extraction quality
+      // Empty code or low confidence indicates extraction failure
+      const isReadyForCompile = extracted.confidence > 0.5 &&
+        cleanedCode.trim().length > 0;
+
       const result: LLMWorkResult = {
         workItemId: item.id,
-        success: true,
+        success: isReadyForCompile,
         code: cleanedCode,
         llmResponse: continuationResult.response,
         duration: Date.now() - startTime,
-        readyForCompile: extracted.confidence > 0.5,
+        readyForCompile: isReadyForCompile,
         continuationCount: continuationResult.continuationCount,
       };
+
+      // Set error message for extraction failures (categorizes as model failure, not transient)
+      if (!isReadyForCompile) {
+        if (cleanedCode.trim().length === 0) {
+          result.error = "Model returned empty response";
+        } else {
+          result.error = `Insufficient code quality (confidence: ${
+            (extracted.confidence * 100).toFixed(0)
+          }%)`;
+        }
+      }
+
       if (truncationWarning) {
         result.truncationWarning = truncationWarning;
       }
