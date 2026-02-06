@@ -42,6 +42,7 @@ import {
   cleanupContainer,
   type ContainerAppConfig,
   setupContainer,
+  setupContainers,
 } from "./container-setup.ts";
 import {
   displayBenchmarkSummary,
@@ -173,9 +174,39 @@ export async function executeParallelBenchmark(
       variants = retryResult.variants;
     }
 
-    // Setup container
-    const { containerProvider, containerName, wasExisting } =
-      await setupContainer(containerProviderName, containerConfig);
+    // Setup container(s)
+    let containerProvider:
+      import("../../../src/container/interface.ts").ContainerProvider;
+    let primaryContainerName: string;
+    let wasExisting: boolean;
+    let containerNames: string[] | undefined;
+
+    if (options.containers && options.containers.length > 0) {
+      // Multi-container mode
+      const result = await setupContainers(
+        options.containers,
+        containerProviderName,
+        containerConfig,
+      );
+      containerProvider = result.containerProvider;
+      containerNames = result.containerNames;
+      primaryContainerName = containerNames[0]!;
+      wasExisting = true; // multi-container always pre-existing
+      log.info(
+        `Containers: ${
+          containerNames.join(", ")
+        } (${containerNames.length} containers)`,
+      );
+    } else {
+      // Single-container mode (unchanged)
+      const result = await setupContainer(
+        containerProviderName,
+        containerConfig,
+      );
+      containerProvider = result.containerProvider;
+      primaryContainerName = result.containerName;
+      wasExisting = result.wasExisting;
+    }
 
     const totalRuns = options.runs ?? 1;
     const resultFilePaths: string[] = [];
@@ -188,7 +219,7 @@ export async function executeParallelBenchmark(
     // Build parallel options (shared across runs)
     const parallelOptions = buildParallelOptions(
       options,
-      containerName,
+      primaryContainerName,
       containerProvider.name,
     );
 
@@ -204,6 +235,9 @@ export async function executeParallelBenchmark(
       const config = createDefaultConfig();
       config.maxGlobalConcurrency = options.maxConcurrency ?? 10;
       config.taskConcurrency = options.taskConcurrency ?? 3;
+      if (containerNames) {
+        config.containerNames = containerNames;
+      }
 
       const orchestrator = new ParallelBenchmarkOrchestrator(config);
 
@@ -227,7 +261,9 @@ export async function executeParallelBenchmark(
           statusLines: [
             `Models: ${options.llms.join(", ")}`,
             `Tasks: ${taskManifests.length} task(s)`,
-            `Container: ${containerName}`,
+            `Container: ${
+              containerNames ? containerNames.join(", ") : primaryContainerName
+            }`,
           ],
         });
 
@@ -379,8 +415,19 @@ export async function executeParallelBenchmark(
       );
     }
 
-    // Cleanup container
-    await cleanupContainer(containerProvider, containerName, wasExisting);
+    // Cleanup container(s)
+    if (containerNames && containerNames.length > 1) {
+      // Multi-container: only cleanup compiler folders, don't remove containers
+      if (containerProvider.cleanupCompilerFolders) {
+        await containerProvider.cleanupCompilerFolders();
+      }
+    } else {
+      await cleanupContainer(
+        containerProvider,
+        primaryContainerName,
+        wasExisting,
+      );
+    }
 
     // Send notification if configured (once after all runs)
     if (!options.noNotify && lastRunStats) {

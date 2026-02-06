@@ -24,6 +24,8 @@ const log = Logger.create("parallel");
 import { createDefaultConfig } from "./types.ts";
 import { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";
 import { CompileQueue, CriticalError } from "./compile-queue.ts";
+import type { CompileWorkQueue } from "./compile-queue-pool.ts";
+import { CompileQueuePool } from "./compile-queue-pool.ts";
 import { buildTaskComparison, ResultAggregator } from "./result-aggregator.ts";
 import { Semaphore } from "./semaphore.ts";
 import { ProviderRateLimiter } from "./rate-limiter.ts";
@@ -75,7 +77,7 @@ export interface ParallelBenchmarkOptions {
 export class ParallelBenchmarkOrchestrator {
   private config: ParallelExecutionConfig;
   private llmPool: LLMWorkPool;
-  private compileQueue: CompileQueue | null = null;
+  private compileQueue: CompileWorkQueue | null = null;
   private aggregator: ResultAggregator;
   private rateLimiter: ProviderRateLimiter;
   private listeners: EventListener[] = [];
@@ -181,14 +183,24 @@ export class ParallelBenchmarkOrchestrator {
     this.containerProvider = this.containerProviderFactory(
       options.containerProvider,
     );
-    this.compileQueue = this.compileQueueFactory(
-      this.containerProvider,
-      options.containerName,
-      {
-        maxQueueSize: this.config.compileQueueSize,
-        timeout: this.config.compileQueueTimeout,
-      },
-    );
+    const queueOptions = {
+      maxQueueSize: this.config.compileQueueSize,
+      timeout: this.config.compileQueueTimeout,
+    };
+    const containerNames = this.config.containerNames;
+    if (containerNames && containerNames.length > 1) {
+      this.compileQueue = new CompileQueuePool(
+        this.containerProvider,
+        containerNames,
+        queueOptions,
+      );
+    } else {
+      this.compileQueue = this.compileQueueFactory(
+        this.containerProvider,
+        containerNames?.[0] ?? options.containerName,
+        queueOptions,
+      );
+    }
 
     const taskResults: (ParallelTaskResult | undefined)[] = new Array(
       taskManifests.length,

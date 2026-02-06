@@ -119,6 +119,61 @@ export async function setupContainer(
 }
 
 /**
+ * Result of multi-container setup
+ */
+export interface MultiContainerSetupResult {
+  containerProvider: ContainerProvider;
+  containerNames: string[];
+}
+
+/**
+ * Setup multiple containers for multi-container benchmark execution.
+ * All containers must be pre-existing and healthy.
+ */
+export async function setupContainers(
+  containerNames: string[],
+  containerProviderName: string | undefined,
+  containerConfig: ContainerAppConfig,
+): Promise<MultiContainerSetupResult> {
+  // Resolve provider once (singleton per type)
+  const containerProvider =
+    !containerProviderName || containerProviderName === "auto"
+      ? (containerConfig.provider
+        ? ContainerProviderRegistry.create(containerConfig.provider)
+        : await ContainerProviderRegistry.getDefault())
+      : ContainerProviderRegistry.create(containerProviderName);
+
+  for (const name of containerNames) {
+    // Set credentials for each container
+    if (containerConfig.credentials && "setCredentials" in containerProvider) {
+      (containerProvider as BcContainerProvider)
+        .setCredentials(name, {
+          username: containerConfig.credentials.username || "admin",
+          password: containerConfig.credentials.password || "admin",
+        });
+    }
+
+    // Health check each container
+    let healthy = false;
+    try {
+      healthy = await containerProvider.isHealthy(name);
+    } catch {
+      // container doesn't exist
+    }
+
+    if (healthy) {
+      log.container(`Using existing: ${name}`);
+    } else {
+      throw new Error(
+        `Container "${name}" is not running. Multi-container mode requires all containers to be pre-existing and healthy.`,
+      );
+    }
+  }
+
+  return { containerProvider, containerNames };
+}
+
+/**
  * Cleanup container after benchmark
  */
 export async function cleanupContainer(

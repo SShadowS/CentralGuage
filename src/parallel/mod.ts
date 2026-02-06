@@ -45,6 +45,8 @@ export {
   QueueFullError,
   QueueTimeoutError,
 } from "./compile-queue.ts";
+export { CompileQueuePool } from "./compile-queue-pool.ts";
+export type { CompileWorkQueue } from "./compile-queue-pool.ts";
 
 // LLM work pool
 export { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";

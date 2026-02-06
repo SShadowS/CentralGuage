@@ -33,8 +33,13 @@ export {
 export type {
   ContainerAppConfig,
   ContainerSetupResult,
+  MultiContainerSetupResult,
 } from "./container-setup.ts";
-export { cleanupContainer, setupContainer } from "./container-setup.ts";
+export {
+  cleanupContainer,
+  setupContainer,
+  setupContainers,
+} from "./container-setup.ts";
 
 // Agent executor
 export { executeAgentBenchmark } from "./agent-executor.ts";

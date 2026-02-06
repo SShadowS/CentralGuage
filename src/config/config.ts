@@ -47,6 +47,8 @@ export interface BenchmarkPreset {
   output?: string;
   /** BC container name */
   container?: string;
+  /** Multiple BC containers for parallel compilation/testing (overrides container) */
+  containers?: string[];
   /** Enable debug logging */
   debug?: boolean;
   /** Run agents in sandbox mode */

@@ -18,6 +18,7 @@ import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
 import { Mutex, Semaphore } from "./semaphore.ts";
+import type { CompileWorkQueue } from "./compile-queue-pool.ts";
 
 const log = Logger.create("compile");
 
@@ -176,7 +177,7 @@ interface QueueEntry {
 /**
  * FIFO queue for container compilation operations
  */
-export class CompileQueue {
+export class CompileQueue implements CompileWorkQueue {
   private queue: QueueEntry[] = [];
   private compileSemaphore: Semaphore;
   private testMutex = new Mutex();

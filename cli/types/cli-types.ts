@@ -30,6 +30,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   noNotify?: boolean;
   /** Number of independent benchmark runs (for pass@k analysis) */
   runs?: number;
+  /** Multiple BC containers for parallel compilation/testing */
+  containers?: string[];
 }
 
 /**

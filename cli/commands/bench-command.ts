@@ -54,6 +54,10 @@ export function registerBenchCommand(cli: Command): void {
       { default: "Cronus27" },
     )
     .option(
+      "--containers <names:string[]>",
+      "Multiple BC containers for parallel compilation/testing (overrides --container)",
+    )
+    .option(
       "-s, --sandbox",
       "Run agents in isolated Windows containers (agent mode only)",
     )
@@ -368,6 +372,9 @@ export function registerBenchCommand(cli: Command): void {
         noNotify: !options.notify,
         runs,
       };
+      if (options.containers) {
+        benchOptions.containers = options.containers;
+      }
       if (options.retry) {
         benchOptions.retry = options.retry;
       }
@@ -503,6 +510,9 @@ function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
   }
   if (!cliOptions.container && preset.container) {
     cliOptions.container = preset.container;
+  }
+  if (!cliHasValue("containers") && preset.containers) {
+    cliOptions.containers = preset.containers;
   }
 
   // Handle noNotify (preset) vs notify (CLI) mapping

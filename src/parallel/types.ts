@@ -43,6 +43,9 @@ export interface ParallelExecutionConfig {
 
   /** Directory containing prompt templates (default: "templates") */
   templateDir?: string | undefined;
+
+  /** Container names for multi-container pool. If empty/undefined, uses single containerName from options. */
+  containerNames?: string[] | undefined;
 }
 
 /**
