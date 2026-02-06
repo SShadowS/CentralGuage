@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://centralgauge.dev/schemas/pricing.json",
+  "title": "CentralGauge Pricing Configuration",
+  "description": "LLM pricing configuration for cost estimation in benchmarks",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Schema reference for IDE support"
+    },
+    "version": {
+      "type": "string",
+      "description": "Version of the pricing config format",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "lastUpdated": {
+      "type": "string",
+      "description": "Last update date (YYYY-MM-DD)",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "currency": {
+      "type": "string",
+      "const": "USD",
+      "description": "Currency for all prices"
+    },
+    "unit": {
+      "type": "string",
+      "const": "per_1k_tokens",
+      "description": "Unit for all prices"
+    },
+    "providers": {
+      "type": "object",
+      "description": "Provider-specific pricing",
+      "additionalProperties": {
+        "$ref": "#/$defs/providerPricing"
+      }
+    }
+  },
+  "required": ["version", "lastUpdated", "currency", "unit", "providers"],
+  "$defs": {
+    "modelPricing": {
+      "type": "object",
+      "description": "Pricing per 1K tokens for a model",
+      "properties": {
+        "input": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per 1K input tokens in USD"
+        },
+        "output": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Cost per 1K output tokens in USD"
+        }
+      },
+      "required": ["input", "output"],
+      "additionalProperties": false
+    },
+    "providerPricing": {
+      "type": "object",
+      "description": "Pricing configuration for a provider",
+      "properties": {
+        "fetchFromApi": {
+          "type": "boolean",
+          "description": "Whether to fetch pricing from API (e.g., OpenRouter)"
+        },
+        "models": {
+          "type": "object",
+          "description": "Model-specific pricing",
+          "additionalProperties": {
+            "$ref": "#/$defs/modelPricing"
+          }
+        },
+        "default": {
+          "$ref": "#/$defs/modelPricing",
+          "description": "Default pricing for unknown models"
+        }
+      },
+      "required": ["models", "default"],
+      "additionalProperties": false
+    }
+  }
+}

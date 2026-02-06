@@ -4,6 +4,7 @@
  */
 
 import { Command } from "@cliffy/command";
+import * as colors from "@std/fmt/colors";
 import type {
   CLIPromptOverrides,
   InjectionStage,
@@ -13,6 +14,8 @@ import {
   loadKnowledgeFiles,
 } from "../../src/prompts/mod.ts";
 import type { OutputFormat } from "../../src/utils/formatters.ts";
+import { ConfigManager } from "../../src/config/config.ts";
+import type { BenchmarkPreset } from "../../src/config/config.ts";
 import { log } from "../helpers/mod.ts";
 import type {
   AgentBenchmarkOptions,
@@ -28,6 +31,15 @@ import {
  */
 export function registerBenchCommand(cli: Command): void {
   cli.command("bench", "Run benchmark evaluation")
+    .option(
+      "--preset <name:string>",
+      "Load benchmark preset from .centralgauge.yml config",
+    )
+    .option(
+      "--list-presets",
+      "List available benchmark presets",
+      { default: false },
+    )
     .option(
       "-l, --llms <models:string[]>",
       "LLM models to test (provider/model format)",
@@ -144,6 +156,79 @@ export function registerBenchCommand(cli: Command): void {
       { default: false },
     )
     .action(async (options) => {
+      // Handle --list-presets
+      if (options.listPresets) {
+        const config = await ConfigManager.loadConfig();
+        const presets = config.benchmarkPresets ?? {};
+        const presetNames = Object.keys(presets);
+
+        if (presetNames.length === 0) {
+          console.log(
+            colors.yellow("No benchmark presets defined in .centralgauge.yml"),
+          );
+          console.log(
+            "\nAdd presets to your config file under 'benchmarkPresets:'",
+          );
+        } else {
+          console.log(colors.bold("Available benchmark presets:\n"));
+          for (const name of presetNames) {
+            const p = presets[name];
+            if (!p) continue;
+            const desc = p.description ?? "(no description)";
+            console.log(`  ${colors.green(name)}: ${desc}`);
+            // Show key settings
+            const details: string[] = [];
+            if (p.llms?.length) {
+              details.push(`llms: ${p.llms.length}`);
+            }
+            if (p.agents?.length) {
+              details.push(`agents: ${p.agents.length}`);
+            }
+            if (p.tasks?.length) {
+              details.push(`tasks: ${p.tasks.join(", ")}`);
+            }
+            if (p.stream) details.push("stream");
+            if (details.length > 0) {
+              console.log(`    ${colors.dim(details.join(" | "))}`);
+            }
+          }
+          console.log(
+            `\n${colors.dim("Usage: deno task start bench --preset <name>")}`,
+          );
+        }
+        Deno.exit(0);
+      }
+
+      // Load and merge preset if specified
+      if (options.preset) {
+        const config = await ConfigManager.loadConfig();
+        const preset = config.benchmarkPresets?.[options.preset];
+        if (!preset) {
+          const available = Object.keys(config.benchmarkPresets ?? {});
+          log.fail(`Preset '${options.preset}' not found`);
+          if (available.length > 0) {
+            console.log(`Available presets: ${available.join(", ")}`);
+          } else {
+            console.log(
+              "No presets defined. Add them to .centralgauge.yml under 'benchmarkPresets:'",
+            );
+          }
+          Deno.exit(1);
+        }
+
+        console.log(
+          `${colors.green("[OK]")} Loading preset: ${
+            colors.bold(options.preset)
+          }`,
+        );
+        if (preset.description) {
+          console.log(`    ${colors.dim(preset.description)}`);
+        }
+
+        // Merge preset values with CLI options (CLI takes precedence)
+        options = mergePresetWithOptions(preset, options);
+      }
+
       // Validate that at least one of --llms or --agents is provided
       if (
         (!options.llms || options.llms.length === 0) &&
@@ -306,4 +391,87 @@ export function registerBenchCommand(cli: Command): void {
       // Explicitly exit to close any lingering connections
       Deno.exit(0);
     });
+}
+
+/**
+ * Merge preset values with CLI options.
+ * CLI options take precedence over preset values.
+ * Returns the merged options object (mutates in place).
+ */
+// deno-lint-ignore no-explicit-any
+function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
+  // Helper to check if a CLI option was explicitly provided
+  // (not just default value)
+  const cliHasValue = (key: string): boolean => {
+    const val = cliOptions[key];
+    if (val === undefined || val === null) return false;
+    if (Array.isArray(val) && val.length === 0) return false;
+    return true;
+  };
+
+  // Check if tasks is the default value (unchanged from CLI default)
+  const isDefaultTasks = (tasks: unknown): boolean => {
+    if (!Array.isArray(tasks)) return false;
+    return tasks.length === 1 && tasks[0] === "tasks/**/*.yml";
+  };
+
+  // Arrays: use CLI if provided and non-empty, otherwise preset
+  if (!cliHasValue("llms") && preset.llms) {
+    cliOptions.llms = preset.llms;
+  }
+  if (!cliHasValue("agents") && preset.agents) {
+    cliOptions.agents = preset.agents;
+  }
+  // For tasks, also check if it's the default value
+  if (isDefaultTasks(cliOptions.tasks) && preset.tasks) {
+    cliOptions.tasks = [...preset.tasks];
+  }
+
+  // Numbers: use preset if CLI wasn't provided
+  if (cliOptions.attempts === undefined && preset.attempts !== undefined) {
+    cliOptions.attempts = preset.attempts;
+  }
+  if (
+    cliOptions.temperature === undefined && preset.temperature !== undefined
+  ) {
+    cliOptions.temperature = preset.temperature;
+  }
+  if (cliOptions.maxTokens === undefined && preset.maxTokens !== undefined) {
+    cliOptions.maxTokens = preset.maxTokens;
+  }
+  if (
+    cliOptions.maxConcurrency === undefined &&
+    preset.maxConcurrency !== undefined
+  ) {
+    cliOptions.maxConcurrency = preset.maxConcurrency;
+  }
+
+  // Booleans: use preset if CLI wasn't provided
+  if (cliOptions.stream === undefined && preset.stream !== undefined) {
+    cliOptions.stream = preset.stream;
+  }
+  if (cliOptions.debug === undefined && preset.debug !== undefined) {
+    cliOptions.debug = preset.debug;
+  }
+  if (cliOptions.sandbox === undefined && preset.sandbox !== undefined) {
+    cliOptions.sandbox = preset.sandbox;
+  }
+
+  // Strings: use preset if CLI wasn't provided
+  if (!cliOptions.format && preset.format) {
+    cliOptions.format = preset.format;
+  }
+  if (!cliOptions.output && preset.output) {
+    cliOptions.output = preset.output;
+  }
+  if (!cliOptions.container && preset.container) {
+    cliOptions.container = preset.container;
+  }
+
+  // Handle noNotify (preset) vs notify (CLI) mapping
+  if (cliOptions.notify === undefined && preset.noNotify !== undefined) {
+    cliOptions.notify = !preset.noNotify;
+  }
+
+  return cliOptions;
 }

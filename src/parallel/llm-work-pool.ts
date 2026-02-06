@@ -211,8 +211,8 @@ export class LLMWorkPool {
 
       this.rateLimiter.release(lease);
 
-      // Retry up to 3 times for transient errors with escalating delays
-      const MAX_IMMEDIATE_RETRIES = 3;
+      // Retry up to 7 times for transient errors with escalating delays
+      const MAX_IMMEDIATE_RETRIES = 7;
       if (this.isTransientError(error) && retryCount < MAX_IMMEDIATE_RETRIES) {
         const delayMs = 1000 * (retryCount + 1); // 1s, 2s, 3s
         await this.delay(delayMs);

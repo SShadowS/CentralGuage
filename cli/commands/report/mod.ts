@@ -6,6 +6,10 @@
 // Types
 export type { HtmlTemplateParams, ModelDetailPageParams } from "./templates.ts";
 export type { FileMetadata } from "./file-loader.ts";
+export type {
+  DatasetLoadResult,
+  ReportDataset,
+} from "../../types/dataset-types.ts";
 export type { ChartDataEntry } from "./chart-builder.ts";
 
 // HTML utilities
@@ -20,10 +24,28 @@ export {
 // File loading
 export {
   buildFileOptions,
+  filterExistingDatasetFiles,
   getFileMetadata,
+  getFilenames,
   loadResultFiles,
   selectResultFiles,
 } from "./file-loader.ts";
+
+// Dataset management
+export {
+  confirmDatasetUsage,
+  datasetExists,
+  getDatasetPath,
+  getDatasetsDir,
+  handleDatasetCollision,
+  listDatasets,
+  loadDataset,
+  printDatasetsList,
+  saveDataset,
+  toAbsolutePaths,
+  toRelativePaths,
+  updateDataset,
+} from "./dataset.ts";
 
 // Shortcomings processing
 export {

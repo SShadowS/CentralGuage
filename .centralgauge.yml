@@ -62,3 +62,23 @@ variantProfiles:
     config:
       temperature: 0.2
       thinkingBudget: 50000
+
+# Benchmark presets - reusable benchmark configurations
+# Run with: deno task start bench --preset <name>
+# List presets: deno task start bench --list-presets
+benchmarkPresets:
+  quick-test:
+    description: "Fast smoke test with mock model"
+    llms:
+      - mock
+    tasks:
+      - "tasks/easy/*.yml"
+    attempts: 1
+  flagship-compare:
+    description: "Compare flagship models on all tasks"
+    llms:
+      - sonnet
+      - gpt-4o
+      - gemini
+    stream: true
+    attempts: 2

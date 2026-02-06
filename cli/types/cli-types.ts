@@ -76,6 +76,7 @@ export interface PerModelStats {
   avgAttempts: number;
   passedOnAttempt1: number;
   passedOnAttempt2: number;
+  passedByAttempt: number[];
   compileFailures: number;
   testFailures: number;
   malformedResponses: number;

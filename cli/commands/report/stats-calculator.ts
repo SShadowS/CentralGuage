@@ -34,6 +34,7 @@ export function calculatePerModelStats(
         avgAttempts: 0,
         passedOnAttempt1: 0,
         passedOnAttempt2: 0,
+        passedByAttempt: [],
         compileFailures: 0,
         testFailures: 0,
         malformedResponses: 0,
@@ -45,6 +46,15 @@ export function calculatePerModelStats(
 
     if (result.success) {
       m.tasksPassed++;
+      // Find which attempt first succeeded
+      const successIndex = result.attempts?.findIndex((a) => a.success) ?? 0;
+      // Grow array if needed
+      while (m.passedByAttempt.length <= successIndex) {
+        m.passedByAttempt.push(0);
+      }
+      m.passedByAttempt[successIndex] = (m.passedByAttempt[successIndex] ?? 0) +
+        1;
+      // Backward compat
       if (result.attempts?.[0]?.success) {
         m.passedOnAttempt1++;
       }

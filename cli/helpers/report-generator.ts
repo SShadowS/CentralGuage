@@ -153,6 +153,7 @@ export function calculatePerModelStats(
         avgAttempts: 0,
         passedOnAttempt1: 0,
         passedOnAttempt2: 0,
+        passedByAttempt: [],
         compileFailures: 0,
         testFailures: 0,
         malformedResponses: 0,
@@ -163,6 +164,14 @@ export function calculatePerModelStats(
     const m = perModelMap.get(variantId)!;
     if (result.success) {
       m.tasksPassed++;
+      // Find which attempt first succeeded
+      const successIndex = result.attempts?.findIndex((a) => a.success) ?? 0;
+      while (m.passedByAttempt.length <= successIndex) {
+        m.passedByAttempt.push(0);
+      }
+      m.passedByAttempt[successIndex] = (m.passedByAttempt[successIndex] ?? 0) +
+        1;
+      // Backward compat
       if (result.attempts?.[0]?.success) {
         m.passedOnAttempt1++;
       }
@@ -380,6 +389,62 @@ export function generateShortcomingsHtml(
     </div>`;
 }
 
+const ORDINALS = ["1st", "2nd", "3rd", "4th", "5th"];
+const PILL_CLASSES = [
+  "attempt-pill-1st",
+  "attempt-pill-2nd",
+  "attempt-pill-3rd",
+  "attempt-pill-4th",
+  "attempt-pill-5th",
+];
+
+/**
+ * Get the passedByAttempt array, falling back to legacy fields for old data
+ */
+function getPassedByAttempt(m: PerModelStats): number[] {
+  if (m.passedByAttempt?.length) {
+    return m.passedByAttempt;
+  }
+  const first = m.passedOnAttempt1 || 0;
+  const secondOnly = (m.passedOnAttempt2 || 0) - first;
+  const arr = [first];
+  if (secondOnly > 0) arr.push(secondOnly);
+  return arr;
+}
+
+/**
+ * Generate attempt pill badges HTML
+ */
+function generateAttemptPillsHtml(
+  passedByAttempt: number[],
+  tasksFailed: number,
+  tasksPassed: number,
+  totalTasks: number,
+): string {
+  const pills: string[] = [];
+
+  for (let i = 0; i < passedByAttempt.length; i++) {
+    const count = passedByAttempt[i] ?? 0;
+    if (count <= 0) continue;
+    const ordinal = ORDINALS[i] || `${i + 1}th`;
+    const cls = PILL_CLASSES[Math.min(i, PILL_CLASSES.length - 1)];
+    pills.push(
+      `<span class="attempt-pill ${cls}" title="Tasks that passed on the ${ordinal} attempt">${ordinal}: ${count}</span>`,
+    );
+  }
+
+  if (tasksFailed > 0) {
+    pills.push(
+      `<span class="attempt-pill attempt-pill-failed" title="Tasks that failed all attempts">Failed: ${tasksFailed}</span>`,
+    );
+  }
+
+  const totalLabel =
+    `<span class="attempt-total">${tasksPassed}/${totalTasks} passed</span>`;
+
+  return `<div class="attempt-pills">${pills.join("")}${totalLabel}</div>`;
+}
+
 /**
  * Generate model cards HTML
  */
@@ -393,7 +458,6 @@ export function generateModelCardsHtml(
   for (const [variantId, m] of sortedModels) {
     const mTotal = m.tasksPassed + m.tasksFailed;
     const passRate = mTotal > 0 ? m.tasksPassed / mTotal : 0;
-    const firstPassRate = mTotal > 0 ? m.passedOnAttempt1 / mTotal : 0;
     const temperature = tempLookup.get(variantId);
     const thinkingBudget = m.variantConfig?.thinkingBudget;
     const reasoningEffort = m.variantConfig?.reasoningEffort;
@@ -407,27 +471,30 @@ export function generateModelCardsHtml(
       thinkingDisplay = reasoningEffort;
     }
 
+    const passedByAttempt = getPassedByAttempt(m);
+    const pillsHtml = generateAttemptPillsHtml(
+      passedByAttempt,
+      m.tasksFailed,
+      m.tasksPassed,
+      mTotal,
+    );
+
     modelCardsHtml += `
     <div class="model-card">
       <h3>${variantId}</h3>
       <div class="model-stats">
-        <div class="stat"><span class="stat-label">Pass Rate:</span><span class="stat-value">${
+        <div class="stat"><span class="stat-label" title="Percentage of tasks that passed across all allowed attempts.">Pass Rate:</span><span class="stat-value">${
       formatRate(passRate)
     }</span></div>
-        <div class="stat"><span class="stat-label">Avg Score:</span><span class="stat-value">${
-      formatScore(m.avgScore)
-    }</span></div>
-        <div class="stat"><span class="stat-label">First Pass:</span><span class="stat-value">${
-      formatRate(firstPassRate)
-    }</span></div>
+        ${pillsHtml}
         <div class="stat"><span class="stat-label" title="Controls randomness in responses. Lower values (0) produce more deterministic output, higher values (1) increase creativity and variability.">Temperature:</span><span class="stat-value">${
       temperature !== undefined ? temperature : "-"
     }</span></div>
         <div class="stat"><span class="stat-label" title="Extended thinking capability. Shows token budget or effort level (low/medium/high) for models that support chain-of-thought reasoning.">Thinking:</span><span class="stat-value">${thinkingDisplay}</span></div>
-        <div class="stat"><span class="stat-label">Tokens:</span><span class="stat-value">${
+        <div class="stat"><span class="stat-label" title="Total tokens (prompt + completion) across all tasks and attempts.">Tokens:</span><span class="stat-value">${
       Math.round(m.tokens).toLocaleString("en-US")
     }</span></div>
-        <div class="stat"><span class="stat-label">Cost:</span><span class="stat-value">${
+        <div class="stat"><span class="stat-label" title="Estimated total API cost at current provider pricing.">Cost:</span><span class="stat-value">${
       formatCost(m.cost)
     }</span></div>
       </div>
@@ -629,6 +696,16 @@ export function generateHtmlTemplate(params: {
     .theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 100; background: #e5e7eb; border: none; border-radius: 2rem; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; transition: background 0.2s, color 0.2s; }
     .theme-toggle:hover { background: #d1d5db; }
     .theme-toggle .icon { font-size: 1rem; }
+    /* Attempt pill badges */
+    .attempt-pills { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; margin: 0.25rem 0 0.5rem; }
+    .attempt-pill { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; line-height: 1.5; white-space: nowrap; cursor: help; }
+    .attempt-pill-1st { background: #dcfce7; color: #166534; }
+    .attempt-pill-2nd { background: #dbeafe; color: #1e40af; }
+    .attempt-pill-3rd { background: #f3e8ff; color: #6b21a8; }
+    .attempt-pill-4th { background: #fef3c7; color: #92400e; }
+    .attempt-pill-5th { background: #fce7f3; color: #9d174d; }
+    .attempt-pill-failed { background: #f3f4f6; color: #6b7280; }
+    .attempt-total { font-size: 0.8125rem; font-weight: 600; color: #1f2937; margin-left: 0.25rem; }
     body.dark { background: #111827; color: #f3f4f6; }
     body.dark header h1 { color: #60a5fa; }
     body.dark header p { color: #9ca3af; }
@@ -664,6 +741,13 @@ export function generateHtmlTemplate(params: {
     body.dark .result-matrix .task-desc { color: #9ca3af; }
     body.dark .matrix-cell.pass { background: #064e3b; color: #34d399; }
     body.dark .matrix-cell.fail { background: #7f1d1d; color: #fca5a5; }
+    body.dark .attempt-pill-1st { background: #166534; color: #86efac; }
+    body.dark .attempt-pill-2nd { background: #1e3a5f; color: #93c5fd; }
+    body.dark .attempt-pill-3rd { background: #3b1a5e; color: #c4b5fd; }
+    body.dark .attempt-pill-4th { background: #78350f; color: #fcd34d; }
+    body.dark .attempt-pill-5th { background: #831843; color: #f9a8d4; }
+    body.dark .attempt-pill-failed { background: #374151; color: #9ca3af; }
+    body.dark .attempt-total { color: #f3f4f6; }
   </style>
 </head>
 <body>

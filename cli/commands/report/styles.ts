@@ -13,7 +13,8 @@ export const INDEX_PAGE_STYLES = `
     header { text-align: center; margin-bottom: 3rem; }
     header h1 { font-size: 2.5rem; margin: 0; color: #2563eb; }
     header p { font-size: 1.1rem; color: #6b7280; margin: 0.5rem 0; }
-    .report-date { font-size: 0.875rem; color: #9ca3af; margin-top: 1rem; }
+    .report-date { font-size: 0.875rem; color: #9ca3af; margin-top: 1rem; margin-bottom: 0.25rem; }
+    .data-date { font-size: 0.875rem; color: #9ca3af; margin-top: 0; }
     .header-links { margin: 1rem 0; }
     .header-links a { color: #2563eb; text-decoration: none; margin: 0 0.75rem; font-weight: 500; }
     .header-links a:hover { text-decoration: underline; }
@@ -98,6 +99,25 @@ export const INDEX_PAGE_STYLES = `
     .theme-toggle { position: fixed; top: 1rem; right: 1rem; z-index: 100; background: #e5e7eb; border: none; border-radius: 2rem; padding: 0.5rem 1rem; cursor: pointer; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; transition: background 0.2s, color 0.2s; }
     .theme-toggle:hover { background: #d1d5db; }
     .theme-toggle .icon { font-size: 1rem; }
+    .summary-metrics { margin-bottom: 2rem; }
+    .summary-grid { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }
+    .summary-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1rem 1.5rem; text-align: center; min-width: 140px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .summary-value { font-size: 1.5rem; font-weight: bold; color: #1f2937; }
+    .summary-label { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .report-footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #e5e7eb; text-align: center; font-size: 0.75rem; color: #9ca3af; }
+    .report-footer p { margin: 0.25rem 0; }
+    .report-footer a { color: #6b7280; text-decoration: none; }
+    .report-footer a:hover { text-decoration: underline; }
+    /* Attempt pill badges */
+    .attempt-pills { display: flex; flex-wrap: wrap; gap: 0.375rem; align-items: center; margin: 0.25rem 0 0.5rem; }
+    .attempt-pill { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; line-height: 1.5; white-space: nowrap; cursor: help; }
+    .attempt-pill-1st { background: #dcfce7; color: #166534; }
+    .attempt-pill-2nd { background: #dbeafe; color: #1e40af; }
+    .attempt-pill-3rd { background: #f3e8ff; color: #6b21a8; }
+    .attempt-pill-4th { background: #fef3c7; color: #92400e; }
+    .attempt-pill-5th { background: #fce7f3; color: #9d174d; }
+    .attempt-pill-failed { background: #f3f4f6; color: #6b7280; }
+    .attempt-total { font-size: 0.8125rem; font-weight: 600; color: #1f2937; margin-left: 0.25rem; }
     body.dark { background: #111827; color: #f3f4f6; }
     body.dark header h1 { color: #60a5fa; }
     body.dark header p { color: #9ca3af; }
@@ -134,6 +154,18 @@ export const INDEX_PAGE_STYLES = `
     body.dark .result-matrix .task-desc { color: #9ca3af; }
     body.dark .matrix-cell.pass { background: #064e3b; color: #34d399; }
     body.dark .matrix-cell.fail { background: #7f1d1d; color: #fca5a5; }
+    body.dark .summary-card { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    body.dark .summary-value { color: #f3f4f6; }
+    body.dark .summary-label { color: #9ca3af; }
+    body.dark .report-footer { border-top-color: #374151; color: #6b7280; }
+    body.dark .report-footer a { color: #9ca3af; }
+    body.dark .attempt-pill-1st { background: #166534; color: #86efac; }
+    body.dark .attempt-pill-2nd { background: #1e3a5f; color: #93c5fd; }
+    body.dark .attempt-pill-3rd { background: #3b1a5e; color: #c4b5fd; }
+    body.dark .attempt-pill-4th { background: #78350f; color: #fcd34d; }
+    body.dark .attempt-pill-5th { background: #831843; color: #f9a8d4; }
+    body.dark .attempt-pill-failed { background: #374151; color: #9ca3af; }
+    body.dark .attempt-total { color: #f3f4f6; }
 `;
 
 /**

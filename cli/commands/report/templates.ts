@@ -21,6 +21,9 @@ export interface HtmlTemplateParams {
   matrixHeaderHtml: string;
   matrixRowsHtml: string;
   generatedDate: string;
+  dataDateRange: string;
+  summaryHtml: string;
+  footerHtml: string;
 }
 
 /**
@@ -48,7 +51,12 @@ export function generateHtmlTemplate(params: HtmlTemplateParams): string {
         <a href="https://blog.sshadows.dk/" target="_blank" rel="noopener">Blog</a>
       </nav>
       <p class="report-date">Report generated: ${params.generatedDate}</p>
+      <p class="data-date">Benchmark data: ${params.dataDateRange}</p>
     </header>
+
+    <section class="summary-metrics">
+      ${params.summaryHtml}
+    </section>
 
     <section>
       <h2>Model Rankings</h2>
@@ -74,6 +82,10 @@ export function generateHtmlTemplate(params: HtmlTemplateParams): string {
         </table>
       </div>
     </section>
+
+    <footer class="report-footer">
+      ${params.footerHtml}
+    </footer>
   </main>
 </body>
 </html>`;

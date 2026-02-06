@@ -43,6 +43,7 @@ function createMockModelStats(
     avgAttempts: 1.2,
     passedOnAttempt1: 7,
     passedOnAttempt2: 8,
+    passedByAttempt: [7, 1],
     compileFailures: 1,
     testFailures: 1,
     malformedResponses: 0,

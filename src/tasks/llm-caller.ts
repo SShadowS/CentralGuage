@@ -37,7 +37,7 @@ export class LLMCaller {
     provider: string,
     taskId: string,
     attemptNumber: number,
-    maxRetries: number = 2,
+    maxRetries: number = 5,
   ): Promise<T> {
     let lastError: Error | undefined;
 

@@ -43,6 +43,8 @@ centralgauge bench [options]
 
 | Option                 | Type     | Default        | Description                                |
 | ---------------------- | -------- | -------------- | ------------------------------------------ |
+| `--preset`             | string   | -              | Load benchmark preset from config          |
+| `--list-presets`       | boolean  | false          | List available benchmark presets           |
 | `-l, --llms`           | string[] | -              | LLM models to test                         |
 | `--agents`             | string[] | -              | Agent configurations to use                |
 | `--container`          | string   | Cronus27       | BC container name                          |
@@ -99,6 +101,15 @@ centralgauge bench --llms gpt-5 --knowledge model-shortcomings/gpt-5.rules.md
 
 # Guided vs unguided comparison
 centralgauge bench --llms gpt-5 --knowledge rules.md --run-label "gpt-5 (guided)"
+
+# List available presets
+centralgauge bench --list-presets
+
+# Run with a preset
+centralgauge bench --preset flagship-compare
+
+# Override preset values with CLI args
+centralgauge bench --preset quick-test --attempts 2
 ```
 
 ## report
@@ -108,31 +119,43 @@ Generate reports from benchmark results.
 ### Usage
 
 ```bash
-centralgauge report <input> [options]
+centralgauge report <results-dir> [options]
 ```
 
 ### Arguments
 
-| Argument | Description                          |
-| -------- | ------------------------------------ |
-| `input`  | Input directory or file with results |
+| Argument      | Description                            |
+| ------------- | -------------------------------------- |
+| `results-dir` | Directory containing benchmark results |
 
 ### Options
 
-| Option     | Type    | Default | Description               |
-| ---------- | ------- | ------- | ------------------------- |
-| `--html`   | boolean | false   | Generate HTML report      |
-| `--output` | string  | -       | Output directory          |
-| `--format` | string  | json    | Output format (json, csv) |
+| Option            | Type    | Default           | Description                            |
+| ----------------- | ------- | ----------------- | -------------------------------------- |
+| `--html`          | boolean | false             | Generate HTML report                   |
+| `-o, --output`    | string  | `reports-output/` | Output directory                       |
+| `--save-as`       | string  | -                 | Save file selection as a named dataset |
+| `--add-to`        | string  | -                 | Add files to an existing dataset       |
+| `--dataset`       | string  | -                 | Generate report from a saved dataset   |
+| `--list-datasets` | boolean | false             | List all saved datasets                |
 
 ### Examples
 
 ```bash
-# Generate HTML report
-centralgauge report results/ --html --output reports/
+# Generate HTML report (interactive file selection)
+centralgauge report results/ --html
 
-# Generate JSON summary
-centralgauge report results/ --format json
+# Save selection as a dataset
+centralgauge report results/ --html --save-as january-comparison
+
+# List all saved datasets
+centralgauge report results/ --list-datasets
+
+# Generate from saved dataset
+centralgauge report results/ --dataset january-comparison --html
+
+# Add new files to existing dataset
+centralgauge report results/ --add-to january-comparison --html
 ```
 
 ## report-from-db

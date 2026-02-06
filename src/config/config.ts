@@ -15,6 +15,43 @@ import type {
   SystemPromptDefinition,
   VariantProfile,
 } from "../llm/variant-types.ts";
+import type { OutputFormat } from "../utils/formatters.ts";
+
+/**
+ * Benchmark preset configuration for reusable benchmark settings
+ */
+export interface BenchmarkPreset {
+  /** Human-readable description of this preset */
+  description?: string;
+  /** LLM models to test (with variant syntax support) */
+  llms?: string[];
+  /** Agent configurations to use */
+  agents?: string[];
+  /** Task file patterns */
+  tasks?: string[];
+  /** Number of attempts per task */
+  attempts?: number;
+  /** LLM temperature */
+  temperature?: number;
+  /** Maximum tokens per request */
+  maxTokens?: number;
+  /** Maximum concurrent LLM calls */
+  maxConcurrency?: number;
+  /** Enable streaming mode */
+  stream?: boolean;
+  /** Output format */
+  format?: OutputFormat;
+  /** Output directory */
+  output?: string;
+  /** BC container name */
+  container?: string;
+  /** Enable debug logging */
+  debug?: boolean;
+  /** Run agents in sandbox mode */
+  sandbox?: boolean;
+  /** Disable notifications */
+  noNotify?: boolean;
+}
 
 export interface CentralGaugeConfig {
   // Default models for different scenarios
@@ -84,6 +121,9 @@ export interface CentralGaugeConfig {
       accessToken?: string;
     };
   };
+
+  // Benchmark presets for reusable benchmark configurations
+  benchmarkPresets?: Record<string, BenchmarkPreset>;
 }
 
 export class ConfigManager {
@@ -488,6 +528,12 @@ export class ConfigManager {
         ...override.variantProfiles,
       };
     }
+    if (override.benchmarkPresets) {
+      result.benchmarkPresets = {
+        ...result.benchmarkPresets,
+        ...override.benchmarkPresets,
+      };
+    }
     if (override.notifications) {
       result.notifications = {
         ...result.notifications,
@@ -641,6 +687,25 @@ logging:
 #   pushbullet:
 #     enabled: true                       # Enable/disable notifications
 #     accessToken: "o.xxxxx"              # Or use PUSHBULLET_ACCESS_TOKEN env var
+
+# Benchmark presets - save complex benchmark configurations as reusable presets
+# Run with: deno task start bench --preset my-comparison
+# List presets: deno task start bench --list-presets
+# benchmarkPresets:
+#   my-comparison:
+#     description: "Compare 2025 models with thinking"
+#     llms:
+#       - "opus@thinking=50000"
+#       - "gpt-5@reasoning=high"
+#       - "sonnet"
+#       - "openrouter/deepseek/deepseek-v3.2"
+#     stream: true
+#     attempts: 2
+#   quick-test:
+#     description: "Fast smoke test with mock model"
+#     llms: [mock]
+#     tasks: ["tasks/easy/*.yml"]
+#     attempts: 1
 `;
   }
 }

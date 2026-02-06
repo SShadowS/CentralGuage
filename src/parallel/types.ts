@@ -368,6 +368,9 @@ export interface ModelStats {
   /** Tasks passed by second attempt (cumulative) */
   passedOnAttempt2: number;
 
+  /** Per-attempt pass counts (index 0 = passed on 1st attempt only, etc.) */
+  passedByAttempt: number[];
+
   /** Tasks that failed at compilation */
   compileFailures: number;
 

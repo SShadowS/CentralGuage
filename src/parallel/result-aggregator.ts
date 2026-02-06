@@ -94,6 +94,7 @@ export class ResultAggregator {
         avgAttempts: 0,
         passedOnAttempt1: 0,
         passedOnAttempt2: 0,
+        passedByAttempt: [],
         compileFailures: 0,
         testFailures: 0,
         malformedResponses: 0,
@@ -108,6 +109,13 @@ export class ResultAggregator {
    */
   private recordSuccess(modelStat: ModelStats, attemptNumber: number): void {
     modelStat.tasksPassed++;
+    // attemptNumber is 1-based, passedByAttempt is 0-indexed
+    const idx = Math.max(0, attemptNumber - 1);
+    while (modelStat.passedByAttempt.length <= idx) {
+      modelStat.passedByAttempt.push(0);
+    }
+    modelStat.passedByAttempt[idx] = (modelStat.passedByAttempt[idx] ?? 0) + 1;
+    // Backward compat
     if (attemptNumber === 1) {
       modelStat.passedOnAttempt1++;
       modelStat.passedOnAttempt2++;

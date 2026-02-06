@@ -29,6 +29,7 @@ function createMockModelStats(overrides: Partial<ModelStats> = {}): ModelStats {
     avgAttempts: 1.3,
     passedOnAttempt1: 4,
     passedOnAttempt2: 5,
+    passedByAttempt: [4, 1],
     compileFailures: 1,
     testFailures: 1,
     malformedResponses: 0,

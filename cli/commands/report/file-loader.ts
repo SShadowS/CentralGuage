@@ -9,6 +9,7 @@ import {
   type AgentResultEntry,
   normalizeAgentResult,
 } from "../../helpers/result-normalizer.ts";
+import { toRelativePaths } from "./dataset.ts";
 
 /**
  * Metadata about a result file
@@ -170,4 +171,31 @@ export async function loadResultFiles(
   }
 
   return allResults;
+}
+
+/**
+ * Filter out files that are already in a dataset
+ * Returns file options for files NOT already in the dataset
+ */
+export function filterExistingDatasetFiles(
+  fileOptions: FileOption[],
+  existingFiles: string[],
+  resultsDir: string,
+): FileOption[] {
+  // Convert existing paths to relative form for comparison
+  const existingRelative = new Set(existingFiles);
+
+  return fileOptions.filter((option) => {
+    // Convert option path to relative for comparison
+    const relativePaths = toRelativePaths(resultsDir, [option.path]);
+    const relativePath = relativePaths[0];
+    return !relativePath || !existingRelative.has(relativePath);
+  });
+}
+
+/**
+ * Get filenames from absolute paths for display
+ */
+export function getFilenames(absolutePaths: string[]): string[] {
+  return absolutePaths.map((p) => p.split(/[\\/]/).pop() || p);
 }
