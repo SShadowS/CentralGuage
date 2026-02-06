@@ -25,6 +25,7 @@ import { createDefaultConfig } from "./types.ts";
 import { createWorkItems, LLMWorkPool } from "./llm-work-pool.ts";
 import { CompileQueue, CriticalError } from "./compile-queue.ts";
 import { buildTaskComparison, ResultAggregator } from "./result-aggregator.ts";
+import { Semaphore } from "./semaphore.ts";
 import { ProviderRateLimiter } from "./rate-limiter.ts";
 import { ContainerProviderRegistry } from "../container/registry.ts";
 import { TaskTransformer } from "../tasks/transformer.ts";
@@ -189,21 +190,47 @@ export class ParallelBenchmarkOrchestrator {
       },
     );
 
-    const taskResults: ParallelTaskResult[] = [];
+    const taskResults: (ParallelTaskResult | undefined)[] = new Array(
+      taskManifests.length,
+    );
+    let criticalAbort: Error | null = null;
 
     try {
-      // Process each task
-      for (const manifest of taskManifests) {
-        const taskResult = await this.processTask(
-          manifest,
-          variants,
-          options,
-        );
-        taskResults.push(taskResult);
-        this.aggregator.addParallelTaskResult(taskResult);
+      const taskSemaphore = new Semaphore(this.config.taskConcurrency);
 
-        this.completedTasks++;
-        this.emitProgress();
+      const taskPromises = taskManifests.map(async (manifest, index) => {
+        if (criticalAbort) return;
+        const releaseTask = await taskSemaphore.acquire();
+        if (criticalAbort) {
+          releaseTask();
+          return;
+        }
+        try {
+          const taskResult = await this.processTask(
+            manifest,
+            variants,
+            options,
+          );
+          taskResults[index] = taskResult;
+          this.aggregator.addParallelTaskResult(taskResult);
+          this.completedTasks++;
+          this.emitProgress();
+        } catch (error) {
+          if (CriticalError.isCriticalError(error)) {
+            criticalAbort = error instanceof Error
+              ? error
+              : new Error(String(error));
+          }
+          throw error;
+        } finally {
+          releaseTask();
+        }
+      });
+
+      const settled = await Promise.allSettled(taskPromises);
+      // Re-throw the first rejection (critical errors propagate here)
+      for (const s of settled) {
+        if (s.status === "rejected") throw s.reason;
       }
     } finally {
       // Clean up
@@ -213,7 +240,9 @@ export class ParallelBenchmarkOrchestrator {
 
     return {
       results: this.aggregator.getAll(),
-      taskResults,
+      taskResults: taskResults.filter((r): r is ParallelTaskResult =>
+        r !== undefined
+      ),
       summary: this.aggregator.finalize(),
     };
   }

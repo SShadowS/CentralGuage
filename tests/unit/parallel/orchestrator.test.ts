@@ -190,6 +190,7 @@ describe("ParallelBenchmarkOrchestrator", () => {
       assertEquals(defaultConfig.compileQueueSize, 100);
       assertEquals(defaultConfig.resultBufferSize, 50);
       assertEquals(defaultConfig.streamResults, true);
+      assertEquals(defaultConfig.taskConcurrency, 3);
     });
 
     it("should allow overriding specific config values", () => {
@@ -1787,7 +1788,7 @@ describe("runParallel() with mocked dependencies", () => {
       assertEquals(collector.hasEventType("task_completed"), true);
     });
 
-    it("should process multiple tasks sequentially", async () => {
+    it("should process multiple tasks and preserve order", async () => {
       mockLLMPool.setDefaultResult({ success: true });
       mockCompileQueue.setDefaultResult({ compilationSuccess: true });
 
@@ -1813,6 +1814,93 @@ describe("runParallel() with mocked dependencies", () => {
       assertEquals(result.taskResults[0]!.taskId, "task-1");
       assertEquals(result.taskResults[1]!.taskId, "task-2");
       assertEquals(result.taskResults[2]!.taskId, "task-3");
+    });
+
+    it("should process tasks concurrently with taskConcurrency > 1", async () => {
+      mockLLMPool.setDefaultResult({ success: true });
+      mockCompileQueue.setDefaultResult({ compilationSuccess: true });
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { taskConcurrency: 3 },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileQueueFactory: () =>
+            mockCompileQueue as unknown as CompileQueue,
+        },
+      );
+
+      const manifests = [
+        createMockManifest({ id: "task-1" }),
+        createMockManifest({ id: "task-2" }),
+        createMockManifest({ id: "task-3" }),
+      ];
+
+      const result = await orchestrator.runParallel(
+        manifests,
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      // All tasks should complete and preserve order
+      assertEquals(result.taskResults.length, 3);
+      assertEquals(result.taskResults[0]!.taskId, "task-1");
+      assertEquals(result.taskResults[1]!.taskId, "task-2");
+      assertEquals(result.taskResults[2]!.taskId, "task-3");
+    });
+
+    it("should process tasks serially with taskConcurrency=1", async () => {
+      mockLLMPool.setDefaultResult({ success: true });
+      mockCompileQueue.setDefaultResult({ compilationSuccess: true });
+
+      const collector = new EventCollector();
+
+      const orchestrator = new ParallelBenchmarkOrchestrator(
+        { taskConcurrency: 1 },
+        {
+          llmPool: mockLLMPool as unknown as LLMWorkPool,
+          containerProviderFactory: () => mockContainerProvider,
+          compileQueueFactory: () =>
+            mockCompileQueue as unknown as CompileQueue,
+        },
+      );
+      orchestrator.on(collector.listener);
+
+      const manifests = [
+        createMockManifest({ id: "task-1" }),
+        createMockManifest({ id: "task-2" }),
+      ];
+
+      const result = await orchestrator.runParallel(
+        manifests,
+        createTestVariants(),
+        createTestOptions(),
+      );
+
+      assertEquals(result.taskResults.length, 2);
+
+      // With taskConcurrency=1, task_started for task-2 should come after
+      // task_completed for task-1
+      const events = collector.getAll();
+      const task1Completed = events.findIndex(
+        (e) => e.type === "task_completed" && e.taskId === "task-1",
+      );
+      const task2Started = events.findIndex(
+        (e) => e.type === "task_started" && e.taskId === "task-2",
+      );
+
+      assert(
+        task1Completed >= 0,
+        "task-1 should have a task_completed event",
+      );
+      assert(
+        task2Started >= 0,
+        "task-2 should have a task_started event",
+      );
+      assert(
+        task1Completed < task2Started,
+        "task-1 completed should come before task-2 started when taskConcurrency=1",
+      );
     });
 
     it("should process multiple variants for a single task", async () => {

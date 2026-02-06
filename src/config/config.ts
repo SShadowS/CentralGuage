@@ -37,6 +37,8 @@ export interface BenchmarkPreset {
   maxTokens?: number;
   /** Maximum concurrent LLM calls */
   maxConcurrency?: number;
+  /** Maximum concurrent tasks (default: 3, set to 1 for serial) */
+  taskConcurrency?: number;
   /** Enable streaming mode */
   stream?: boolean;
   /** Output format */

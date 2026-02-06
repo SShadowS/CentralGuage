@@ -89,6 +89,11 @@ export function registerBenchCommand(cli: Command): void {
       { default: 10 },
     )
     .option(
+      "--task-concurrency <number>",
+      "Maximum concurrent tasks (default: 3, set to 1 for serial)",
+      { default: 3 },
+    )
+    .option(
       "-f, --format <format:string>",
       "Output format: verbose, leaderboard, scorecard, barchart, json",
       { default: "verbose" },
@@ -356,6 +361,9 @@ export function registerBenchCommand(cli: Command): void {
         maxConcurrency: typeof options.maxConcurrency === "number"
           ? options.maxConcurrency
           : parseInt(String(options.maxConcurrency), 10),
+        taskConcurrency: typeof options.taskConcurrency === "number"
+          ? options.taskConcurrency
+          : parseInt(String(options.taskConcurrency), 10),
         stream: options.stream,
         noNotify: !options.notify,
         runs,
@@ -464,6 +472,12 @@ function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
     preset.maxConcurrency !== undefined
   ) {
     cliOptions.maxConcurrency = preset.maxConcurrency;
+  }
+  if (
+    cliOptions.taskConcurrency === undefined &&
+    preset.taskConcurrency !== undefined
+  ) {
+    cliOptions.taskConcurrency = preset.taskConcurrency;
   }
   if (cliOptions.runs === undefined && preset.runs !== undefined) {
     cliOptions.runs = preset.runs;

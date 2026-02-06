@@ -38,6 +38,9 @@ export interface ParallelExecutionConfig {
   /** Timeout for compile queue wait in ms (default: 300000 - 5 min) */
   compileQueueTimeout: number;
 
+  /** Maximum concurrent tasks (default: 3). Set to 1 for serial. */
+  taskConcurrency: number;
+
   /** Directory containing prompt templates (default: "templates") */
   templateDir?: string | undefined;
 }
@@ -80,6 +83,7 @@ export function createDefaultConfig(): ParallelExecutionConfig {
     resultBufferSize: 50,
     streamResults: true,
     compileQueueTimeout: 300000,
+    taskConcurrency: 3,
     templateDir: "templates",
   };
 }

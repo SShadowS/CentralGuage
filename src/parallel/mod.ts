@@ -35,6 +35,9 @@ export {
   resetGlobalRateLimiter,
 } from "./rate-limiter.ts";
 
+// Concurrency primitives
+export { Mutex, Semaphore } from "./semaphore.ts";
+
 // Compile queue
 export {
   CompileQueue,

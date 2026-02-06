@@ -13,6 +13,7 @@ import type { OutputFormat } from "../../src/utils/formatters.ts";
 export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   sequential?: boolean;
   maxConcurrency?: number;
+  taskConcurrency?: number;
   // Prompt injection overrides
   promptOverrides?: CLIPromptOverrides;
   // Output format

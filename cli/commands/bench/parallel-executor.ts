@@ -119,6 +119,7 @@ export async function executeParallelBenchmark(
   log.info(`Tasks: ${options.tasks.join(", ")}`);
   log.info(`Attempts: ${options.attempts}`);
   log.info(`Max Concurrency: ${options.maxConcurrency ?? 10}`);
+  log.info(`Task Concurrency: ${options.taskConcurrency ?? 3}`);
   log.info(`Output: ${options.outputDir}`);
 
   try {
@@ -202,6 +203,7 @@ export async function executeParallelBenchmark(
       // Create fresh orchestrator per run
       const config = createDefaultConfig();
       config.maxGlobalConcurrency = options.maxConcurrency ?? 10;
+      config.taskConcurrency = options.taskConcurrency ?? 3;
 
       const orchestrator = new ParallelBenchmarkOrchestrator(config);
 

@@ -38,6 +38,7 @@ function createDefaultConfig(): ParallelExecutionConfig {
     resultBufferSize: 50,
     streamResults: false,
     compileQueueTimeout: 300000,
+    taskConcurrency: 3,
     templateDir: "templates",
   };
 }

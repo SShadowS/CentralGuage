@@ -17,6 +17,7 @@ import type { TestResult } from "../container/types.ts";
 import { ALProjectManager } from "../compiler/al-project.ts";
 import { DebugLogger } from "../utils/debug-logger.ts";
 import { Logger } from "../logger/mod.ts";
+import { Mutex, Semaphore } from "./semaphore.ts";
 
 const log = Logger.create("compile");
 
@@ -170,81 +171,6 @@ interface QueueEntry {
   resolve: (result: CompileWorkResult) => void;
   reject: (error: Error) => void;
   enqueuedAt: number;
-}
-
-/**
- * Promise-based mutex for single-resource access
- */
-class Mutex {
-  private locked = false;
-  private waiters: Array<() => void> = [];
-
-  acquire(): Promise<() => void> {
-    if (!this.locked) {
-      this.locked = true;
-      return Promise.resolve(() => this.release());
-    }
-
-    return new Promise((resolve) => {
-      this.waiters.push(() => {
-        resolve(() => this.release());
-      });
-    });
-  }
-
-  private release(): void {
-    const next = this.waiters.shift();
-    if (next) {
-      next();
-    } else {
-      this.locked = false;
-    }
-  }
-
-  isLocked(): boolean {
-    return this.locked;
-  }
-
-  queueLength(): number {
-    return this.waiters.length;
-  }
-}
-
-/**
- * Bounded-concurrency semaphore for parallel compilation
- */
-class Semaphore {
-  private current = 0;
-  private waiters: Array<() => void> = [];
-
-  constructor(private readonly maxConcurrency: number) {}
-
-  acquire(): Promise<() => void> {
-    if (this.current < this.maxConcurrency) {
-      this.current++;
-      return Promise.resolve(() => this.release());
-    }
-    return new Promise((resolve) => {
-      this.waiters.push(() => {
-        this.current++;
-        resolve(() => this.release());
-      });
-    });
-  }
-
-  private release(): void {
-    this.current--;
-    const next = this.waiters.shift();
-    if (next) next();
-  }
-
-  activeCount(): number {
-    return this.current;
-  }
-
-  isIdle(): boolean {
-    return this.current === 0 && this.waiters.length === 0;
-  }
 }
 
 /**
