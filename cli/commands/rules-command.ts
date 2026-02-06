@@ -89,7 +89,7 @@ export function registerRulesCommand(cli: Command): void {
     .option(
       "--llm <model:string>",
       "LLM model for summarization",
-      { default: "claude-opus-4-5-20251101" },
+      { default: "claude-sonnet-4-5-20250929" },
     )
     .option(
       "--min-occurrences <n:number>",

@@ -23,7 +23,7 @@ export interface RulesGeneratorOptions {
 export interface OptimizedRulesOptions extends RulesGeneratorOptions {
   /** LLM provider for summarization (default: anthropic) */
   llmProvider?: string;
-  /** LLM model for summarization (default: claude-opus-4-5-20251101) */
+  /** LLM model for summarization (default: claude-sonnet-4-5-20250929) */
   llmModel?: string;
 }
 
@@ -284,7 +284,7 @@ export async function generateOptimizedRules(
   const {
     minOccurrences = 1,
     llmProvider = "anthropic",
-    llmModel = "claude-opus-4-5-20251101",
+    llmModel = "claude-sonnet-4-5-20250929",
   } = options;
 
   // Filter by minimum occurrences and actionability
