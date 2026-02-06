@@ -45,9 +45,10 @@ export class CodeExtractor {
 
     const pattern = new RegExp(
       `${beginDelim}\\s*\\n([\\s\\S]*?)\\n\\s*${endDelim}`,
-      "i",
+      "gi",
     );
-    const match = response.match(pattern);
+    const matches = [...response.matchAll(pattern)];
+    const match = matches.length > 0 ? matches[matches.length - 1] : null;
 
     if (match && match[1]) {
       return {
@@ -80,7 +81,7 @@ export class CodeExtractor {
 
     for (const lang of languagePatterns) {
       const pattern = new RegExp(
-        `\`\`\`${lang}\\s*\\n([\\s\\S]*?)\\n\`\`\``,
+        `\`\`\`${lang}\\s*\\n([\\s\\S]*)\\n\`\`\``,
         "i",
       );
       const match = response.match(pattern);
@@ -97,7 +98,7 @@ export class CodeExtractor {
     }
 
     // Look for any fenced code block
-    const genericPattern = /```[\w]*\s*\n([\s\S]*?)\n```/;
+    const genericPattern = /```[\w]*\s*\n([\s\S]*)\n```/;
     const genericMatch = response.match(genericPattern);
 
     if (genericMatch && genericMatch[1]) {
@@ -247,6 +248,11 @@ export class CodeExtractor {
       cleaned = cleaned.replace(/\n?\s*END-CODE\s*$/i, ""); // Remove custom END-CODE delimiter
       cleaned = cleaned.replace(/^Here's the AL code.*?:\s*\n/i, ""); // Remove explanatory text
       cleaned = cleaned.replace(/^The code is.*?:\s*\n/i, ""); // Remove explanatory text
+
+      // Remove lines that are only backticks (formatting artifacts, never valid AL)
+      cleaned = cleaned.split("\n")
+        .filter((line) => !/^\s*`{3,}\s*$/.test(line))
+        .join("\n");
 
       // Ensure proper line endings
       cleaned = cleaned.replace(/\r\n/g, "\n").replace(/\r/g, "\n");

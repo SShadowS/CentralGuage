@@ -171,6 +171,108 @@ END-DIFF`;
       });
     });
 
+    describe("Self-correction (multiple delimiter blocks)", () => {
+      it("should extract the LAST BEGIN-CODE block when model self-corrects", () => {
+        const response = `
+Here's the AL code:
+
+BEGIN-CODE
+codeunit 70001 "String Concat Approach"
+{
+    procedure BuildString(): Text
+    begin
+        exit('Hello' + ' ' + 'World');
+    end;
+}
+END-CODE
+
+Wait, I need to reconsider. The task asks for TextBuilder approach...
+
+BEGIN-CODE
+codeunit 70001 "TextBuilder Approach"
+{
+    procedure BuildString(): Text
+    var
+        Builder: TextBuilder;
+    begin
+        Builder.Append('Hello');
+        Builder.Append(' ');
+        Builder.Append('World');
+        exit(Builder.ToText());
+    end;
+}
+END-CODE
+
+This corrected version uses TextBuilder as required.`;
+
+        const result = CodeExtractor.extract(response, "al");
+
+        assertEquals(result.language, "al");
+        assertEquals(result.extractedFromDelimiters, true);
+        assertEquals(result.confidence, 0.95);
+        // Should get the LAST block (self-corrected version)
+        assert(result.code.includes("TextBuilder Approach"));
+        assert(result.code.includes("Builder.Append"));
+        // Should NOT contain the first block's content
+        assert(!result.code.includes("String Concat Approach"));
+        // Should NOT contain explanation text between blocks
+        assert(!result.code.includes("Wait, I need to reconsider"));
+      });
+
+      it("should still extract single BEGIN-CODE block correctly", () => {
+        const response = `
+BEGIN-CODE
+codeunit 70001 "Simple Test"
+{
+    procedure DoSomething()
+    begin
+        Message('Hello');
+    end;
+}
+END-CODE`;
+
+        const result = CodeExtractor.extract(response, "al");
+
+        assertEquals(result.language, "al");
+        assertEquals(result.extractedFromDelimiters, true);
+        assertEquals(result.confidence, 0.95);
+        assert(result.code.includes('codeunit 70001 "Simple Test"'));
+      });
+
+      it("should extract the LAST BEGIN-DIFF block when model self-corrects", () => {
+        const response = `
+BEGIN-DIFF
+--- a/file.al
++++ b/file.al
+@@ -1,3 +1,3 @@
+-old line wrong
++new line wrong
+END-DIFF
+
+Actually, that diff was incorrect. Here's the right one:
+
+BEGIN-DIFF
+--- a/file.al
++++ b/file.al
+@@ -5,3 +5,3 @@
+-old line correct
++new line correct
+END-DIFF`;
+
+        const result = CodeExtractor.extract(response, "diff");
+
+        assertEquals(result.language, "diff");
+        assertEquals(result.extractedFromDelimiters, true);
+        assertEquals(result.confidence, 0.95);
+        // Should get the LAST diff block
+        assert(result.code.includes("old line correct"));
+        assert(result.code.includes("new line correct"));
+        // Should NOT contain the first block
+        assert(!result.code.includes("old line wrong"));
+        assert(!result.code.includes("new line wrong"));
+      });
+    });
+
     describe("Language detection", () => {
       it("should detect language from code content", () => {
         const alCode = `codeunit 50100 "Test"
@@ -194,6 +296,56 @@ END-DIFF`;
 
         const diffResult = CodeExtractor.extract(diffCode, "diff");
         assertEquals(diffResult.language, "diff");
+      });
+
+      it("should extract full code when rogue backticks appear mid-code", () => {
+        const response = `\`\`\`al
+codeunit 70001 "Shipping Provider Impl"
+{
+    procedure GenerateHash(): Text
+    var
+        HashPart: Text;
+        HashSum: Integer;
+    begin
+        HashSum := 12345678;
+        HashPart := Format(HashSum mod 100000000);
+        // Pad to 8
+\`\`\`
+        while StrLen(HashPart) < 8 do
+            HashPart := '0' + HashPart;
+        exit(HashPart);
+    end;
+}
+\`\`\``;
+
+        const result = CodeExtractor.extract(response, "al");
+
+        assertEquals(result.language, "al");
+        assert(result.code.includes("while StrLen(HashPart) < 8 do"));
+        assert(result.code.includes("exit(HashPart)"));
+        assert(result.code.includes("GenerateHash"));
+      });
+
+      it("should capture everything between first open and last close fence (multi-block greedy)", () => {
+        const response = `\`\`\`al
+codeunit 70001 "First Part"
+{
+}
+\`\`\`
+
+Some explanation text here.
+
+\`\`\`al
+codeunit 70002 "Second Part"
+{
+}
+\`\`\``;
+
+        const result = CodeExtractor.extract(response, "al");
+
+        // Greedy matching captures everything between first open and last close
+        assert(result.code.includes("First Part"));
+        assert(result.code.includes("Second Part"));
       });
 
       it("should handle ambiguous code blocks", () => {
@@ -236,6 +388,25 @@ codeunit 50100 "Test"
 
       assertEquals(cleanedWindows, "line1\nline2\nline3");
       assertEquals(cleanedMac, "line1\nline2\nline3");
+    });
+
+    it("should strip backtick-only lines from AL code", () => {
+      const codeWithRogueBackticks = `codeunit 70001 "Test"
+{
+    procedure DoStuff()
+    begin
+        Message('Hello');
+\`\`\`
+        Message('World');
+    end;
+}`;
+
+      const cleaned = CodeExtractor.cleanCode(codeWithRogueBackticks, "al");
+
+      assert(!cleaned.includes("```"));
+      assert(cleaned.includes("Message('Hello')"));
+      assert(cleaned.includes("Message('World')"));
+      assert(cleaned.includes("codeunit 70001"));
     });
 
     it("should add diff headers if missing", () => {
