@@ -24,6 +24,8 @@ export interface HtmlTemplateParams {
   dataDateRange: string;
   summaryHtml: string;
   footerHtml: string;
+  /** Custom matrix legend HTML (optional, defaults to P/F legend) */
+  matrixLegendHtml?: string;
 }
 
 /**
@@ -70,7 +72,10 @@ export function generateHtmlTemplate(params: HtmlTemplateParams): string {
 
     <section>
       <h2>Task Results Matrix</h2>
-      <p class="matrix-legend"><span class="pass">P</span> = Pass, <span class="fail">F</span> = Fail (hover for details)</p>
+      ${
+    params.matrixLegendHtml ??
+      '<p class="matrix-legend"><span class="pass">P</span> = Pass, <span class="fail">F</span> = Fail (hover for details)</p>'
+  }
       <div class="matrix-container">
         <table class="result-matrix">
           <thead>

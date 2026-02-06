@@ -10,7 +10,11 @@ export type {
   DatasetLoadResult,
   ReportDataset,
 } from "../../types/dataset-types.ts";
-export type { ChartDataEntry } from "./chart-builder.ts";
+export type {
+  ChartDataEntry,
+  MultiRunChartDataEntry,
+} from "./chart-builder.ts";
+export type { ComparabilityResult, MultiRunDetection } from "./run-detector.ts";
 
 // HTML utilities
 export {
@@ -28,6 +32,7 @@ export {
   getFileMetadata,
   getFilenames,
   loadResultFiles,
+  loadResultFilesGrouped,
   selectResultFiles,
 } from "./file-loader.ts";
 
@@ -56,21 +61,31 @@ export {
 
 // Statistics calculation
 export {
+  binomialCoefficient,
   buildTemperatureLookup,
   calculateBenchmarkStats,
+  calculateMultiRunStats,
   calculatePerModelStats,
+  passAtKForTask,
   sortModelsByPassRate,
 } from "./stats-calculator.ts";
 
 // Chart generation
-export { buildChartData, generateChartHtml } from "./chart-builder.ts";
+export {
+  buildChartData,
+  buildMultiRunChartData,
+  generateChartHtml,
+  generateMultiRunChartHtml,
+} from "./chart-builder.ts";
 
 // Matrix generation
 export {
+  buildMultiRunResultMatrix,
   buildResultMatrix,
   buildTaskDescriptions,
   generateMatrixHeaderHtml,
   generateMatrixRowsHtml,
+  generateMultiRunMatrixRowsHtml,
   getModelList,
 } from "./matrix-builder.ts";
 
@@ -78,7 +93,15 @@ export {
 export {
   generateFallbackModelCardsHtml,
   generateModelCardsHtml,
+  generateMultiRunModelCardsHtml,
 } from "./model-cards.ts";
+
+// Run detection
+export {
+  detectMultiRun,
+  groupResultsByModelAndTask,
+  validateComparability,
+} from "./run-detector.ts";
 
 // HTML templates
 export { generateHtmlTemplate, generateModelDetailPage } from "./templates.ts";

@@ -3,7 +3,10 @@
  * @module cli/commands/report/chart-builder
  */
 
-import type { PerModelStats } from "../../types/cli-types.ts";
+import type {
+  MultiRunModelStats,
+  PerModelStats,
+} from "../../types/cli-types.ts";
 import { shortVariantName } from "../../../src/utils/formatters.ts";
 
 /**
@@ -106,6 +109,116 @@ export function generateChartHtml(chartData: ChartDataEntry[]): string {
   const legendHtml = `<div class="chart-legend">
           <span class="legend-item"><span class="legend-dot bar-first"></span> 1st Pass</span>
           <span class="legend-item"><span class="legend-dot bar-second"></span> 2nd Pass</span>
+        </div>`;
+
+  return `
+        <div class="chart-card h-bar-chart">
+          ${legendHtml}
+          ${hBarHtml}
+        </div>`;
+}
+
+/**
+ * Chart data for multi-run pass@k display
+ */
+export interface MultiRunChartDataEntry {
+  variantId: string;
+  shortName: string;
+  passAt1Rate: number;
+  additionalPassAtK: number;
+  totalPassAtK: number;
+  runCount: number;
+}
+
+/**
+ * Build chart data for multi-run pass@k visualization.
+ * Bar 1 (green): pass@1 rate
+ * Bar 2 (blue): additional pass from pass@k - pass@1
+ */
+export function buildMultiRunChartData(
+  sortedModels: [string, MultiRunModelStats][],
+  tempLookup: Map<string, number | undefined>,
+): MultiRunChartDataEntry[] {
+  return sortedModels.map(([variantId, m]) => {
+    const passAt1 = m.passAtK[1] ?? 0;
+    const passAtMax = m.passAtK[m.runCount] ?? passAt1;
+    const additional = Math.max(0, passAtMax - passAt1);
+
+    let shortName = shortVariantName(variantId);
+    const suffixes: string[] = [];
+
+    const reasoningEffort = m.variantConfig?.reasoningEffort ??
+      (typeof m.variantConfig?.thinkingBudget === "string"
+        ? m.variantConfig.thinkingBudget
+        : undefined);
+    if (reasoningEffort && !shortName.includes(reasoningEffort)) {
+      const short = reasoningEffort.length > 4
+        ? reasoningEffort.slice(0, 3)
+        : reasoningEffort;
+      suffixes.push(short);
+    }
+
+    const temp = tempLookup.get(variantId);
+    if (temp !== undefined) {
+      const tempStr = Number.isInteger(temp)
+        ? String(temp)
+        : temp.toFixed(1).replace(/\.0$/, "");
+      suffixes.push(`t${tempStr}`);
+    }
+
+    if (suffixes.length > 0) {
+      if (shortName.includes("(") && shortName.endsWith(")")) {
+        shortName = shortName.slice(0, -1) + `, ${suffixes.join(", ")})`;
+      } else {
+        shortName = `${shortName} (${suffixes.join(", ")})`;
+      }
+    }
+
+    return {
+      variantId,
+      shortName,
+      passAt1Rate: passAt1,
+      additionalPassAtK: additional,
+      totalPassAtK: passAtMax,
+      runCount: m.runCount,
+    };
+  });
+}
+
+/**
+ * Generate horizontal bar chart HTML for multi-run pass@k data
+ */
+export function generateMultiRunChartHtml(
+  chartData: MultiRunChartDataEntry[],
+): string {
+  const k = chartData[0]?.runCount ?? 1;
+
+  const hBarHtml = chartData
+    .map((d) => {
+      const firstPct = (d.passAt1Rate * 100).toFixed(0);
+      const secondPct = (d.additionalPassAtK * 100).toFixed(0);
+      const firstLabel = d.passAt1Rate > 0.08 ? `${firstPct}%` : "";
+      const secondLabel = d.additionalPassAtK > 0.08 ? `${secondPct}%` : "";
+      return `<div class="bar-row">
+                <div class="bar-label" title="${d.variantId}">${d.shortName}</div>
+                <div class="bar-container">
+                  <div class="bar-fill bar-first" style="width: ${
+        d.passAt1Rate * 100
+      }%;"><span class="bar-pct">${firstLabel}</span></div>
+                  <div class="bar-fill bar-second" style="width: ${
+        d.additionalPassAtK * 100
+      }%;"><span class="bar-pct">${secondLabel}</span></div>
+                </div>
+                <div class="bar-value">${
+        (d.totalPassAtK * 100).toFixed(1)
+      }%</div>
+              </div>`;
+    })
+    .join("");
+
+  const legendHtml = `<div class="chart-legend">
+          <span class="legend-item"><span class="legend-dot bar-first"></span> pass@1</span>
+          <span class="legend-item"><span class="legend-dot bar-second"></span> pass@${k} (additional)</span>
         </div>`;
 
   return `

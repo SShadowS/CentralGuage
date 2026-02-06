@@ -4,7 +4,11 @@
  */
 
 import { Checkbox } from "@cliffy/prompt";
-import type { BenchmarkResult, FileOption } from "../../types/cli-types.ts";
+import type {
+  BenchmarkResult,
+  FileOption,
+  ResultFileData,
+} from "../../types/cli-types.ts";
 import {
   type AgentResultEntry,
   normalizeAgentResult,
@@ -171,6 +175,60 @@ export async function loadResultFiles(
   }
 
   return allResults;
+}
+
+/**
+ * Load results from selected JSON files, preserving file boundaries and metadata.
+ * Returns one ResultFileData per file with optional taskSetHash from hashInfo.
+ */
+export async function loadResultFilesGrouped(
+  selectedFiles: string[],
+): Promise<ResultFileData[]> {
+  const fileDataList: ResultFileData[] = [];
+
+  for (const jsonFile of selectedFiles) {
+    try {
+      const content = await Deno.readTextFile(jsonFile);
+      const data = JSON.parse(content);
+      const fileName = jsonFile.split(/[\\/]/).pop() || "";
+
+      let results: BenchmarkResult[] = [];
+      let taskSetHash: string | undefined;
+
+      if (fileName.startsWith("agent-benchmark")) {
+        const agentResults = data.results as AgentResultEntry[] | undefined;
+        if (Array.isArray(agentResults)) {
+          results = agentResults.map(normalizeAgentResult);
+        }
+      } else {
+        const rawResults = Array.isArray(data) ? data : data.results;
+        if (Array.isArray(rawResults)) {
+          results = rawResults;
+        }
+        // Extract taskSetHash from hashInfo if present
+        if (data.hashInfo?.taskSetHash) {
+          taskSetHash = data.hashInfo.taskSetHash;
+        }
+      }
+
+      if (results.length > 0) {
+        fileDataList.push({ filePath: jsonFile, taskSetHash, results });
+        console.log(
+          `  Loaded ${results.length} result(s) from ${fileName}${
+            taskSetHash ? ` [hash: ${taskSetHash.slice(0, 8)}]` : ""
+          }`,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `[WARN] Failed to parse ${jsonFile}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  return fileDataList;
 }
 
 /**

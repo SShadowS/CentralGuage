@@ -143,3 +143,100 @@ export function generateMatrixRowsHtml(
 
   return matrixRowsHtml;
 }
+
+/**
+ * Build a multi-run result matrix: taskId -> variantId -> BenchmarkResult[]
+ * Each cell contains an array of results (one per run).
+ */
+export function buildMultiRunResultMatrix(
+  grouped: Map<string, Map<string, BenchmarkResult[]>>,
+): Map<string, Map<string, BenchmarkResult[]>> {
+  // Transpose from model-first to task-first
+  const matrix = new Map<string, Map<string, BenchmarkResult[]>>();
+
+  for (const [variantId, taskMap] of grouped) {
+    for (const [taskId, results] of taskMap) {
+      if (!matrix.has(taskId)) {
+        matrix.set(taskId, new Map());
+      }
+      matrix.get(taskId)!.set(variantId, results);
+    }
+  }
+
+  return matrix;
+}
+
+/**
+ * Get CSS class for multi-run cell based on success rate
+ */
+function getMultiRunCellClass(passed: number, total: number): string {
+  if (total === 0) return "";
+  const rate = passed / total;
+  if (rate >= 1) return "pass-all";
+  if (rate > 0.5) return "pass-most";
+  if (rate > 0) return "pass-some";
+  return "fail-all";
+}
+
+/**
+ * Generate matrix rows HTML for multi-run results with "N/M" cells and color gradients
+ */
+export function generateMultiRunMatrixRowsHtml(
+  taskIds: string[],
+  modelList: string[],
+  multiRunMatrix: Map<string, Map<string, BenchmarkResult[]>>,
+  taskDescriptions: Map<string, string>,
+  taskShortcomingMap: Map<string, Map<string, ModelShortcomingEntry>>,
+): string {
+  let matrixRowsHtml = "";
+
+  for (const taskId of taskIds) {
+    const taskResults = multiRunMatrix.get(taskId);
+    let cellsHtml = "";
+
+    for (const modelId of modelList) {
+      const runs = taskResults?.get(modelId);
+
+      if (runs && runs.length > 0) {
+        const passed = runs.filter((r) => r.success).length;
+        const total = runs.length;
+        const rate = total > 0 ? passed / total : 0;
+        const cls = getMultiRunCellClass(passed, total);
+        let title = `Passed in ${passed} of ${total} runs (${
+          (rate * 100).toFixed(0)
+        }%)`;
+
+        if (passed < total) {
+          const modelName = extractModelName(modelId);
+          const taskShortcomings = taskShortcomingMap.get(taskId);
+          const shortcoming = taskShortcomings?.get(modelName);
+          if (shortcoming) {
+            const truncatedDesc = shortcoming.description.length > 150
+              ? shortcoming.description.substring(0, 150) + "..."
+              : shortcoming.description;
+            title += `&#10;&#10;Shortcoming: ${shortcoming.concept}&#10;${
+              escapeHtml(truncatedDesc)
+            }`;
+          }
+        }
+
+        cellsHtml +=
+          `<td class="matrix-cell ${cls}" title="${title}">${passed}/${total}</td>`;
+      } else {
+        cellsHtml += `<td class="matrix-cell">-</td>`;
+      }
+    }
+
+    const description = taskDescriptions.get(taskId) || "";
+    const firstLine = (description.split(/\r?\n/)[0] || "").trim();
+    const tooltipText = escapeHtml(description).replace(/\r?\n/g, "&#10;");
+    const titleAttr = description ? ` title="${tooltipText}"` : "";
+
+    matrixRowsHtml +=
+      `<tr><td class="task-id">${taskId}</td><td class="task-desc"${titleAttr}>${
+        escapeHtml(firstLine)
+      }</td>${cellsHtml}</tr>`;
+  }
+
+  return matrixRowsHtml;
+}

@@ -3,7 +3,11 @@
  * @module cli/commands/report/model-cards
  */
 
-import type { BenchmarkResult, PerModelStats } from "../../types/cli-types.ts";
+import type {
+  BenchmarkResult,
+  MultiRunModelStats,
+  PerModelStats,
+} from "../../types/cli-types.ts";
 import type { ModelShortcomingsFile } from "../../../src/verify/types.ts";
 import { formatCost, formatRate } from "./html-utils.ts";
 import { generateShortcomingsHtml } from "./shortcomings.ts";
@@ -185,6 +189,80 @@ export function generateFallbackModelCardsHtml(
     }</span></div>
             </div>
             ${generateShortcomingsHtml(model, shortcomingsMap)}
+          </div>`;
+  }
+
+  return modelCardsHtml;
+}
+
+/**
+ * Generate model cards HTML for multi-run reports with pass@k metrics
+ */
+export function generateMultiRunModelCardsHtml(
+  sortedModels: [string, MultiRunModelStats][],
+  tempLookup: Map<string, number | undefined>,
+  shortcomingsMap: Map<string, ModelShortcomingsFile>,
+): string {
+  let modelCardsHtml = "";
+
+  for (const [variantId, m] of sortedModels) {
+    const mTotal = m.tasksPassed + m.tasksFailed;
+    const temperature = tempLookup.get(variantId);
+    const thinkingBudget = m.variantConfig?.thinkingBudget;
+    const reasoningEffort = m.variantConfig?.reasoningEffort;
+
+    let thinkingDisplay = "-";
+    if (thinkingBudget !== undefined && thinkingBudget !== null) {
+      thinkingDisplay = typeof thinkingBudget === "number"
+        ? thinkingBudget.toLocaleString("en-US")
+        : String(thinkingBudget);
+    } else if (reasoningEffort) {
+      thinkingDisplay = reasoningEffort;
+    }
+
+    const passAt1 = m.passAtK[1] ?? 0;
+    const passAtMax = m.passAtK[m.runCount] ?? passAt1;
+
+    const passedByAttempt = getPassedByAttempt(m);
+    const pillsHtml = generateAttemptPillsHtml(
+      passedByAttempt,
+      m.tasksFailed,
+      m.tasksPassed,
+      mTotal,
+    );
+
+    const costPerRun = m.runCount > 0 ? m.cost / m.runCount : m.cost;
+    const tokensPerRun = m.runCount > 0
+      ? Math.round(m.tokens / m.runCount)
+      : m.tokens;
+
+    modelCardsHtml += `
+          <div class="model-card">
+            <h3>${variantId}</h3>
+            <div class="model-stats">
+              <div class="stat"><span class="stat-label" title="Number of independent benchmark runs aggregated.">Runs:</span><span class="stat-value">${m.runCount}</span></div>
+              <div class="stat"><span class="stat-label" title="Probability of passing a task in a single randomly sampled run.">pass@1:</span><span class="stat-value">${
+      formatRate(passAt1)
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Probability of passing a task in at least 1 of ${m.runCount} randomly sampled runs.">pass@${m.runCount}:</span><span class="stat-value">${
+      formatRate(passAtMax)
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Percentage of tasks with identical outcomes across all runs.">Consistency:</span><span class="stat-value">${
+      formatRate(m.consistency)
+    }</span></div>
+              ${pillsHtml}
+              <div class="stat"><span class="stat-label" title="Controls randomness in responses.">Temperature:</span><span class="stat-value">${
+      temperature !== undefined ? temperature : "-"
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Extended thinking capability.">Thinking:</span><span class="stat-value">${thinkingDisplay}</span></div>
+              <div class="stat"><span class="stat-label" title="Average tokens per run.">Tokens/run:</span><span class="stat-value">${
+      tokensPerRun.toLocaleString("en-US")
+    }</span></div>
+              <div class="stat"><span class="stat-label" title="Average API cost per run.">Cost/run:</span><span class="stat-value">${
+      formatCost(costPerRun)
+    }</span></div>
+            </div>
+            ${generateShortcomingsHtml(variantId, shortcomingsMap)}
           </div>`;
   }
 

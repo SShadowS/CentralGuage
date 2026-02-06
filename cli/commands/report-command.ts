@@ -7,18 +7,22 @@ import { Command } from "@cliffy/command";
 import { exists, expandGlob } from "@std/fs";
 import * as path from "@std/path";
 import * as colors from "@std/fmt/colors";
-import type { BenchmarkStats } from "../types/cli-types.ts";
+import type { BenchmarkStats, MultiRunModelStats } from "../types/cli-types.ts";
 import { extractModelName } from "../helpers/mod.ts";
 import {
   buildChartData,
   buildFileOptions,
+  buildMultiRunChartData,
+  buildMultiRunResultMatrix,
   buildResultMatrix,
   buildTaskDescriptions,
   buildTaskShortcomingMap,
   buildTemperatureLookup,
   calculateBenchmarkStats,
+  calculateMultiRunStats,
   calculatePerModelStats,
   confirmDatasetUsage,
+  detectMultiRun,
   escapeHtml,
   filterExistingDatasetFiles,
   generateChartHtml,
@@ -28,10 +32,14 @@ import {
   generateMatrixRowsHtml,
   generateModelCardsHtml,
   generateModelDetailPage,
+  generateMultiRunChartHtml,
+  generateMultiRunMatrixRowsHtml,
+  generateMultiRunModelCardsHtml,
   getModelList,
+  groupResultsByModelAndTask,
   handleDatasetCollision,
   loadDataset,
-  loadResultFiles,
+  loadResultFilesGrouped,
   loadShortcomingsData,
   printDatasetsList,
   sanitizeModelNameForUrl,
@@ -39,6 +47,7 @@ import {
   selectResultFiles,
   sortModelsByPassRate,
   updateDataset,
+  validateComparability,
 } from "./report/mod.ts";
 
 interface ReportOptions {
@@ -339,6 +348,68 @@ async function getVersion(): Promise<string> {
 }
 
 /**
+ * Generate the summary statistics HTML for multi-run reports
+ */
+function generateMultiRunSummaryHtml(
+  multiRunStats: Map<string, MultiRunModelStats>,
+  taskCount: number,
+  runCount: number,
+): string {
+  const modelCount = multiRunStats.size;
+
+  // Compute average pass@1 across models
+  let sumPassAt1 = 0;
+  let sumTotalCost = 0;
+  let sumTotalTokens = 0;
+  for (const m of multiRunStats.values()) {
+    sumPassAt1 += m.passAtK[1] ?? 0;
+    sumTotalCost += m.cost;
+    sumTotalTokens += m.tokens;
+  }
+  const avgPassAt1 = modelCount > 0
+    ? ((sumPassAt1 / modelCount) * 100).toFixed(1)
+    : "0.0";
+
+  const formatCostVal = (cost: number): string => {
+    if (cost >= 1000) return `$${(cost / 1000).toFixed(1)}K`;
+    return `$${cost.toFixed(2)}`;
+  };
+
+  const formatTokens = (tokens: number): string => {
+    if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+    if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}K`;
+    return tokens.toString();
+  };
+
+  return `<div class="summary-grid">
+    <div class="summary-card">
+      <div class="summary-value">${runCount}</div>
+      <div class="summary-label">Runs</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value">${modelCount}</div>
+      <div class="summary-label">Models</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value">${taskCount}</div>
+      <div class="summary-label">Tasks</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value">${avgPassAt1}%</div>
+      <div class="summary-label">pass@1</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value">${formatCostVal(sumTotalCost)}</div>
+      <div class="summary-label">Total Cost</div>
+    </div>
+    <div class="summary-card">
+      <div class="summary-value">${formatTokens(sumTotalTokens)}</div>
+      <div class="summary-label">Tokens</div>
+    </div>
+  </div>`;
+}
+
+/**
  * Generate HTML report from a list of selected files
  */
 async function generateHtmlReportFromFiles(
@@ -346,44 +417,142 @@ async function generateHtmlReportFromFiles(
   outputDir: string,
   selectedFiles: string[],
 ): Promise<void> {
-  // Load results from selected files
-  const allResults = await loadResultFiles(selectedFiles);
+  // Load results preserving file boundaries for multi-run detection
+  const fileData = await loadResultFilesGrouped(selectedFiles);
+  const multiRunInfo = detectMultiRun(fileData);
+
+  // Flatten all results for shared operations
+  const allResults = fileData.flatMap((f) => f.results);
 
   // Load model shortcomings data
   const shortcomingsMap = await loadShortcomingsData("./model-shortcomings");
   const taskShortcomingMap = buildTaskShortcomingMap(shortcomingsMap);
-
-  // Calculate statistics
-  const perModelMap = calculatePerModelStats(allResults);
-  const stats = calculateBenchmarkStats(allResults, perModelMap);
-  const sortedModels = sortModelsByPassRate(perModelMap);
   const tempLookup = buildTemperatureLookup(allResults);
-
-  // Generate chart HTML
-  const chartData = buildChartData(sortedModels, tempLookup);
-  const chartsHtml = generateChartHtml(chartData);
-
-  // Generate model cards HTML
-  const modelCardsHtml = stats?.perModel
-    ? generateModelCardsHtml(sortedModels, tempLookup, shortcomingsMap)
-    : generateFallbackModelCardsHtml(allResults, shortcomingsMap);
-
-  // Build task results matrix
-  const modelList = getModelList(allResults, stats?.perModel);
   const taskIds = [...new Set(allResults.map((r) => r.taskId))].sort();
-  const resultMatrix = buildResultMatrix(allResults);
   const taskDescriptions = buildTaskDescriptions(allResults);
 
-  const matrixHeaderHtml = generateMatrixHeaderHtml(modelList);
-  const matrixRowsHtml = generateMatrixRowsHtml(
-    taskIds,
-    modelList,
-    resultMatrix,
-    taskDescriptions,
-    taskShortcomingMap,
-  );
+  let chartsHtml: string;
+  let modelCardsHtml: string;
+  let matrixHeaderHtml: string;
+  let matrixRowsHtml: string;
+  let summaryHtml: string;
+  let matrixLegendHtml: string;
+  let perModelForDetailPages:
+    | Record<string, import("../types/cli-types.ts").PerModelStats>
+    | undefined;
 
-  // Generate date and time for report
+  if (multiRunInfo.isMultiRun) {
+    // --- Multi-run pipeline ---
+    console.log(
+      colors.cyan(
+        `[INFO] Multi-run detected: ${multiRunInfo.runCount} runs across ${fileData.length} files`,
+      ),
+    );
+
+    // Validate comparability
+    const comparability = validateComparability(fileData);
+    for (const warning of comparability.warnings) {
+      console.log(colors.yellow(`[WARN] ${warning}`));
+    }
+    if (!comparability.valid) {
+      console.log(
+        colors.yellow(
+          "[WARN] Proceeding with multi-run report despite hash mismatch.",
+        ),
+      );
+    }
+
+    // Group and compute multi-run stats
+    const grouped = groupResultsByModelAndTask(fileData);
+    const multiRunStats = calculateMultiRunStats(
+      grouped,
+      multiRunInfo.runCount,
+    );
+
+    // Sort by pass@1 descending
+    const sortedMultiModels = [...multiRunStats.entries()].sort(
+      ([, a], [, b]) => (b.passAtK[1] ?? 0) - (a.passAtK[1] ?? 0),
+    );
+
+    // Charts
+    const multiChartData = buildMultiRunChartData(
+      sortedMultiModels,
+      tempLookup,
+    );
+    chartsHtml = generateMultiRunChartHtml(multiChartData);
+
+    // Model cards
+    modelCardsHtml = generateMultiRunModelCardsHtml(
+      sortedMultiModels,
+      tempLookup,
+      shortcomingsMap,
+    );
+
+    // Matrix
+    const modelList = sortedMultiModels.map(([id]) => id);
+    matrixHeaderHtml = generateMatrixHeaderHtml(modelList);
+    const multiRunMatrix = buildMultiRunResultMatrix(grouped);
+    matrixRowsHtml = generateMultiRunMatrixRowsHtml(
+      taskIds,
+      modelList,
+      multiRunMatrix,
+      taskDescriptions,
+      taskShortcomingMap,
+    );
+
+    // Summary
+    summaryHtml = generateMultiRunSummaryHtml(
+      multiRunStats,
+      taskIds.length,
+      multiRunInfo.runCount,
+    );
+
+    matrixLegendHtml =
+      `<p class="matrix-legend">N/M = passed N of M runs (hover for details)</p>`;
+
+    // Use base PerModelStats for detail pages
+    perModelForDetailPages = Object.fromEntries(
+      sortedMultiModels.map((
+        [id, stats],
+      ) => [id, stats as import("../types/cli-types.ts").PerModelStats]),
+    );
+  } else {
+    // --- Single-run pipeline (unchanged) ---
+    const perModelMap = calculatePerModelStats(allResults);
+    const stats = calculateBenchmarkStats(allResults, perModelMap);
+    const sortedModels = sortModelsByPassRate(perModelMap);
+
+    const chartData = buildChartData(sortedModels, tempLookup);
+    chartsHtml = generateChartHtml(chartData);
+
+    modelCardsHtml = stats?.perModel
+      ? generateModelCardsHtml(sortedModels, tempLookup, shortcomingsMap)
+      : generateFallbackModelCardsHtml(allResults, shortcomingsMap);
+
+    const modelList = getModelList(allResults, stats?.perModel);
+    const resultMatrix = buildResultMatrix(allResults);
+    matrixHeaderHtml = generateMatrixHeaderHtml(modelList);
+    matrixRowsHtml = generateMatrixRowsHtml(
+      taskIds,
+      modelList,
+      resultMatrix,
+      taskDescriptions,
+      taskShortcomingMap,
+    );
+
+    summaryHtml = generateSummaryHtml(
+      stats,
+      perModelMap.size,
+      taskIds.length,
+    );
+
+    matrixLegendHtml =
+      `<p class="matrix-legend"><span class="pass">P</span> = Pass, <span class="fail">F</span> = Fail (hover for details)</p>`;
+
+    perModelForDetailPages = stats?.perModel;
+  }
+
+  // --- Shared rendering ---
   const now = new Date();
   const generatedDate = now.toLocaleDateString("en-US", {
     year: "numeric",
@@ -394,24 +563,14 @@ async function generateHtmlReportFromFiles(
     minute: "2-digit",
   });
 
-  // Extract data date range from file timestamps
   const dateRange = extractDateRangeFromFiles(selectedFiles);
   const dataDateRange = dateRange
     ? formatDateRange(dateRange.earliest, dateRange.latest)
     : "Unknown";
 
-  // Generate summary HTML
-  const summaryHtml = generateSummaryHtml(
-    stats,
-    perModelMap.size,
-    taskIds.length,
-  );
-
-  // Generate footer HTML
   const version = await getVersion();
   const footerHtml = generateFooterHtml(version);
 
-  // Generate main HTML page
   const htmlContent = generateHtmlTemplate({
     chartsHtml,
     modelCardsHtml,
@@ -421,6 +580,7 @@ async function generateHtmlReportFromFiles(
     dataDateRange,
     summaryHtml,
     footerHtml,
+    matrixLegendHtml,
   });
 
   // Copy favicon if it exists
@@ -436,10 +596,12 @@ async function generateHtmlReportFromFiles(
   await Deno.writeTextFile(outputFile, htmlContent);
 
   // Generate model detail pages
-  if (stats?.perModel) {
+  if (perModelForDetailPages) {
     let detailPagesGenerated = 0;
 
-    for (const [variantId, modelStats] of Object.entries(stats.perModel)) {
+    for (
+      const [variantId, modelStats] of Object.entries(perModelForDetailPages)
+    ) {
       const modelName = extractModelName(variantId);
       const modelShortcomings = shortcomingsMap.get(modelName);
 

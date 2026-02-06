@@ -78,6 +78,10 @@ export const INDEX_PAGE_STYLES = `
     .matrix-cell { width: 2rem; font-weight: bold; }
     .matrix-cell.pass { background: #dcfce7; color: #166534; }
     .matrix-cell.fail { background: #fee2e2; color: #991b1b; }
+    .matrix-cell.pass-all { background: #dcfce7; color: #166534; font-weight: bold; }
+    .matrix-cell.pass-most { background: #d1fae5; color: #065f46; }
+    .matrix-cell.pass-some { background: #ffedd5; color: #9a3412; }
+    .matrix-cell.fail-all { background: #fee2e2; color: #991b1b; font-weight: bold; }
     .chart-card { background: white; border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .chart-legend { display: flex; gap: 1.5rem; margin-bottom: 1rem; font-size: 0.8rem; color: #374151; }
     .chart-legend .legend-item { display: flex; align-items: center; gap: 0.4rem; }
@@ -154,6 +158,10 @@ export const INDEX_PAGE_STYLES = `
     body.dark .result-matrix .task-desc { color: #9ca3af; }
     body.dark .matrix-cell.pass { background: #064e3b; color: #34d399; }
     body.dark .matrix-cell.fail { background: #7f1d1d; color: #fca5a5; }
+    body.dark .matrix-cell.pass-all { background: #064e3b; color: #34d399; font-weight: bold; }
+    body.dark .matrix-cell.pass-most { background: #065f46; color: #6ee7b7; }
+    body.dark .matrix-cell.pass-some { background: #78350f; color: #fdba74; }
+    body.dark .matrix-cell.fail-all { background: #7f1d1d; color: #fca5a5; font-weight: bold; }
     body.dark .summary-card { background: #1f2937; border-color: #374151; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
     body.dark .summary-value { color: #f3f4f6; }
     body.dark .summary-label { color: #9ca3af; }

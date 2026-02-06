@@ -87,6 +87,33 @@ export interface PerModelStats {
   } | null;
 }
 
+/** A loaded result file with metadata */
+export interface ResultFileData {
+  filePath: string;
+  taskSetHash?: string | undefined;
+  results: BenchmarkResult[];
+}
+
+/** Per-task data across multiple runs */
+export interface TaskRunData {
+  taskId: string;
+  totalRuns: number;
+  successfulRuns: number;
+  outcomes: boolean[];
+  /** All runs had the same outcome */
+  consistent: boolean;
+}
+
+/** Extended model stats with multi-run metrics */
+export interface MultiRunModelStats extends PerModelStats {
+  runCount: number;
+  /** pass@k values keyed by k, e.g. { 1: 0.67, 2: 0.89, 3: 1.0 } */
+  passAtK: Record<number, number>;
+  /** Fraction of tasks with identical outcomes across all runs (0-1) */
+  consistency: number;
+  perTaskRuns: Map<string, TaskRunData>;
+}
+
 export interface BenchmarkStats {
   overallPassRate: number;
   averageScore: number;

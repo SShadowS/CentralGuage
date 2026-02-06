@@ -6,7 +6,9 @@
 import type {
   BenchmarkResult,
   BenchmarkStats,
+  MultiRunModelStats,
   PerModelStats,
+  TaskRunData,
 } from "../../types/cli-types.ts";
 
 /**
@@ -125,4 +127,175 @@ export function buildTemperatureLookup(
   }
 
   return tempLookup;
+}
+
+/**
+ * Binomial coefficient C(n, k) = n! / (k! * (n-k)!)
+ * Returns 0 if k > n or k < 0.
+ */
+export function binomialCoefficient(n: number, k: number): number {
+  if (k < 0 || k > n) return 0;
+  if (k === 0 || k === n) return 1;
+  // Use the smaller k to minimize iterations
+  const useK = Math.min(k, n - k);
+  let result = 1;
+  for (let i = 0; i < useK; i++) {
+    result = result * (n - i) / (i + 1);
+  }
+  return result;
+}
+
+/**
+ * Compute pass@k for a single task:
+ * pass@k = 1 - C(n-c, k) / C(n, k)
+ *
+ * Where n = total runs, c = successful runs.
+ * Returns 1 if k > n (trivially true when we sample more than available).
+ */
+export function passAtKForTask(
+  n: number,
+  c: number,
+  k: number,
+): number {
+  if (k > n) return c > 0 ? 1 : 0;
+  if (c === 0) return 0;
+  if (c >= n) return 1;
+  return 1 - binomialCoefficient(n - c, k) / binomialCoefficient(n, k);
+}
+
+/**
+ * Calculate multi-run model statistics with pass@k from grouped results.
+ *
+ * @param grouped Map<variantId, Map<taskId, BenchmarkResult[]>> from groupResultsByModelAndTask
+ * @param runCount Maximum number of runs detected
+ */
+export function calculateMultiRunStats(
+  grouped: Map<string, Map<string, BenchmarkResult[]>>,
+  runCount: number,
+): Map<string, MultiRunModelStats> {
+  const result = new Map<string, MultiRunModelStats>();
+
+  for (const [variantId, taskMap] of grouped) {
+    // Collect per-task run data
+    const perTaskRuns = new Map<string, TaskRunData>();
+    let totalTokens = 0;
+    let totalCost = 0;
+    let totalScore = 0;
+    let totalTasks = 0;
+    let tasksPassedAny = 0;
+    let passedOnAttempt1 = 0;
+    let passedOnAttempt2 = 0;
+    const passedByAttemptAgg: number[] = [];
+    const compileFailures = 0;
+    const testFailures = 0;
+    const malformedResponses = 0;
+    let provider = "unknown";
+    let model = variantId;
+    let variantConfig: PerModelStats["variantConfig"] = null;
+
+    for (const [taskId, runs] of taskMap) {
+      const outcomes = runs.map((r) => r.success);
+      const successfulRuns = outcomes.filter(Boolean).length;
+      const allSame = outcomes.every((o) => o === outcomes[0]);
+
+      perTaskRuns.set(taskId, {
+        taskId,
+        totalRuns: runs.length,
+        successfulRuns,
+        outcomes,
+        consistent: allSame,
+      });
+
+      totalTasks++;
+      // "any" semantics: task counts as passed if it passed in ANY run
+      if (successfulRuns > 0) {
+        tasksPassedAny++;
+      }
+
+      // Aggregate tokens/cost across all runs
+      for (const run of runs) {
+        totalTokens += run.totalTokensUsed || 0;
+        totalCost += run.totalCost || 0;
+        totalScore += run.finalScore || 0;
+
+        // Use first run's metadata for provider/model info
+        if (provider === "unknown" && run.context?.llmProvider) {
+          provider = run.context.llmProvider;
+        }
+        if (model === variantId && run.context?.llmModel) {
+          model = variantId.split("/").pop()?.split("@")[0] || variantId;
+        }
+        if (!variantConfig && run.context?.variantConfig) {
+          variantConfig = run.context.variantConfig;
+        }
+
+        // Track attempt-level stats from each run
+        if (run.success) {
+          const successIndex = run.attempts?.findIndex((a) => a.success) ?? 0;
+          while (passedByAttemptAgg.length <= successIndex) {
+            passedByAttemptAgg.push(0);
+          }
+          passedByAttemptAgg[successIndex] =
+            (passedByAttemptAgg[successIndex] ?? 0) + 1;
+          if (run.attempts?.[0]?.success) {
+            passedOnAttempt1++;
+          }
+          passedOnAttempt2++;
+        }
+      }
+    }
+
+    // Compute pass@k for each k from 1..runCount, averaged across tasks
+    const passAtK: Record<number, number> = {};
+    for (let k = 1; k <= runCount; k++) {
+      let sumPassAtK = 0;
+      for (const taskRun of perTaskRuns.values()) {
+        sumPassAtK += passAtKForTask(
+          taskRun.totalRuns,
+          taskRun.successfulRuns,
+          k,
+        );
+      }
+      passAtK[k] = totalTasks > 0 ? sumPassAtK / totalTasks : 0;
+    }
+
+    // Consistency: fraction of tasks where all runs have the same outcome
+    let consistentCount = 0;
+    for (const taskRun of perTaskRuns.values()) {
+      if (taskRun.consistent) consistentCount++;
+    }
+    const consistency = totalTasks > 0 ? consistentCount / totalTasks : 0;
+
+    const tasksFailed = totalTasks - tasksPassedAny;
+    const totalResults = tasksPassedAny + tasksFailed; // = totalTasks
+
+    result.set(variantId, {
+      // PerModelStats base fields
+      model,
+      provider,
+      variantId,
+      tasksPassed: tasksPassedAny,
+      tasksFailed,
+      avgScore: totalResults > 0
+        ? totalScore / (totalTasks * runCount || 1)
+        : 0,
+      tokens: totalTokens,
+      cost: totalCost,
+      avgAttempts: 0,
+      passedOnAttempt1,
+      passedOnAttempt2,
+      passedByAttempt: passedByAttemptAgg,
+      compileFailures,
+      testFailures,
+      malformedResponses,
+      variantConfig,
+      // MultiRun extension fields
+      runCount,
+      passAtK,
+      consistency,
+      perTaskRuns,
+    });
+  }
+
+  return result;
 }
