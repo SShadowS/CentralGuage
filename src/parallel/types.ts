@@ -462,8 +462,17 @@ export interface QueueStats {
   /** Items waiting in queue */
   pending: number;
 
-  /** Whether currently processing an item */
+  /** Whether currently processing any item */
   processing: boolean;
+
+  /** Number of items currently compiling in parallel */
+  activeCompilations: number;
+
+  /** Whether the test mutex is locked */
+  testRunning: boolean;
+
+  /** Total active items (compile + test phases) */
+  activeItems: number;
 
   /** Total items processed */
   processed: number;
@@ -576,7 +585,11 @@ export type ContainerProviderFactory = (
 export type CompileQueueFactory = (
   containerProvider: ContainerProvider,
   containerName: string,
-  options?: { maxQueueSize?: number; timeout?: number },
+  options?: {
+    maxQueueSize?: number;
+    timeout?: number;
+    compileConcurrency?: number;
+  },
 ) => CompileQueue;
 
 /**

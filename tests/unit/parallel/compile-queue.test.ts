@@ -1,10 +1,11 @@
 /**
  * Unit tests for CompileQueue
  *
- * Tests the FIFO compile queue with mutex for single container access.
+ * Tests the FIFO compile queue with parallel compilation (semaphore)
+ * and serial test execution (mutex).
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { afterEach, beforeEach, describe, it } from "@std/testing/bdd";
 
 import {
@@ -159,6 +160,9 @@ describe({
 
       assertEquals(stats.pending, 0);
       assertEquals(stats.processing, false);
+      assertEquals(stats.activeCompilations, 0);
+      assertEquals(stats.testRunning, false);
+      assertEquals(stats.activeItems, 0);
       assertEquals(stats.processed, 0);
       assertEquals(stats.avgWaitTime, 0);
       assertEquals(stats.avgProcessTime, 0);
@@ -193,29 +197,31 @@ describe({
 
   describe("clear", () => {
     it("should clear all pending items", async () => {
+      // Use compileConcurrency=1 so only 1 item dispatches at a time.
+      // With a long delay, item2 stays in the queue until we clear it.
       const queue = new CompileQueue(mockProvider, "test-container", {
         timeout: 5000,
+        compileConcurrency: 1,
       });
       mockProvider.setCompilationConfig({ delay: 1000, success: true });
 
-      // Enqueue items (first starts processing, rest are pending)
+      // Enqueue items (first starts processing, second waits in queue)
       const item1 = createMockCompileWorkItem({ id: "item-1" });
       const item2 = createMockCompileWorkItem({ id: "item-2" });
 
-      queue.enqueue(item1); // First item starts processing
+      queue.enqueue(item1).catch(() => {}); // First item starts processing
+      // Small delay so processQueue runs and dispatches item1
+      await new Promise((r) => setTimeout(r, 20));
       const promise2 = queue.enqueue(item2);
 
-      // Small delay to let processing start
-      await new Promise((r) => setTimeout(r, 50));
+      // Small delay to let item2 enter the queue
+      await new Promise((r) => setTimeout(r, 20));
 
       // Clear queue
       queue.clear();
 
       // Pending items should be rejected
       await assertRejects(() => promise2, Error, "Queue cleared");
-
-      // First item may still complete since it's already processing
-      // We just want to verify clear works for pending items
     });
 
     it("should be callable on empty queue", () => {
@@ -252,8 +258,10 @@ describe({
   });
 
   describe("FIFO ordering", () => {
-    it("should process items in order", async () => {
-      const queue = new CompileQueue(mockProvider, "test-container");
+    it("should process items in order when concurrency is 1", async () => {
+      const queue = new CompileQueue(mockProvider, "test-container", {
+        compileConcurrency: 1,
+      });
       mockProvider.setCompilationConfig({ delay: 10, success: true });
 
       const processedOrder: string[] = [];
@@ -332,6 +340,231 @@ describe({
       assertEquals(result.compilationResult.success, true);
       assertEquals(result.testResult, undefined);
     });
+  });
+});
+
+describe({
+  name: "CompileQueue parallel compilation",
+  sanitizeOps: false,
+  sanitizeResources: false,
+}, () => {
+  let mockProvider: MockContainerProvider;
+
+  beforeEach(() => {
+    mockProvider = createMockContainerProvider();
+  });
+
+  afterEach(() => {
+    mockProvider.reset();
+  });
+
+  it("should run compilations in parallel up to concurrency limit", async () => {
+    const concurrency = 2;
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: concurrency,
+    });
+
+    let maxConcurrent = 0;
+    let currentConcurrent = 0;
+    const originalCompile = mockProvider.compileProject.bind(mockProvider);
+
+    // Wrap compileProject to track concurrency
+    mockProvider.compileProject = async (...args) => {
+      currentConcurrent++;
+      if (currentConcurrent > maxConcurrent) {
+        maxConcurrent = currentConcurrent;
+      }
+      // Delay to let parallelism show
+      await new Promise((r) => setTimeout(r, 50));
+      const result = await originalCompile(...args);
+      currentConcurrent--;
+      return result;
+    };
+
+    mockProvider.setCompilationConfig({ success: true });
+
+    const items = Array.from(
+      { length: 5 },
+      (_, i) => createMockCompileWorkItem({ id: `parallel-${i}` }),
+    );
+
+    // Enqueue all items
+    const promises = items.map((item) => queue.enqueue(item));
+    const results = await Promise.all(promises);
+
+    assertEquals(results.length, 5);
+    // Max concurrent compilations should be at most the concurrency limit
+    assert(
+      maxConcurrent <= concurrency,
+      `Expected max ${concurrency} concurrent compilations, got ${maxConcurrent}`,
+    );
+    // With 5 items and concurrency 2, we should see at least 2 running at once
+    assert(
+      maxConcurrent >= 2,
+      `Expected at least 2 concurrent compilations, got ${maxConcurrent}`,
+    );
+  });
+
+  it("should keep test execution serial", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: 3,
+    });
+
+    let maxConcurrentTests = 0;
+    let currentConcurrentTests = 0;
+    const originalRunTests = mockProvider.runTests.bind(mockProvider);
+
+    // Wrap runTests to track concurrency
+    mockProvider.runTests = async (...args) => {
+      currentConcurrentTests++;
+      if (currentConcurrentTests > maxConcurrentTests) {
+        maxConcurrentTests = currentConcurrentTests;
+      }
+      await new Promise((r) => setTimeout(r, 30));
+      const result = await originalRunTests(...args);
+      currentConcurrentTests--;
+      return result;
+    };
+
+    mockProvider.setCompilationConfig({ success: true });
+    mockProvider.setTestConfig({
+      success: true,
+      totalTests: 1,
+      passedTests: 1,
+    });
+
+    const items = Array.from(
+      { length: 3 },
+      (_, i) =>
+        createMockCompileWorkItem({
+          id: `serial-test-${i}`,
+          context: createMockTaskExecutionContext({
+            manifest: createMockTaskManifest({
+              expected: {
+                compile: true,
+                testApp: "tests/fixtures/TestApp.al",
+              },
+            }),
+          }),
+        }),
+    );
+
+    const promises = items.map((item) => queue.enqueue(item));
+    await Promise.all(promises);
+
+    // Test execution must be serial (max 1 at a time)
+    assertEquals(maxConcurrentTests, 1);
+  });
+
+  it("should skip test phase when compilation fails", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: 2,
+    });
+
+    mockProvider.setCompilationConfig({
+      success: false,
+      errors: [{
+        code: "AL0001",
+        message: "Syntax error",
+        file: "test.al",
+        line: 1,
+        column: 1,
+        severity: "error",
+      }],
+    });
+
+    const workItem = createMockCompileWorkItem({
+      context: createMockTaskExecutionContext({
+        manifest: createMockTaskManifest({
+          expected: {
+            compile: true,
+            testApp: "tests/fixtures/TestApp.al",
+          },
+        }),
+      }),
+    });
+
+    const result = await queue.enqueue(workItem);
+
+    assertEquals(result.compilationResult.success, false);
+    assertEquals(result.testResult, undefined);
+    // runTests should never be called
+    assertEquals(mockProvider.wasCalled("runTests"), false);
+  });
+
+  it("should drain after all in-flight items finish", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: 2,
+    });
+    mockProvider.setCompilationConfig({ delay: 30, success: true });
+
+    const items = Array.from(
+      { length: 3 },
+      (_, i) => createMockCompileWorkItem({ id: `drain-${i}` }),
+    );
+
+    // Enqueue all, don't await
+    const promises = items.map((item) => queue.enqueue(item));
+
+    // Drain should wait for everything to finish
+    await queue.drain();
+
+    const stats = queue.getStats();
+    assertEquals(stats.processed, 3);
+    assertEquals(stats.activeItems, 0);
+    assertEquals(stats.processing, false);
+
+    // Verify all promises resolved
+    const results = await Promise.all(promises);
+    assertEquals(results.length, 3);
+  });
+
+  it("should report parallel stats correctly", async () => {
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: 2,
+    });
+
+    // Initial stats
+    const initial = queue.getStats();
+    assertEquals(initial.activeCompilations, 0);
+    assertEquals(initial.testRunning, false);
+    assertEquals(initial.activeItems, 0);
+
+    mockProvider.setCompilationConfig({ delay: 100, success: true });
+
+    const items = Array.from(
+      { length: 3 },
+      (_, i) => createMockCompileWorkItem({ id: `stats-${i}` }),
+    );
+
+    const promises = items.map((item) => queue.enqueue(item));
+
+    // Small delay to let processing start
+    await new Promise((r) => setTimeout(r, 20));
+
+    const during = queue.getStats();
+    assert(
+      during.activeItems > 0,
+      "Should have active items during processing",
+    );
+    assert(during.processing, "Should be processing");
+
+    // Wait for completion
+    await Promise.all(promises);
+    await queue.drain();
+
+    const after = queue.getStats();
+    assertEquals(after.activeItems, 0);
+    assertEquals(after.processing, false);
+    assertEquals(after.processed, 3);
+  });
+
+  it("should accept compileConcurrency option", () => {
+    const queue = new CompileQueue(mockProvider, "test-container", {
+      compileConcurrency: 5,
+    });
+    assertEquals(queue.length, 0);
+    assertEquals(queue.isProcessing, false);
   });
 });
 

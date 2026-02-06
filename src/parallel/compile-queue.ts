@@ -1,6 +1,8 @@
 /**
- * FIFO compile queue with mutex for single container access
- * Ensures only one compilation runs at a time
+ * FIFO compile queue with parallel compilation and serial test execution.
+ * Compilation runs on the host under a bounded semaphore (default concurrency=3).
+ * Test execution (publish + run) runs in the BC container under a serial mutex.
+ * Failed compilations skip the test phase entirely.
  */
 
 import { basename, dirname, join } from "@std/path";
@@ -209,11 +211,51 @@ class Mutex {
 }
 
 /**
+ * Bounded-concurrency semaphore for parallel compilation
+ */
+class Semaphore {
+  private current = 0;
+  private waiters: Array<() => void> = [];
+
+  constructor(private readonly maxConcurrency: number) {}
+
+  acquire(): Promise<() => void> {
+    if (this.current < this.maxConcurrency) {
+      this.current++;
+      return Promise.resolve(() => this.release());
+    }
+    return new Promise((resolve) => {
+      this.waiters.push(() => {
+        this.current++;
+        resolve(() => this.release());
+      });
+    });
+  }
+
+  private release(): void {
+    this.current--;
+    const next = this.waiters.shift();
+    if (next) next();
+  }
+
+  activeCount(): number {
+    return this.current;
+  }
+
+  isIdle(): boolean {
+    return this.current === 0 && this.waiters.length === 0;
+  }
+}
+
+/**
  * FIFO queue for container compilation operations
  */
 export class CompileQueue {
   private queue: QueueEntry[] = [];
-  private mutex = new Mutex();
+  private compileSemaphore: Semaphore;
+  private testMutex = new Mutex();
+  private activeItems = 0;
+  private dispatching = false;
   private containerProvider: ContainerProvider;
   private containerName: string;
 
@@ -232,24 +274,27 @@ export class CompileQueue {
     options?: {
       maxQueueSize?: number;
       timeout?: number;
+      compileConcurrency?: number;
     },
   ) {
     this.containerProvider = containerProvider;
     this.containerName = containerName;
     this.maxQueueSize = options?.maxQueueSize ?? 100;
     this.timeout = options?.timeout ?? 300000; // 5 minutes default
+    this.compileSemaphore = new Semaphore(options?.compileConcurrency ?? 3);
   }
 
   /**
    * Enqueue a compile job and return promise that resolves when complete
    */
   enqueue(item: CompileWorkItem): Promise<CompileWorkResult> {
-    // Check queue size limit
-    if (this.queue.length >= this.maxQueueSize) {
+    // Check total capacity (pending + in-flight items)
+    const totalItems = this.queue.length + this.activeItems;
+    if (totalItems >= this.maxQueueSize) {
       return Promise.reject(
         new QueueFullError(
           `Compile queue full (max ${this.maxQueueSize} items)`,
-          this.queue.length,
+          totalItems,
         ),
       );
     }
@@ -291,69 +336,105 @@ export class CompileQueue {
   }
 
   /**
-   * Process queue items one at a time
+   * Dispatch queue items in parallel (bounded by compile semaphore).
+   * Items stay in the queue until a compile slot is available.
    */
   private async processQueue(): Promise<void> {
-    // Acquire mutex (blocks if already processing)
-    const release = await this.mutex.acquire();
+    if (this.dispatching) return;
+    this.dispatching = true;
 
     try {
       while (this.queue.length > 0) {
+        // Wait for a compile slot BEFORE taking from queue
+        const releaseCompile = await this.compileSemaphore.acquire();
+
+        // Check again — item may have been cleared while we waited
         const entry = this.queue.shift();
-        if (!entry) break;
+        if (!entry) {
+          releaseCompile();
+          break;
+        }
 
         const waitTime = Date.now() - entry.enqueuedAt;
         this.totalWaitTime += waitTime;
+        this.activeItems++;
 
-        const processStart = Date.now();
-
-        try {
-          const result = await this.executeCompile(entry.item);
-          this.processedCount++;
-          this.totalProcessTime += Date.now() - processStart;
-          entry.resolve(result);
-        } catch (error) {
-          this.processedCount++;
-          this.totalProcessTime += Date.now() - processStart;
-          entry.reject(
-            error instanceof Error ? error : new Error(String(error)),
-          );
-        }
+        // Dispatch pipeline — runs in parallel, don't await
+        this.runPipeline(entry, releaseCompile).finally(() => {
+          this.activeItems--;
+        });
       }
     } finally {
-      release();
+      this.dispatching = false;
     }
   }
 
   /**
-   * Execute compilation and tests for a single item
+   * Run the full compile→test pipeline for a single queue entry.
+   * Compilation runs under the compile semaphore (parallel).
+   * Test execution runs under the test mutex (serial).
    */
-  private async executeCompile(
-    item: CompileWorkItem,
-  ): Promise<CompileWorkResult> {
+  private async runPipeline(
+    entry: QueueEntry,
+    releaseCompile: () => void,
+  ): Promise<void> {
     const startTime = Date.now();
 
-    // Create temporary project with the generated code
+    // Create temporary project
     let projectDir: string | undefined;
     try {
-      projectDir = await this.createTempProject(item);
+      projectDir = await this.createTempProject(entry.item);
     } catch (error) {
-      // Check for critical errors during project creation (e.g., disk space)
-      throw CriticalError.wrapIfCritical(error);
+      releaseCompile();
+      entry.reject(CriticalError.wrapIfCritical(error));
+      return;
     }
 
     try {
-      return await this.executeCompileInner(item, projectDir, startTime);
+      // --- Phase 1: Compile (parallel, under semaphore) ---
+      const compilePhaseResult = await this.executeCompilePhase(
+        entry.item,
+        projectDir,
+        startTime,
+      );
+      releaseCompile(); // Free compile slot immediately
+
+      // --- Phase 2: Test (serial, under test mutex) ---
+      if (
+        compilePhaseResult.compilationResult.success &&
+        entry.item.context.manifest.expected.testApp
+      ) {
+        const releaseTest = await this.testMutex.acquire();
+        try {
+          const testPhase = await this.executeTestPhase(
+            entry.item,
+            projectDir,
+            compilePhaseResult,
+          );
+          compilePhaseResult.testResult = testPhase.testResult;
+          compilePhaseResult.testDuration = testPhase.testDuration;
+        } finally {
+          releaseTest();
+        }
+      }
+
+      compilePhaseResult.duration = Date.now() - startTime;
+      this.processedCount++;
+      this.totalProcessTime += compilePhaseResult.duration;
+      entry.resolve(compilePhaseResult);
+    } catch (error) {
+      this.processedCount++;
+      this.totalProcessTime += Date.now() - startTime;
+      entry.reject(error instanceof Error ? error : new Error(String(error)));
     } finally {
-      // Always clean up temp directory, even on error
       await this.cleanupTempProject(projectDir);
     }
   }
 
   /**
-   * Inner compile execution (called within try/finally for cleanup)
+   * Phase 1: Compile prereqs + main app (host-only, can run in parallel)
    */
-  private async executeCompileInner(
+  private async executeCompilePhase(
     item: CompileWorkItem,
     projectDir: string,
     startTime: number,
@@ -389,13 +470,6 @@ export class CompileQueue {
           errors: prereqCompileResult.errors.map((e) => e.message),
         });
       } else {
-        // Publish prereq immediately after successful compilation
-        if (prereqCompileResult.artifactPath) {
-          await this.containerProvider.publishApp(
-            this.containerName,
-            prereqCompileResult.artifactPath,
-          );
-        }
         compiledPrereqs.push({
           ...prereq,
           compiledAppPath: prereqCompileResult.artifactPath,
@@ -470,33 +544,7 @@ export class CompileQueue {
       );
     }
 
-    // Run tests if compilation succeeded and tests are configured (track time separately)
-    let testResult: TestResult | undefined;
-    let testDuration: number | undefined;
-    if (compilationResult.success && item.context.manifest.expected.testApp) {
-      // Prereqs are already published after compilation - just run tests
-      const testStart = Date.now();
-      testResult = await this.containerProvider.runTests(
-        this.containerName,
-        project,
-        compilationResult.artifactPath,
-        item.context.manifest.expected.testCodeunitId,
-      );
-      testDuration = Date.now() - testStart;
-
-      // Log test result if debug is enabled
-      if (debugLogger && testResult) {
-        await debugLogger.logTestResult(
-          item.context.manifest.id,
-          item.context.llmModel,
-          item.attemptNumber,
-          this.containerName,
-          testResult,
-        );
-      }
-    }
-
-    // Save verbose artifacts (AL files and .app) before cleanup (cleanup is in finally block)
+    // Save verbose artifacts (AL files and .app) before cleanup
     if (debugLogger) {
       await debugLogger.saveVerboseArtifacts(
         item.context.manifest.id,
@@ -507,19 +555,63 @@ export class CompileQueue {
       );
     }
 
-    const result: CompileWorkResult = {
+    // Store compiledPrereqs on the result for the test phase
+    const result: CompileWorkResult & { _compiledPrereqs?: PrereqApp[] } = {
       workItemId: item.id,
       compilationResult,
       duration: Date.now() - startTime,
       compileDuration,
     };
-    if (testResult) {
-      result.testResult = testResult;
-    }
-    if (testDuration !== undefined) {
-      result.testDuration = testDuration;
+    if (compiledPrereqs.length > 0) {
+      result._compiledPrereqs = compiledPrereqs;
     }
     return result;
+  }
+
+  /**
+   * Phase 2: Publish prereqs + run tests (container operation, must be serial)
+   */
+  private async executeTestPhase(
+    item: CompileWorkItem,
+    projectDir: string,
+    compileResult: CompileWorkResult & { _compiledPrereqs?: PrereqApp[] },
+  ): Promise<{ testResult: TestResult; testDuration: number }> {
+    // Publish prereq apps to container (container operation — serial)
+    const compiledPrereqs = compileResult._compiledPrereqs ?? [];
+    for (const prereq of compiledPrereqs) {
+      if (prereq.compiledAppPath) {
+        await this.containerProvider.publishApp(
+          this.containerName,
+          prereq.compiledAppPath,
+        );
+      }
+    }
+
+    // Load the project for test execution
+    const project = await ALProjectManager.loadProject(projectDir);
+
+    const testStart = Date.now();
+    const testResult = await this.containerProvider.runTests(
+      this.containerName,
+      project,
+      compileResult.compilationResult.artifactPath,
+      item.context.manifest.expected.testCodeunitId,
+    );
+    const testDuration = Date.now() - testStart;
+
+    // Log test result if debug is enabled
+    const debugLogger = DebugLogger.getInstance();
+    if (debugLogger && testResult) {
+      await debugLogger.logTestResult(
+        item.context.manifest.id,
+        item.context.llmModel,
+        item.attemptNumber,
+        this.containerName,
+        testResult,
+      );
+    }
+
+    return { testResult, testDuration };
   }
 
   /**
@@ -631,7 +723,10 @@ export class CompileQueue {
   getStats(): QueueStats {
     return {
       pending: this.queue.length,
-      processing: this.mutex.isLocked(),
+      processing: this.activeItems > 0,
+      activeCompilations: this.compileSemaphore.activeCount(),
+      testRunning: this.testMutex.isLocked(),
+      activeItems: this.activeItems,
       processed: this.processedCount,
       avgWaitTime: this.processedCount > 0
         ? this.totalWaitTime / this.processedCount
@@ -653,7 +748,7 @@ export class CompileQueue {
    * Check if currently processing
    */
   get isProcessing(): boolean {
-    return this.mutex.isLocked();
+    return this.activeItems > 0;
   }
 
   /**
@@ -668,10 +763,10 @@ export class CompileQueue {
   }
 
   /**
-   * Wait for the queue to become empty
+   * Wait for the queue to become empty and all in-flight items to finish
    */
   async drain(): Promise<void> {
-    while (this.queue.length > 0 || this.mutex.isLocked()) {
+    while (this.queue.length > 0 || this.activeItems > 0) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }

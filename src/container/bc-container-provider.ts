@@ -426,12 +426,13 @@ export class BcContainerProvider implements ContainerProvider {
       const escapedCompilerFolder = compilerFolder.replace(/\\/g, "\\\\");
 
       // Output to a subfolder of the compiler folder (which IS shared with container)
-      // Use a unique folder per project based on project name
+      // Use a unique folder per project with a random suffix to avoid collisions
+      // when multiple compilations of the same project run in parallel
       const appJson = project.appJson as { name?: string };
-      const projectName = (appJson.name || "app").replace(
-        /[^a-zA-Z0-9-_]/g,
-        "_",
-      );
+      const uniqueSuffix = crypto.randomUUID().slice(0, 8);
+      const projectName = `${
+        (appJson.name || "app").replace(/[^a-zA-Z0-9-_]/g, "_")
+      }_${uniqueSuffix}`;
       const outputDir = `${compilerFolder}\\output\\${projectName}`.replace(
         /\\/g,
         "\\\\",
