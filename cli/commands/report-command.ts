@@ -357,18 +357,12 @@ function generateMultiRunSummaryHtml(
 ): string {
   const modelCount = multiRunStats.size;
 
-  // Compute average pass@1 across models
-  let sumPassAt1 = 0;
   let sumTotalCost = 0;
   let sumTotalTokens = 0;
   for (const m of multiRunStats.values()) {
-    sumPassAt1 += m.passAtK[1] ?? 0;
     sumTotalCost += m.cost;
     sumTotalTokens += m.tokens;
   }
-  const avgPassAt1 = modelCount > 0
-    ? ((sumPassAt1 / modelCount) * 100).toFixed(1)
-    : "0.0";
 
   const formatCostVal = (cost: number): string => {
     if (cost >= 1000) return `$${(cost / 1000).toFixed(1)}K`;
@@ -393,10 +387,6 @@ function generateMultiRunSummaryHtml(
     <div class="summary-card">
       <div class="summary-value">${taskCount}</div>
       <div class="summary-label">Tasks</div>
-    </div>
-    <div class="summary-card">
-      <div class="summary-value">${avgPassAt1}%</div>
-      <div class="summary-label">pass@1</div>
     </div>
     <div class="summary-card">
       <div class="summary-value">${formatCostVal(sumTotalCost)}</div>
