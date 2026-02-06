@@ -329,11 +329,11 @@ describe("CostTracker", () => {
 
       const metrics = haikuTracker.getMetrics();
 
-      // Haiku: $0.8/MTok input + $4/MTok output
+      // Haiku: $1/MTok input + $5/MTok output ($0.001/1K + $0.005/1K)
       // 1000 tokens = 0.001 MTok
-      // Cost = 0.001 * 0.8 + 0.001 * 4 = 0.0008 + 0.004 = 0.0048
+      // Cost = 0.001 * 1 + 0.001 * 5 = 0.001 + 0.005 = 0.006
       // Use toFixed to handle floating point precision
-      assertEquals(metrics.estimatedCost.toFixed(4), "0.0048");
+      assertEquals(metrics.estimatedCost.toFixed(4), "0.0060");
     });
 
     it("should handle zero tokens", () => {

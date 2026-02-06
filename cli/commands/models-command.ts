@@ -6,60 +6,117 @@
 import * as colors from "@std/fmt/colors";
 import { Command } from "@cliffy/command";
 import {
+  getModelDisplayName,
+  MODEL_ALIASES,
   MODEL_PRESETS,
-  type ModelPreset,
   ModelPresetRegistry,
 } from "../../src/llm/model-presets.ts";
 import { LLMAdapterRegistry } from "../../src/llm/registry.ts";
+import { LiteLLMService } from "../../src/llm/litellm-service.ts";
+import { PricingService } from "../../src/llm/pricing-service.ts";
 import type { CacheStats, DiscoveryResult } from "../../src/llm/mod.ts";
 import { EnvLoader } from "../../src/utils/env-loader.ts";
 import { parseProviderAndModel } from "../helpers/mod.ts";
 
-/** Category display configuration */
-const CATEGORY_CONFIG: Array<{
-  key: string;
-  label: string;
-  format: (p: ModelPreset) => string;
-}> = [
-  {
-    key: "flagship",
-    label: "Flagship Models",
-    format: (p) => `${p.alias.padEnd(12)} -> ${p.displayName} (${p.costTier})`,
-  },
-  {
-    key: "budget",
-    label: "Budget Models",
-    format: (p) => `${p.alias.padEnd(12)} -> ${p.displayName} (${p.costTier})`,
-  },
-  {
-    key: "coding",
-    label: "Coding Models",
-    format: (p) =>
-      `${p.alias.padEnd(12)} -> ${p.displayName} (${p.category.join(", ")})`,
-  },
-];
+/** Display aliases grouped by provider */
+function displayAliasesByProvider(): void {
+  const byProvider: Record<string, Array<{ alias: string; model: string }>> =
+    {};
 
-function displayModelsByCategory(
-  presetsByCategory: Record<string, ModelPreset[]>,
-): void {
-  CATEGORY_CONFIG.forEach(({ key, label, format }, index) => {
-    const presets = presetsByCategory[key];
-    if (presets) {
-      console.log(`${index > 0 ? "\n" : ""}   ${label}:`);
-      presets.forEach((p) => console.log(`   ${format(p)}`));
+  for (const [alias, entry] of Object.entries(MODEL_ALIASES)) {
+    const providerList = byProvider[entry.provider] ??= [];
+    providerList.push({ alias, model: entry.model });
+  }
+
+  const providerLabels: Record<string, string> = {
+    anthropic: "Anthropic",
+    openai: "OpenAI",
+    gemini: "Google Gemini",
+    openrouter: "OpenRouter",
+    local: "Local (Ollama)",
+    mock: "Testing",
+  };
+
+  for (const [provider, aliases] of Object.entries(byProvider)) {
+    const label = providerLabels[provider] || provider;
+    console.log(`\n   ${label}:`);
+    for (const { alias, model } of aliases) {
+      const displayName = getModelDisplayName(model);
+      console.log(
+        `   ${alias.padEnd(24)} -> ${displayName} ${colors.dim(`(${model})`)}`,
+      );
     }
-  });
+  }
 }
 
-function displayCostTiers(): void {
-  console.log("\nCost Tiers:");
-  const costTiers = ModelPresetRegistry.getPresetsByCostTier();
-  Object.entries(costTiers).forEach(([tier, presets]) => {
-    if (presets.length > 0) {
-      const aliases = presets.map((p) => p.alias).join(", ");
-      console.log(`   ${tier.padEnd(8)} -> ${aliases}`);
+/** Display model groups */
+function displayModelGroups(): void {
+  console.log("\nModel Groups:");
+  console.log("   flagship     -> Top-tier models for best quality");
+  console.log("   budget       -> Cost-effective models for development");
+  console.log("   coding       -> Optimized for code generation tasks");
+  console.log("   reasoning    -> Advanced reasoning capabilities");
+  console.log("   fast         -> Optimized for speed");
+  console.log("   quality      -> Optimized for output quality");
+  console.log("   comparison   -> Recommended set for model comparison");
+  console.log("   all          -> Every available model");
+}
+
+/** Display pricing info from LiteLLM (if cached) or pricing.json */
+async function displayPricingInfo(): Promise<void> {
+  // Show pricing for key aliases
+  const keyAliases = [
+    "opus",
+    "sonnet",
+    "haiku",
+    "gpt-5",
+    "gpt-4o",
+    "o3",
+    "gemini-3",
+    "gemini-2.5-flash",
+  ];
+
+  console.log("\nPricing (per 1M tokens):");
+  console.log(
+    `   ${"Alias".padEnd(20)} ${"Model".padEnd(30)} ${"Input".padEnd(12)} ${
+      "Output".padEnd(12)
+    } ${"Source"}`,
+  );
+  console.log("   " + "-".repeat(86));
+
+  for (const alias of keyAliases) {
+    const entry = MODEL_ALIASES[alias];
+    if (!entry) continue;
+
+    // Try LiteLLM first
+    const litellmPricing = LiteLLMService.getPricing(
+      entry.provider,
+      entry.model,
+    );
+    if (litellmPricing) {
+      const inputMTok = `$${(litellmPricing.input * 1000).toFixed(2)}`;
+      const outputMTok = `$${(litellmPricing.output * 1000).toFixed(2)}`;
+      console.log(
+        `   ${alias.padEnd(20)} ${entry.model.padEnd(30)} ${
+          inputMTok.padEnd(12)
+        } ${outputMTok.padEnd(12)} ${colors.green("[LiteLLM]")}`,
+      );
+    } else {
+      // Fallback to PricingService
+      const result = await PricingService.getPrice(
+        entry.provider,
+        entry.model,
+      );
+      const inputMTok = `$${(result.pricing.input * 1000).toFixed(2)}`;
+      const outputMTok = `$${(result.pricing.output * 1000).toFixed(2)}`;
+      const sourceLabel = PricingService.getSourceLabel(result.source);
+      console.log(
+        `   ${alias.padEnd(20)} ${entry.model.padEnd(30)} ${
+          inputMTok.padEnd(12)
+        } ${outputMTok.padEnd(12)} ${colors.dim(sourceLabel)}`,
+      );
     }
-  });
+  }
 }
 
 function displayProviders(): void {
@@ -89,16 +146,15 @@ function displayProviderModelsNotice(provider: string): void {
   );
   console.log(`   centralgauge models --provider ${provider} --live\n`);
 
-  // Show aliases for this provider (these are known statically)
-  const providerPresets = Object.values(MODEL_PRESETS).filter(
-    (p) => p.provider === provider,
+  // Show aliases for this provider
+  const providerAliases = Object.entries(MODEL_ALIASES).filter(
+    ([, e]) => e.provider === provider,
   );
 
-  if (providerPresets.length > 0) {
+  if (providerAliases.length > 0) {
     console.log(`Known aliases for ${provider}:`);
-    providerPresets.forEach((p) => {
-      console.log(`   ${p.alias.padEnd(16)} -> ${p.model}`);
-      console.log(`   ${"".padEnd(16)}    ${p.description}`);
+    providerAliases.forEach(([alias, entry]) => {
+      console.log(`   ${alias.padEnd(16)} -> ${entry.model}`);
     });
   }
 
@@ -106,11 +162,9 @@ function displayProviderModelsNotice(provider: string): void {
   console.log(
     `   centralgauge bench --llms ${provider}/<model-id>  (use --live to see available models)`,
   );
-  if (providerPresets.length > 0) {
+  if (providerAliases.length > 0) {
     console.log(
-      `   centralgauge bench --llms ${
-        providerPresets[0]?.alias
-      }  (using alias)`,
+      `   centralgauge bench --llms ${providerAliases[0]?.[0]}  (using alias)`,
     );
   }
 }
@@ -201,14 +255,14 @@ function displayDiscoveryResult(
   }
 
   // Show aliases for this provider
-  const providerPresets = Object.values(MODEL_PRESETS).filter(
-    (p) => p.provider === provider,
+  const providerAliases = Object.entries(MODEL_ALIASES).filter(
+    ([, e]) => e.provider === provider,
   );
 
-  if (providerPresets.length > 0) {
+  if (providerAliases.length > 0) {
     console.log(`\nAliases for ${provider}:`);
-    providerPresets.forEach((p) => {
-      console.log(`   ${p.alias.padEnd(16)} -> ${p.model}`);
+    providerAliases.forEach(([alias, entry]) => {
+      console.log(`   ${alias.padEnd(16)} -> ${entry.model}`);
     });
   }
 
@@ -279,9 +333,7 @@ function testModelSpecParsing(testSpecs: string[]): void {
           (p) => `${p.provider}/${p.model}` === resolvedSpec,
         );
         if (preset) {
-          console.log(
-            `        (${preset.displayName} - ${preset.description})`,
-          );
+          console.log(`        (${preset.displayName})`);
         }
       });
     } catch (error) {
@@ -294,25 +346,19 @@ function testModelSpecParsing(testSpecs: string[]): void {
   });
 }
 
-function handleModelsList(testSpecs?: string[]): void {
+async function handleModelsList(testSpecs?: string[]): Promise<void> {
   console.log("CentralGauge Model Support\n");
 
-  // Model aliases by category
+  // Model aliases by provider
   console.log("Model Aliases (Short Names):");
-  displayModelsByCategory(ModelPresetRegistry.getPresetsByCategory());
+  displayAliasesByProvider();
 
   // Model groups
-  console.log("\nModel Groups:");
-  console.log("   flagship     -> Top-tier models for best quality");
-  console.log("   budget       -> Cost-effective models for development");
-  console.log("   coding       -> Optimized for code generation tasks");
-  console.log("   reasoning    -> Advanced reasoning capabilities");
-  console.log("   fast         -> Optimized for speed");
-  console.log("   quality      -> Optimized for output quality");
-  console.log("   comparison   -> Recommended set for model comparison");
-  console.log("   all          -> Every available model");
+  displayModelGroups();
 
-  displayCostTiers();
+  // Pricing
+  await displayPricingInfo();
+
   displayProviders();
 
   // Usage examples
@@ -325,7 +371,7 @@ function handleModelsList(testSpecs?: string[]): void {
   console.log("   centralgauge bench --llms flagship,budget");
   console.log("   \n   # Traditional provider/model format still works");
   console.log(
-    "   centralgauge bench --llms openai/gpt-4o,anthropic/claude-3-5-sonnet-20241022",
+    "   centralgauge bench --llms openai/gpt-4o,anthropic/claude-sonnet-4-5-20250929",
   );
 
   if (testSpecs && testSpecs.length > 0) {
@@ -342,7 +388,7 @@ function handleModelsList(testSpecs?: string[]): void {
 
   console.log("\nPro Tips:");
   console.log(
-    "   - Use aliases like 'sonnet' instead of 'anthropic/claude-3-5-sonnet-20241022'",
+    "   - Use aliases like 'sonnet' instead of 'anthropic/claude-sonnet-4-5-20250929'",
   );
   console.log(
     "   - Use groups like 'flagship' to test multiple top-tier models",
@@ -352,6 +398,14 @@ function handleModelsList(testSpecs?: string[]): void {
   console.log(
     "   - Use --live to discover all available models from provider APIs",
   );
+
+  if (LiteLLMService.isCacheWarm()) {
+    console.log(
+      colors.dim(
+        `\nLiteLLM cache: ${LiteLLMService.getCacheSize()} models loaded`,
+      ),
+    );
+  }
 }
 
 export function registerModelsCommand(cli: Command): void {
@@ -393,7 +447,14 @@ export function registerModelsCommand(cli: Command): void {
         return;
       }
 
+      // Try to warm LiteLLM cache for pricing display
+      try {
+        await LiteLLMService.warmCache();
+      } catch {
+        // Graceful degradation — pricing will come from pricing.json
+      }
+
       // Default: show all models
-      handleModelsList(specs.length > 0 ? specs : undefined);
+      await handleModelsList(specs.length > 0 ? specs : undefined);
     });
 }

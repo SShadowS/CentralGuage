@@ -52,13 +52,20 @@ export type {
 } from "./pricing-types.ts";
 export { PricingService } from "./pricing-service.ts";
 
-// Model Presets
-export type { ModelPreset } from "./model-presets.ts";
+// Model Presets & Aliases
+export type { ModelAlias, ModelPreset } from "./model-presets.ts";
 export {
+  getModelDisplayName,
+  MODEL_ALIASES,
+  MODEL_DISPLAY_NAMES,
   MODEL_GROUPS,
   MODEL_PRESETS,
   ModelPresetRegistry,
 } from "./model-presets.ts";
+
+// LiteLLM Metadata
+export type { LiteLLMModelInfo, LiteLLMPricing } from "./litellm-service.ts";
+export { LiteLLMService } from "./litellm-service.ts";
 
 // Code Extraction
 export type { ExtractionResult } from "./code-extractor.ts";

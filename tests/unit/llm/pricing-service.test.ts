@@ -66,7 +66,7 @@ describe("PricingService", () => {
       const result = await PricingService.getPrice("gemini", "gemini-2.5-pro");
 
       assertEquals(result.pricing.input, 0.00125);
-      assertEquals(result.pricing.output, 0.005);
+      assertEquals(result.pricing.output, 0.01);
       assertEquals(result.source, "json");
     });
 

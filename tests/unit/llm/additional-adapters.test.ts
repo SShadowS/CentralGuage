@@ -124,9 +124,10 @@ Deno.test("AzureOpenAIAdapter - estimateCost", async (t) => {
       baseUrl: "https://test.openai.azure.com",
     });
 
-    // GPT-4o pricing: $0.005/1K input, $0.015/1K output
+    // GPT-4o pricing: $0.0025/1K input, $0.01/1K output
     const cost = adapter.estimateCost(1000, 1000);
-    assertEquals(Math.abs(cost - 0.02) < 0.001, true);
+    // 0.0025 + 0.01 = 0.0125
+    assertEquals(Math.abs(cost - 0.0125) < 0.001, true);
   });
 
   await t.step("handles zero tokens", () => {

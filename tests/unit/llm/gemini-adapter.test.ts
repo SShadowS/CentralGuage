@@ -199,10 +199,10 @@ Deno.test("GeminiAdapter - estimateCost", async (t) => {
       apiKey: "test-key",
     });
 
-    // Gemini 2.5 Pro pricing: $0.00125/1K input, $0.005/1K output
+    // Gemini 2.5 Pro pricing: $0.00125/1K input, $0.01/1K output
     const cost = adapter.estimateCost(1000, 1000);
-    // 1000/1000 * 0.00125 + 1000/1000 * 0.005 = 0.00125 + 0.005 = 0.00625
-    assertEquals(Math.abs(cost - 0.00625) < 0.0001, true);
+    // 1000/1000 * 0.00125 + 1000/1000 * 0.01 = 0.00125 + 0.01 = 0.01125
+    assertEquals(Math.abs(cost - 0.01125) < 0.0001, true);
   });
 
   await t.step("calculates cost for gemini-2.5-flash model", () => {
@@ -213,10 +213,10 @@ Deno.test("GeminiAdapter - estimateCost", async (t) => {
       apiKey: "test-key",
     });
 
-    // Gemini 2.5 Flash pricing: $0.000075/1K input, $0.0003/1K output
+    // Gemini 2.5 Flash pricing: $0.0003/1K input, $0.0025/1K output
     const cost = adapter.estimateCost(1000, 1000);
-    // 1000/1000 * 0.000075 + 1000/1000 * 0.0003 = 0.000075 + 0.0003 = 0.000375
-    assertEquals(Math.abs(cost - 0.000375) < 0.00001, true);
+    // 1000/1000 * 0.0003 + 1000/1000 * 0.0025 = 0.0003 + 0.0025 = 0.0028
+    assertEquals(Math.abs(cost - 0.0028) < 0.0001, true);
   });
 
   await t.step("calculates cost for gemini-1.5-pro model", () => {
@@ -240,10 +240,10 @@ Deno.test("GeminiAdapter - estimateCost", async (t) => {
       apiKey: "test-key",
     });
 
-    // Gemini 3 pricing: $0.005/1K input, $0.015/1K output
+    // Gemini 3 pricing: $0.002/1K input, $0.012/1K output
     const cost = adapter.estimateCost(1000, 1000);
-    // 0.005 + 0.015 = 0.02
-    assertEquals(Math.abs(cost - 0.02) < 0.001, true);
+    // 0.002 + 0.012 = 0.014
+    assertEquals(Math.abs(cost - 0.014) < 0.001, true);
   });
 
   await t.step("handles zero tokens", () => {
@@ -299,8 +299,9 @@ Deno.test("GeminiAdapter - configure", async (t) => {
     });
 
     // After configure, cost estimation should use the new model
+    // Gemini 2.5 Flash: $0.0003/1K input, $0.0025/1K output = 0.0028
     const cost = adapter.estimateCost(1000, 1000);
-    assertEquals(Math.abs(cost - 0.000375) < 0.00001, true);
+    assertEquals(Math.abs(cost - 0.0028) < 0.0001, true);
   });
 });
 

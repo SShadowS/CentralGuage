@@ -182,8 +182,7 @@ describe("parseVariantSpec", () => {
       const variant = variants[0];
       assertExists(variant);
       assertEquals(variant.hasVariant, false);
-      // Config still has preset maxTokens applied
-      assertExists(variant.config.maxTokens);
+      // maxTokens comes from LiteLLM cache (may be undefined when cache is cold)
     });
 
     it("should handle unknown parameter keys", () => {
@@ -194,8 +193,7 @@ describe("parseVariantSpec", () => {
       assertExists(variant);
       // Unknown params should be ignored, hasVariant false since no valid params
       assertEquals(variant.hasVariant, false);
-      // Config still has preset maxTokens applied
-      assertExists(variant.config.maxTokens);
+      // maxTokens comes from LiteLLM cache (may be undefined when cache is cold)
     });
 
     it("should handle whitespace in parameters", () => {

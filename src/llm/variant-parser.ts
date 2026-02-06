@@ -10,7 +10,12 @@ import {
   VARIANT_PARAM_ALIASES,
   type VariantConfig,
 } from "./variant-types.ts";
-import { MODEL_GROUPS, MODEL_PRESETS } from "./model-presets.ts";
+import {
+  MODEL_ALIASES,
+  MODEL_DISPLAY_NAMES,
+  MODEL_GROUPS,
+} from "./model-presets.ts";
+import { LiteLLMService } from "./litellm-service.ts";
 
 /**
  * Parse a model spec with optional variant configuration
@@ -67,15 +72,15 @@ function resolveBaseModelsToVariants(
   // Resolve single model
   const { provider, model } = resolveProviderAndModel(baseSpec);
 
-  // Determine if user explicitly specified a variant (before applying preset defaults)
+  // Determine if user explicitly specified a variant (before applying defaults)
   const hasUserSpecifiedVariant = Object.keys(variantConfig).length > 0;
 
-  // Apply preset's maxOutputTokens if not explicitly set in variant config
+  // Apply maxOutputTokens from LiteLLM if not explicitly set in variant config
   const effectiveConfig = { ...variantConfig };
   if (effectiveConfig.maxTokens === undefined) {
-    const preset = MODEL_PRESETS[baseSpec];
-    if (preset?.maxOutputTokens) {
-      effectiveConfig.maxTokens = preset.maxOutputTokens;
+    const litellmMax = LiteLLMService.getMaxOutputTokens(provider, model);
+    if (litellmMax) {
+      effectiveConfig.maxTokens = litellmMax;
     }
   }
 
@@ -95,17 +100,17 @@ function resolveBaseModelsToVariants(
 /**
  * Resolve a base model spec to provider and model
  * Supports formats:
- * - "sonnet" → resolved via MODEL_PRESETS
+ * - "sonnet" → resolved via MODEL_ALIASES
  * - "openai/gpt-5.1" → provider: openai, model: gpt-5.1
  * - "openrouter/deepseek/deepseek-v3.2" → provider: openrouter, model: deepseek/deepseek-v3.2
  */
 function resolveProviderAndModel(
   spec: string,
 ): { provider: string; model: string } {
-  // Check presets first (aliases like "sonnet", "opus", "gemini")
-  const preset = MODEL_PRESETS[spec];
-  if (preset) {
-    return { provider: preset.provider, model: preset.model };
+  // Check aliases first (aliases like "sonnet", "opus", "gemini")
+  const alias = MODEL_ALIASES[spec];
+  if (alias) {
+    return { provider: alias.provider, model: alias.model };
   }
 
   // If provider/model format, split on FIRST "/" only
@@ -243,18 +248,20 @@ export function resolveWithVariants(
  */
 export function getVariantDisplayName(variant: ModelVariant): string {
   if (!variant.hasVariant) {
-    // Use alias if available
-    const preset = Object.entries(MODEL_PRESETS).find(
-      ([, p]) => p.provider === variant.provider && p.model === variant.model,
+    // Use alias if available, otherwise display name
+    const aliasEntry = Object.entries(MODEL_ALIASES).find(
+      ([, a]) => a.provider === variant.provider && a.model === variant.model,
     );
-    return preset ? preset[0] : `${variant.provider}/${variant.model}`;
+    return aliasEntry ? aliasEntry[0] : `${variant.provider}/${variant.model}`;
   }
 
   // Find alias for base
-  const preset = Object.entries(MODEL_PRESETS).find(
-    ([, p]) => p.provider === variant.provider && p.model === variant.model,
+  const aliasEntry = Object.entries(MODEL_ALIASES).find(
+    ([, a]) => a.provider === variant.provider && a.model === variant.model,
   );
-  const baseName = preset ? preset[0] : `${variant.provider}/${variant.model}`;
+  const baseName = aliasEntry
+    ? aliasEntry[0]
+    : `${variant.provider}/${variant.model}`;
 
   // Build short variant suffix
   const parts: string[] = [];
@@ -272,4 +279,21 @@ export function getVariantDisplayName(variant: ModelVariant): string {
   }
 
   return parts.length > 0 ? `${baseName}@${parts.join(";")}` : baseName;
+}
+
+/**
+ * Find the alias name for a given model ID.
+ * Returns the shortest alias that maps to this model.
+ */
+export function findAliasForModel(model: string): string | undefined {
+  // Look for exact match in display names first
+  if (MODEL_DISPLAY_NAMES[model]) {
+    // Find the alias that points to this model
+    for (const [alias, entry] of Object.entries(MODEL_ALIASES)) {
+      if (entry.model === model) {
+        return alias;
+      }
+    }
+  }
+  return undefined;
 }
