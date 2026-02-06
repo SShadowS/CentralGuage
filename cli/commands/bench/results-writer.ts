@@ -9,6 +9,9 @@ import type {
   TaskManifest,
 } from "../../../src/tasks/interfaces.ts";
 import type { ModelVariant } from "../../../src/llm/variant-types.ts";
+import { loadResultFilesGrouped } from "../report/file-loader.ts";
+import { groupResultsByModelAndTask } from "../report/run-detector.ts";
+import { calculateMultiRunStats } from "../report/stats-calculator.ts";
 import type {
   AggregateStats,
   TaskComparison,
@@ -258,4 +261,76 @@ export async function displayFormattedOutput(
       }
     }
   }
+}
+
+/**
+ * Display a multi-run summary with pass@k statistics.
+ * Loads the N result files produced during the runs loop,
+ * groups them by model+task, and prints pass@k and consistency.
+ */
+export async function displayMultiRunSummary(
+  resultFilePaths: string[],
+  runCount: number,
+): Promise<void> {
+  const fileData = await loadResultFilesGrouped(resultFilePaths);
+  const grouped = groupResultsByModelAndTask(fileData);
+  const multiRunStats = calculateMultiRunStats(grouped, runCount);
+
+  console.log("");
+  console.log(colors.bold("=".repeat(60)));
+  console.log(colors.bold(`MULTI-RUN SUMMARY (${runCount} runs)`));
+  console.log("=".repeat(60));
+
+  for (const [variantId, stats] of multiRunStats) {
+    console.log("");
+    console.log(colors.bold(`  ${variantId}`));
+
+    // Display pass@k values
+    const passAtKParts: string[] = [];
+    for (let k = 1; k <= runCount; k++) {
+      const val = stats.passAtK[k];
+      if (val !== undefined) {
+        passAtKParts.push(
+          `pass@${k}: ${colors.green((val * 100).toFixed(1) + "%")}`,
+        );
+      }
+    }
+    if (passAtKParts.length > 0) {
+      console.log(`    ${passAtKParts.join("  ")}`);
+    }
+
+    // Consistency
+    const consistencyColor = stats.consistency >= 0.8
+      ? colors.green
+      : stats.consistency >= 0.5
+      ? colors.yellow
+      : colors.red;
+    console.log(
+      `    Consistency: ${
+        consistencyColor((stats.consistency * 100).toFixed(1) + "%")
+      }`,
+    );
+
+    // Show inconsistent tasks
+    const inconsistentTasks: string[] = [];
+    for (const [taskId, taskRun] of stats.perTaskRuns) {
+      if (!taskRun.consistent) {
+        const outcomes = taskRun.outcomes
+          .map((o) => (o ? colors.green("pass") : colors.red("fail")))
+          .join(", ");
+        inconsistentTasks.push(`      ${taskId}: [${outcomes}]`);
+      }
+    }
+    if (inconsistentTasks.length > 0) {
+      console.log(
+        `    Inconsistent tasks (${inconsistentTasks.length}):`,
+      );
+      for (const line of inconsistentTasks) {
+        console.log(line);
+      }
+    }
+  }
+
+  console.log("");
+  console.log("=".repeat(60));
 }

@@ -16,6 +16,7 @@ import { formatFailureReason } from "../../../src/agents/failure-parser.ts";
 import { formatDurationMs, log } from "../../helpers/mod.ts";
 import { BenchTui } from "../../tui/bench-tui.ts";
 import type { AgentBenchmarkOptions } from "./types.ts";
+import { displayMultiRunSummary } from "./results-writer.ts";
 import { sendBenchmarkNotificationIfConfigured } from "../../../src/notifications/mod.ts";
 
 /**
@@ -85,286 +86,316 @@ export async function executeAgentBenchmark(
   // Create output directory
   await Deno.mkdir(options.outputDir, { recursive: true });
 
-  const startTime = Date.now();
-  const totalTasks = taskManifests.length * agentConfigs.length;
-  let completedTasks = 0;
+  const totalRuns = options.runs ?? 1;
+  const resultFilePaths: string[] = [];
+  let lastPassRate = 0;
+  let lastTotalDuration = 0;
+  let lastTotalCost = 0;
 
-  // Initialize TUI if enabled and supported
-  const tuiSetup = options.tui
-    ? BenchTui.setup({
-      totalTasks,
-      startTime: new Date(startTime),
-      headerLine: "[CentralGauge] Agent Benchmark Mode",
-      statusLines: [
-        `Agents: ${options.agents.join(", ")}`,
-        `Tasks: ${taskManifests.length} task(s)`,
-        `Container: ${options.containerName}`,
-      ],
-    })
-    : null;
-
-  if (options.tui && !tuiSetup) {
-    log.warn("TUI mode requires a terminal. Falling back to console output.");
-  }
-
-  // Helper to output either to TUI or console
-  const output = (line: string) => {
-    if (tuiSetup) {
-      tuiSetup.tui.addLine(line);
-    } else {
-      console.log(line);
-    }
-  };
-
-  // Execute each agent on each task
   const executor = new AgentTaskExecutor();
-  const allResults: Array<{
-    agentId: string;
-    taskId: string;
-    result: AgentExecutionResult;
-  }> = [];
 
-  // Track agent stats for TUI
-  const agentPassRates = new Map<string, { total: number; passed: number }>();
+  for (let runIndex = 1; runIndex <= totalRuns; runIndex++) {
+    if (totalRuns > 1) {
+      console.log("");
+      log.summary(`Run ${runIndex}/${totalRuns}`);
+    }
 
-  try {
-    for (const task of taskManifests) {
-      output(`[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`);
+    const startTime = Date.now();
+    const totalTasks = taskManifests.length * agentConfigs.length;
+    let completedTasks = 0;
 
-      for (const agentConfig of agentConfigs) {
-        // Create a unique workspace for this agent+task (outside results/ to avoid polluting reports)
-        const projectDir = join(
-          Deno.cwd(),
-          "workspaces",
-          `${agentConfig.id}_${task.id}_${Date.now()}`,
+    // Initialize TUI if enabled and supported
+    const tuiSetup = options.tui
+      ? BenchTui.setup({
+        totalTasks,
+        startTime: new Date(startTime),
+        headerLine: totalRuns > 1
+          ? `[CentralGauge] Agent Benchmark Mode (Run ${runIndex}/${totalRuns})`
+          : "[CentralGauge] Agent Benchmark Mode",
+        statusLines: [
+          `Agents: ${options.agents.join(", ")}`,
+          `Tasks: ${taskManifests.length} task(s)`,
+          `Container: ${options.containerName}`,
+        ],
+      })
+      : null;
+
+    if (options.tui && !tuiSetup) {
+      log.warn(
+        "TUI mode requires a terminal. Falling back to console output.",
+      );
+    }
+
+    // Helper to output either to TUI or console
+    const output = (line: string) => {
+      if (tuiSetup) {
+        tuiSetup.tui.addLine(line);
+      } else {
+        console.log(line);
+      }
+    };
+
+    const allResults: Array<{
+      agentId: string;
+      taskId: string;
+      result: AgentExecutionResult;
+    }> = [];
+
+    // Track agent stats for TUI
+    const agentPassRates = new Map<
+      string,
+      { total: number; passed: number }
+    >();
+
+    try {
+      for (const task of taskManifests) {
+        output(
+          `[Task] ${task.id}: Running with ${agentConfigs.length} agent(s)`,
         );
 
-        output(`[${agentConfig.id}] Starting...`);
-
-        try {
-          const result = await executor.execute(agentConfig, task, {
-            projectDir,
-            containerName: options.containerName,
-            containerProvider: "bccontainer",
-            debug: options.debug ?? false,
-            sandbox: options.sandbox ?? false,
-          });
-
-          allResults.push({
-            agentId: agentConfig.id,
-            taskId: task.id,
-            result,
-          });
-
-          const status = result.success ? "pass" : "fail";
-          const testResult = result.testResult;
-          const testInfo = testResult
-            ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
-            : "";
-
-          output(
-            `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
-              result.metrics.estimatedCost.toFixed(4)
-            }`,
+        for (const agentConfig of agentConfigs) {
+          // Create a unique workspace for this agent+task (outside results/ to avoid polluting reports)
+          const projectDir = join(
+            Deno.cwd(),
+            "workspaces",
+            `${agentConfig.id}_${task.id}_${Date.now()}`,
           );
 
-          // Show failure details when verbose is enabled
-          if (!result.success && result.failureDetails && options.verbose) {
-            output(formatFailureReason(result.failureDetails, true));
+          output(`[${agentConfig.id}] Starting...`);
+
+          try {
+            const result = await executor.execute(agentConfig, task, {
+              projectDir,
+              containerName: options.containerName,
+              containerProvider: "bccontainer",
+              debug: options.debug ?? false,
+              sandbox: options.sandbox ?? false,
+            });
+
+            allResults.push({
+              agentId: agentConfig.id,
+              taskId: task.id,
+              result,
+            });
+
+            const status = result.success ? "pass" : "fail";
+            const testResult = result.testResult;
+            const testInfo = testResult
+              ? ` (tests: ${testResult.passedTests}/${testResult.totalTests})`
+              : "";
+
+            output(
+              `[${agentConfig.id}] ${status}${testInfo}, turns: ${result.metrics.turns}, cost: $${
+                result.metrics.estimatedCost.toFixed(4)
+              }`,
+            );
+
+            // Show failure details when verbose is enabled
+            if (!result.success && result.failureDetails && options.verbose) {
+              output(formatFailureReason(result.failureDetails, true));
+            }
+
+            // Update TUI model stats
+            if (tuiSetup) {
+              tuiSetup.tui.updateModelStats(agentConfig.id, result.success);
+            }
+
+            // Track for summary
+            if (!agentPassRates.has(agentConfig.id)) {
+              agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
+            }
+            const stats = agentPassRates.get(agentConfig.id)!;
+            stats.total++;
+            if (result.success) stats.passed++;
+          } catch (error) {
+            output(
+              `[FAIL] ${agentConfig.id}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
           }
 
-          // Update TUI model stats
+          // Update TUI progress
+          completedTasks++;
           if (tuiSetup) {
-            tuiSetup.tui.updateModelStats(agentConfig.id, result.success);
+            const elapsed = Date.now() - startTime;
+            const avgTimePerTask = elapsed / completedTasks;
+            const remaining = totalTasks - completedTasks;
+            tuiSetup.tui.updateProgress({
+              completedTasks,
+              totalTasks,
+              activeLLMCalls: remaining > 0 ? 1 : 0,
+              compileQueueLength: 0,
+              estimatedTimeRemaining: remaining * avgTimePerTask,
+              errors: [],
+              startTime: new Date(startTime),
+              elapsedTime: elapsed,
+            });
           }
-
-          // Track for summary
-          if (!agentPassRates.has(agentConfig.id)) {
-            agentPassRates.set(agentConfig.id, { total: 0, passed: 0 });
-          }
-          const stats = agentPassRates.get(agentConfig.id)!;
-          stats.total++;
-          if (result.success) stats.passed++;
-        } catch (error) {
-          output(
-            `[FAIL] ${agentConfig.id}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-
-        // Update TUI progress
-        completedTasks++;
-        if (tuiSetup) {
-          const elapsed = Date.now() - startTime;
-          const avgTimePerTask = elapsed / completedTasks;
-          const remaining = totalTasks - completedTasks;
-          tuiSetup.tui.updateProgress({
-            completedTasks,
-            totalTasks,
-            activeLLMCalls: remaining > 0 ? 1 : 0,
-            compileQueueLength: 0,
-            estimatedTimeRemaining: remaining * avgTimePerTask,
-            errors: [],
-            startTime: new Date(startTime),
-            elapsedTime: elapsed,
-          });
         }
       }
-    }
-  } finally {
-    // Destroy TUI before printing summary
-    if (tuiSetup) {
-      tuiSetup.restore();
-      tuiSetup.tui.destroy();
-    }
-  }
-
-  const totalDuration = Date.now() - startTime;
-
-  // Calculate summary statistics
-  const agentStats = new Map<
-    string,
-    {
-      passed: number;
-      failed: number;
-      totalCost: number;
-      totalTurns: number;
-      totalTokens: number;
-    }
-  >();
-
-  for (const { agentId, result } of allResults) {
-    if (!agentStats.has(agentId)) {
-      agentStats.set(agentId, {
-        passed: 0,
-        failed: 0,
-        totalCost: 0,
-        totalTurns: 0,
-        totalTokens: 0,
-      });
-    }
-    const stats = agentStats.get(agentId)!;
-    if (result.success) {
-      stats.passed++;
-    } else {
-      stats.failed++;
-    }
-    stats.totalCost += result.metrics.estimatedCost;
-    stats.totalTurns += result.metrics.turns;
-    stats.totalTokens += result.metrics.totalTokens;
-  }
-
-  // Print summary
-  console.log("");
-  console.log(colors.bold("=".repeat(60)));
-  console.log(colors.bold("AGENT BENCHMARK RESULTS"));
-  console.log("=".repeat(60));
-
-  console.log("\n" + colors.bold("Summary:"));
-  console.log("-".repeat(60));
-  console.log(
-    `${"Agent".padEnd(20)} | ${"Pass".padEnd(6)} | ${"Fail".padEnd(6)} | ${
-      "Cost".padEnd(10)
-    } | Turns`,
-  );
-  console.log("-".repeat(60));
-
-  for (const [agentId, stats] of agentStats) {
-    const passColor = stats.passed > stats.failed ? colors.green : colors.red;
-
-    console.log(
-      `${agentId.padEnd(20)} | ${passColor(String(stats.passed).padEnd(6))} | ${
-        String(stats.failed).padEnd(6)
-      } | $${stats.totalCost.toFixed(4).padEnd(9)} | ${stats.totalTurns}`,
-    );
-  }
-  console.log("-".repeat(60));
-
-  // Comparison
-  if (agentStats.size === 2) {
-    const entries = Array.from(agentStats.entries());
-    const [aId, aStats] = entries[0]!;
-    const [bId, bStats] = entries[1]!;
-
-    const aPassRate = aStats.passed / (aStats.passed + aStats.failed) || 0;
-    const bPassRate = bStats.passed / (bStats.passed + bStats.failed) || 0;
-
-    console.log("\n" + colors.bold("Comparison:"));
-
-    if (aPassRate > bPassRate) {
-      console.log(
-        `  Winner: ${colors.green(aId)} (${(aPassRate * 100).toFixed(0)}% vs ${
-          (bPassRate * 100).toFixed(0)
-        }%)`,
-      );
-    } else if (bPassRate > aPassRate) {
-      console.log(
-        `  Winner: ${colors.green(bId)} (${(bPassRate * 100).toFixed(0)}% vs ${
-          (aPassRate * 100).toFixed(0)
-        }%)`,
-      );
-    } else {
-      console.log(
-        `  Result: ${colors.yellow("TIE")} (${(aPassRate * 100).toFixed(0)}%)`,
-      );
+    } finally {
+      // Destroy TUI before printing summary
+      if (tuiSetup) {
+        tuiSetup.restore();
+        tuiSetup.tui.destroy();
+      }
     }
 
-    const costDiff = bStats.totalCost - aStats.totalCost;
-    console.log(
-      `  Cost difference: ${costDiff >= 0 ? "+" : ""}$${
-        costDiff.toFixed(4)
-      } (${bId} vs ${aId})`,
-    );
-  }
+    const totalDuration = Date.now() - startTime;
 
-  console.log(`\n  Total duration: ${formatDurationMs(totalDuration)}`);
-  console.log(`  Results: ${allResults.length}`);
-
-  // Save results
-  const timestamp = Date.now();
-  const resultsFile = `${options.outputDir}/agent-benchmark-${timestamp}.json`;
-  await Deno.writeTextFile(
-    resultsFile,
-    JSON.stringify(
+    // Calculate summary statistics
+    const agentStats = new Map<
+      string,
       {
-        agents: options.agents,
-        tasks: options.tasks,
-        results: allResults,
-        stats: Object.fromEntries(agentStats),
-        duration: totalDuration,
-        timestamp: new Date().toISOString(),
-      },
-      null,
-      2,
-    ),
-  );
-  console.log(`  Saved: ${colors.gray(resultsFile)}`);
+        passed: number;
+        failed: number;
+        totalCost: number;
+        totalTurns: number;
+        totalTokens: number;
+      }
+    >();
 
-  // Send notification if configured (auto-notify when token present)
-  if (!options.noNotify) {
-    // Calculate overall pass rate
+    for (const { agentId, result } of allResults) {
+      if (!agentStats.has(agentId)) {
+        agentStats.set(agentId, {
+          passed: 0,
+          failed: 0,
+          totalCost: 0,
+          totalTurns: 0,
+          totalTokens: 0,
+        });
+      }
+      const stats = agentStats.get(agentId)!;
+      if (result.success) {
+        stats.passed++;
+      } else {
+        stats.failed++;
+      }
+      stats.totalCost += result.metrics.estimatedCost;
+      stats.totalTurns += result.metrics.turns;
+      stats.totalTokens += result.metrics.totalTokens;
+    }
+
+    // Print summary
+    console.log("");
+    console.log(colors.bold("=".repeat(60)));
+    console.log(colors.bold("AGENT BENCHMARK RESULTS"));
+    console.log("=".repeat(60));
+
+    console.log("\n" + colors.bold("Summary:"));
+    console.log("-".repeat(60));
+    console.log(
+      `${"Agent".padEnd(20)} | ${"Pass".padEnd(6)} | ${"Fail".padEnd(6)} | ${
+        "Cost".padEnd(10)
+      } | Turns`,
+    );
+    console.log("-".repeat(60));
+
+    for (const [agentId, stats] of agentStats) {
+      const passColor = stats.passed > stats.failed ? colors.green : colors.red;
+
+      console.log(
+        `${agentId.padEnd(20)} | ${
+          passColor(String(stats.passed).padEnd(6))
+        } | ${String(stats.failed).padEnd(6)} | $${
+          stats.totalCost.toFixed(4).padEnd(9)
+        } | ${stats.totalTurns}`,
+      );
+    }
+    console.log("-".repeat(60));
+
+    // Comparison
+    if (agentStats.size === 2) {
+      const entries = Array.from(agentStats.entries());
+      const [aId, aStats] = entries[0]!;
+      const [bId, bStats] = entries[1]!;
+
+      const aPassRate = aStats.passed / (aStats.passed + aStats.failed) || 0;
+      const bPassRate = bStats.passed / (bStats.passed + bStats.failed) || 0;
+
+      console.log("\n" + colors.bold("Comparison:"));
+
+      if (aPassRate > bPassRate) {
+        console.log(
+          `  Winner: ${colors.green(aId)} (${
+            (aPassRate * 100).toFixed(0)
+          }% vs ${(bPassRate * 100).toFixed(0)}%)`,
+        );
+      } else if (bPassRate > aPassRate) {
+        console.log(
+          `  Winner: ${colors.green(bId)} (${
+            (bPassRate * 100).toFixed(0)
+          }% vs ${(aPassRate * 100).toFixed(0)}%)`,
+        );
+      } else {
+        console.log(
+          `  Result: ${colors.yellow("TIE")} (${
+            (aPassRate * 100).toFixed(0)
+          }%)`,
+        );
+      }
+
+      const costDiff = bStats.totalCost - aStats.totalCost;
+      console.log(
+        `  Cost difference: ${costDiff >= 0 ? "+" : ""}$${
+          costDiff.toFixed(4)
+        } (${bId} vs ${aId})`,
+      );
+    }
+
+    console.log(`\n  Total duration: ${formatDurationMs(totalDuration)}`);
+    console.log(`  Results: ${allResults.length}`);
+
+    // Save results
+    const timestamp = Date.now();
+    const resultsFile =
+      `${options.outputDir}/agent-benchmark-${timestamp}.json`;
+    await Deno.writeTextFile(
+      resultsFile,
+      JSON.stringify(
+        {
+          agents: options.agents,
+          tasks: options.tasks,
+          results: allResults,
+          stats: Object.fromEntries(agentStats),
+          duration: totalDuration,
+          timestamp: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(`  Saved: ${colors.gray(resultsFile)}`);
+    resultFilePaths.push(resultsFile);
+
+    // Track last run stats for notification
     let totalPassed = 0;
     let totalFailed = 0;
+    lastTotalCost = 0;
     for (const stats of agentStats.values()) {
       totalPassed += stats.passed;
       totalFailed += stats.failed;
+      lastTotalCost += stats.totalCost;
     }
-    const passRate = totalPassed / (totalPassed + totalFailed) || 0;
+    lastPassRate = totalPassed / (totalPassed + totalFailed) || 0;
+    lastTotalDuration = totalDuration;
+  }
 
-    // Calculate total cost
-    let totalCost = 0;
-    for (const stats of agentStats.values()) {
-      totalCost += stats.totalCost;
-    }
-
+  // Send notification if configured (once after all runs)
+  if (!options.noNotify) {
     await sendBenchmarkNotificationIfConfigured({
       mode: "agent",
-      passRate,
+      passRate: lastPassRate,
       totalTasks: taskManifests.length,
-      duration: totalDuration,
-      totalCost,
+      duration: lastTotalDuration,
+      totalCost: lastTotalCost,
       agents: options.agents,
     });
+  }
+
+  // Display multi-run summary if N > 1
+  if (totalRuns > 1) {
+    await displayMultiRunSummary(resultFilePaths, totalRuns);
   }
 }

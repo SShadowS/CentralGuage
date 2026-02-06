@@ -27,6 +27,8 @@ export interface ExtendedBenchmarkOptions extends BenchmarkOptions {
   retry?: string;
   // Disable Pushbullet notification even if token is configured
   noNotify?: boolean;
+  /** Number of independent benchmark runs (for pass@k analysis) */
+  runs?: number;
 }
 
 /**

@@ -51,6 +51,8 @@ export interface BenchmarkPreset {
   sandbox?: boolean;
   /** Disable notifications */
   noNotify?: boolean;
+  /** Number of independent runs for pass@k analysis */
+  runs?: number;
 }
 
 export interface CentralGaugeConfig {

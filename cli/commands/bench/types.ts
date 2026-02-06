@@ -20,6 +20,8 @@ export interface AgentBenchmarkOptions {
   verbose?: boolean;
   /** Disable Pushbullet notification even if token is configured */
   noNotify?: boolean;
+  /** Number of independent benchmark runs (for pass@k analysis) */
+  runs?: number;
 }
 
 /**

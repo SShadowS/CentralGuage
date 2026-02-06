@@ -155,6 +155,11 @@ export function registerBenchCommand(cli: Command): void {
       "Disable Pushbullet notification (even if token configured)",
       { default: false },
     )
+    .option(
+      "--runs <number:integer>",
+      "Run the full benchmark N times for pass@k analysis",
+      { default: 1 },
+    )
     .action(async (options) => {
       // Handle --list-presets
       if (options.listPresets) {
@@ -238,6 +243,19 @@ export function registerBenchCommand(cli: Command): void {
         Deno.exit(1);
       }
 
+      // Validate --runs
+      const runs = typeof options.runs === "number"
+        ? options.runs
+        : parseInt(String(options.runs), 10);
+      if (runs < 1 || isNaN(runs)) {
+        log.fail("--runs must be >= 1");
+        Deno.exit(1);
+      }
+      if (runs > 1 && options.retry) {
+        log.fail("--runs and --retry are incompatible");
+        Deno.exit(1);
+      }
+
       // Handle agent-based execution
       if (options.agents && options.agents.length > 0) {
         const agentBenchOptions: AgentBenchmarkOptions = {
@@ -251,6 +269,7 @@ export function registerBenchCommand(cli: Command): void {
           sandbox: options.sandbox ?? false,
           verbose: options.debug ?? false,
           noNotify: !options.notify,
+          runs,
         };
         await executeAgentBenchmark(agentBenchOptions, options.quiet);
         Deno.exit(0);
@@ -339,6 +358,7 @@ export function registerBenchCommand(cli: Command): void {
           : parseInt(String(options.maxConcurrency), 10),
         stream: options.stream,
         noNotify: !options.notify,
+        runs,
       };
       if (options.retry) {
         benchOptions.retry = options.retry;
@@ -444,6 +464,9 @@ function mergePresetWithOptions(preset: BenchmarkPreset, cliOptions: any): any {
     preset.maxConcurrency !== undefined
   ) {
     cliOptions.maxConcurrency = preset.maxConcurrency;
+  }
+  if (cliOptions.runs === undefined && preset.runs !== undefined) {
+    cliOptions.runs = preset.runs;
   }
 
   // Booleans: use preset if CLI wasn't provided
