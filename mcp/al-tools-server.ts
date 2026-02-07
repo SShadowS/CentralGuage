@@ -184,6 +184,12 @@ const TOOLS: Tool[] = [
           description:
             `Name of the BC container to use. Default: ${DEFAULT_CONTAINER}`,
         },
+        target: {
+          type: "string",
+          enum: ["Cloud", "OnPrem"],
+          description:
+            "App target. Use 'OnPrem' for features like HttpClient, NavApp. Default: Cloud.",
+        },
       },
       required: ["projectDir"],
     },
@@ -667,6 +673,7 @@ async function findProjectDir(baseDir: string): Promise<string | null> {
 async function handleAlCompile(params: {
   projectDir: string;
   containerName?: string;
+  target?: "Cloud" | "OnPrem";
 }): Promise<{
   success: boolean;
   message: string;
@@ -695,6 +702,11 @@ async function handleAlCompile(params: {
     // Build ALProject (exclude test files from compilation)
     // Test files require Test Toolkit dependencies that the app may not have
     const project = await buildALProject(projectDir, false);
+
+    // Set target if provided (OnPrem required for HttpClient, NavApp, etc.)
+    if (params.target) {
+      (project.appJson as AppJson)["target"] = params.target;
+    }
 
     // Compile
     const result = await containerProvider.compileProject(
@@ -1399,7 +1411,13 @@ const TOOL_HANDLERS: Record<
   (args: Record<string, unknown>) => Promise<unknown>
 > = {
   al_compile: (args) =>
-    handleAlCompile(args as { projectDir: string; containerName?: string }),
+    handleAlCompile(
+      args as {
+        projectDir: string;
+        containerName?: string;
+        target?: "Cloud" | "OnPrem";
+      },
+    ),
   al_test: (args) =>
     handleAlTest(args as { projectDir: string; containerName?: string }),
   al_container_status: (args) =>
