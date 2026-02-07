@@ -12,13 +12,16 @@ description: >-
 
   - ValidatePaymentResponse(Response: JsonObject): Boolean
     Validate API response structure. Check for required fields (status, transactionId, amount).
-    Returns true if response contains all required fields and status is 'approved'.
+    Returns true if response contains all required fields and status is 'approved', false otherwise.
 
   - GetPaymentStatus(TransactionId: Text): Text
     Check payment status for a transaction. Returns status as Text.
 
   - HandlePaymentWebhook(WebhookData: JsonObject): Boolean
-    Process incoming webhook events. Returns true if webhook is successfully handled.
+    Process incoming webhook events. Webhook payloads contain an 'event' field
+    (e.g., 'payment.completed', 'payment.failed', 'payment.refunded') along with
+    transaction details. Returns true if webhook contains a valid event and is
+    successfully handled, false if the event field is missing or the payload is empty.
 
   - LogPaymentTransaction(TransactionId: Text[50]; Amount: Decimal; Status: Text[20])
     Log payment transaction details for audit purposes.
@@ -26,6 +29,8 @@ description: >-
   Include proper HTTP client usage with error handling, retry logic for failed requests,
   authentication headers, JSON serialization/deserialization, and timeout handling.
   Use HttpClient, JsonToken, JsonObject patterns and include comprehensive error messages.
+metadata:
+  target: OnPrem
 expected:
   compile: true
   testApp: tests/al/medium/CG-AL-M005.Test.al

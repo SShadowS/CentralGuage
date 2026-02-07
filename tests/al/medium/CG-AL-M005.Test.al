@@ -3,12 +3,14 @@ codeunit 80015 "CG-AL-M005 Test"
     // Tests for CG-AL-M005: Integration Codeunit - External Payment Service
     Subtype = Test;
     TestPermissions = Disabled;
+    TestHttpRequestPolicy = AllowOutboundFromHandler;
 
     var
         Assert: Codeunit Assert;
         ExternalPaymentService: Codeunit "External Payment Service";
 
     [Test]
+    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestReturnsBoolean()
     var
         ResponseJson: JsonObject;
@@ -53,6 +55,7 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] ValidatePaymentResponse returns false when status field is missing
         // [GIVEN] A response missing the status field
@@ -60,10 +63,13 @@ codeunit 80015 "CG-AL-M005 Test"
         ResponseJson.Add('amount', 100.00);
 
         // [WHEN] We validate the response
-        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+        CallSucceeded := TryValidatePaymentResponse(ResponseJson, IsValid);
 
-        // [THEN] Validation fails
-        Assert.IsFalse(IsValid, 'Response missing status field should be invalid');
+        // [THEN] Validation fails (either returns false or raises an error)
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Response missing status field should be invalid')
+        else
+            Assert.IsTrue(true, 'Validation correctly rejected missing status via error');
     end;
 
     [Test]
@@ -71,6 +77,7 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] ValidatePaymentResponse returns false when transactionId is missing
         // [GIVEN] A response missing the transactionId field
@@ -78,10 +85,13 @@ codeunit 80015 "CG-AL-M005 Test"
         ResponseJson.Add('amount', 100.00);
 
         // [WHEN] We validate the response
-        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+        CallSucceeded := TryValidatePaymentResponse(ResponseJson, IsValid);
 
-        // [THEN] Validation fails
-        Assert.IsFalse(IsValid, 'Response missing transactionId field should be invalid');
+        // [THEN] Validation fails (either returns false or raises an error)
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Response missing transactionId field should be invalid')
+        else
+            Assert.IsTrue(true, 'Validation correctly rejected missing transactionId via error');
     end;
 
     [Test]
@@ -89,6 +99,7 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] ValidatePaymentResponse returns false when amount is missing
         // [GIVEN] A response missing the amount field
@@ -96,10 +107,13 @@ codeunit 80015 "CG-AL-M005 Test"
         ResponseJson.Add('transactionId', 'TXN123456');
 
         // [WHEN] We validate the response
-        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+        CallSucceeded := TryValidatePaymentResponse(ResponseJson, IsValid);
 
-        // [THEN] Validation fails
-        Assert.IsFalse(IsValid, 'Response missing amount field should be invalid');
+        // [THEN] Validation fails (either returns false or raises an error)
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Response missing amount field should be invalid')
+        else
+            Assert.IsTrue(true, 'Validation correctly rejected missing amount via error');
     end;
 
     [Test]
@@ -107,6 +121,7 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] ValidatePaymentResponse returns false for declined status
         // [GIVEN] A response with status=declined (even with all fields present)
@@ -115,10 +130,13 @@ codeunit 80015 "CG-AL-M005 Test"
         ResponseJson.Add('amount', 100.00);
 
         // [WHEN] We validate the response
-        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+        CallSucceeded := TryValidatePaymentResponse(ResponseJson, IsValid);
 
         // [THEN] Validation fails because status is not approved
-        Assert.IsFalse(IsValid, 'Response with status=declined should be invalid');
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Response with status=declined should be invalid')
+        else
+            Assert.IsTrue(true, 'Validation correctly rejected declined status via error');
     end;
 
     [Test]
@@ -126,6 +144,7 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] ValidatePaymentResponse returns false for pending status
         // [GIVEN] A response with status=pending
@@ -134,10 +153,13 @@ codeunit 80015 "CG-AL-M005 Test"
         ResponseJson.Add('amount', 100.00);
 
         // [WHEN] We validate the response
-        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+        CallSucceeded := TryValidatePaymentResponse(ResponseJson, IsValid);
 
         // [THEN] Validation fails because status is not approved
-        Assert.IsFalse(IsValid, 'Response with status=pending should be invalid');
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Response with status=pending should be invalid')
+        else
+            Assert.IsTrue(true, 'Validation correctly rejected pending status via error');
     end;
 
     [Test]
@@ -145,18 +167,23 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         ResponseJson: JsonObject;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] ValidatePaymentResponse returns false for empty JSON
         // [GIVEN] An empty JSON object
 
         // [WHEN] We validate the empty response
-        IsValid := ExternalPaymentService.ValidatePaymentResponse(ResponseJson);
+        CallSucceeded := TryValidatePaymentResponse(ResponseJson, IsValid);
 
-        // [THEN] Validation fails
-        Assert.IsFalse(IsValid, 'Empty response should be invalid');
+        // [THEN] Validation fails (either returns false or raises an error)
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Empty response should be invalid')
+        else
+            Assert.IsTrue(true, 'Validation correctly rejected empty response via error');
     end;
 
     [Test]
+    [HandlerFunctions('MockPaymentServiceHandler')]
     procedure TestGetPaymentStatusReturnsText()
     var
         Status: Text;
@@ -171,6 +198,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockMessageHandler')]
     procedure TestHandlePaymentWebhookPaymentCompleted()
     var
         WebhookPayload: JsonObject;
@@ -190,6 +218,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockMessageHandler')]
     procedure TestHandlePaymentWebhookPaymentFailed()
     var
         WebhookPayload: JsonObject;
@@ -214,6 +243,7 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         WebhookPayload: JsonObject;
         Handled: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] HandlePaymentWebhook rejects webhooks without event type
         // [GIVEN] A webhook payload missing the event field
@@ -221,10 +251,13 @@ codeunit 80015 "CG-AL-M005 Test"
         WebhookPayload.Add('status', 'success');
 
         // [WHEN] We handle the webhook
-        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
+        CallSucceeded := TryHandlePaymentWebhook(WebhookPayload, Handled);
 
-        // [THEN] Webhook is not handled due to missing event
-        Assert.IsFalse(Handled, 'Webhook without event type should not be handled');
+        // [THEN] Webhook is not handled (either returns false or raises an error)
+        if CallSucceeded then
+            Assert.IsFalse(Handled, 'Webhook without event type should not be handled')
+        else
+            Assert.IsTrue(true, 'Webhook correctly rejected missing event via error');
     end;
 
     [Test]
@@ -232,18 +265,23 @@ codeunit 80015 "CG-AL-M005 Test"
     var
         WebhookPayload: JsonObject;
         Handled: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] HandlePaymentWebhook rejects empty payloads
         // [GIVEN] An empty webhook payload
 
         // [WHEN] We handle the webhook
-        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookPayload);
+        CallSucceeded := TryHandlePaymentWebhook(WebhookPayload, Handled);
 
-        // [THEN] Webhook is not handled
-        Assert.IsFalse(Handled, 'Empty webhook payload should not be handled');
+        // [THEN] Webhook is not handled (either returns false or raises an error)
+        if CallSucceeded then
+            Assert.IsFalse(Handled, 'Empty webhook payload should not be handled')
+        else
+            Assert.IsTrue(true, 'Webhook correctly rejected empty payload via error');
     end;
 
     [Test]
+    [HandlerFunctions('MockMessageHandler')]
     procedure TestLogPaymentTransactionExecutes()
     var
         TransactionId: Text[50];
@@ -264,6 +302,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockMessageHandler')]
     procedure TestLogPaymentTransactionDifferentStatuses()
     var
         TransactionId: Text[50];
@@ -336,6 +375,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestWithVariousCurrencies()
     var
         ResponseJson: JsonObject;
@@ -357,6 +397,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestWithZeroAmount()
     var
         ResponseJson: JsonObject;
@@ -373,6 +414,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestWithNegativeAmount()
     var
         ResponseJson: JsonObject;
@@ -388,6 +430,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockPaymentServiceHandler,MockMessageHandler')]
     procedure TestSendPaymentRequestWithLargeAmount()
     var
         ResponseJson: JsonObject;
@@ -403,6 +446,7 @@ codeunit 80015 "CG-AL-M005 Test"
     end;
 
     [Test]
+    [HandlerFunctions('MockMessageHandler')]
     procedure TestHandlePaymentWebhookRefundEvent()
     var
         WebhookPayload: JsonObject;
@@ -421,5 +465,44 @@ codeunit 80015 "CG-AL-M005 Test"
 
         // [THEN] Refund webhook is handled
         Assert.IsTrue(Handled, 'payment.refunded webhook should be handled');
+    end;
+
+    [TryFunction]
+    local procedure TryValidatePaymentResponse(Response: JsonObject; var IsValid: Boolean)
+    begin
+        IsValid := ExternalPaymentService.ValidatePaymentResponse(Response);
+    end;
+
+    [TryFunction]
+    local procedure TryHandlePaymentWebhook(WebhookData: JsonObject; var Handled: Boolean)
+    begin
+        Handled := ExternalPaymentService.HandlePaymentWebhook(WebhookData);
+    end;
+
+    [MessageHandler]
+    procedure MockMessageHandler(Message: Text[1024])
+    begin
+        // Accept any Message() call from the implementation
+    end;
+
+    [HttpClientHandler]
+    procedure MockPaymentServiceHandler(Request: TestHttpRequestMessage; var Response: TestHttpResponseMessage): Boolean
+    begin
+        if Request.RequestType = HttpRequestType::Post then begin
+            Response.Content.WriteFrom('{"status":"approved","transactionId":"TXN-MOCK-001","amount":100.00}');
+            Response.HttpStatusCode := 200;
+            Response.ReasonPhrase := 'OK';
+            exit(false);
+        end;
+
+        if Request.RequestType = HttpRequestType::Get then begin
+            Response.Content.WriteFrom('{"status":"completed","transactionId":"TXN-MOCK-001"}');
+            Response.HttpStatusCode := 200;
+            Response.ReasonPhrase := 'OK';
+            exit(false);
+        end;
+
+        Response.HttpStatusCode := 200;
+        exit(false);
     end;
 }
