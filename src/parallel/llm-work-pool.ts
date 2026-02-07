@@ -504,8 +504,11 @@ ${errorSnippet}
 3. Provide the COMPLETE corrected AL code (not a diff)
 4. Ensure the fix addresses the root cause
 5. Do NOT add references to objects that don't exist (pages, codeunits, etc.) unless they are part of the task
+6. Output ONLY the corrected code inside the BEGIN-CODE/END-CODE fences below - no explanations, no markdown, no commentary
 
-Provide the corrected code:`;
+BEGIN-CODE
+// Your corrected AL code here
+END-CODE`;
   }
 
   /**
