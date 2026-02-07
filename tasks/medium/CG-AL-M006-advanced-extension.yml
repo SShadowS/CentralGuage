@@ -7,16 +7,16 @@ description: >-
 
   Add complex fields with business logic:
   - Credit Score (Integer with validation 300-850)
-  - Risk Level (Option: Low, Medium, High, Critical - calculated based on credit score)
+  - Risk Level (Option: Low, Medium, High, Critical - calculated based on credit score: 670-850=Low, 580-669=Medium, 500-579=High, 300-499=Critical)
   - Last Risk Assessment Date (Date)
   - Payment History Rating (Decimal calculated field)
   - Preferred Payment Method (Code[10] with TableRelation)
 
   Include advanced procedures:
-  - UpdateRiskLevel() - calculate risk based on credit score and payment history
+  - UpdateRiskLevel() - set Risk Level based on credit score ranges defined above
   - CalculatePaymentHistoryRating(): Decimal - analyze payment patterns
   - GetCreditLimit(): Decimal - determine credit limit based on risk
-  - ValidateNewOrder(OrderAmount: Decimal): Boolean - check if order within limits
+  - ValidateNewOrder(OrderAmount: Decimal): Boolean - return true if order is within credit limit, false if it exceeds the limit
   - TriggerRiskAssessment() - automated risk evaluation
 
   Include field validation triggers, OnValidate events, and integration with existing Customer events.

@@ -2,7 +2,7 @@ codeunit 80122 "CG-AL-M022 Test"
 {
     Subtype = Test;
     TestPermissions = Disabled;
-    TestHttpRequestPolicy = BlockOutboundRequests;
+    TestHttpRequestPolicy = AllowOutboundFromHandler;
 
     var
         Assert: Codeunit Assert;

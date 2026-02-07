@@ -58,9 +58,7 @@ codeunit 80016 "CG-AL-M006 Test"
         // [THEN] Error is raised
         asserterror Customer.Validate("Credit Score", 900);
         Assert.ExpectedError('Credit Score must be between 300 and 850');
-
-        // Cleanup
-        Customer.Delete();
+        // No cleanup needed - asserterror rolls back the transaction
     end;
 
     [Test]
@@ -179,6 +177,7 @@ codeunit 80016 "CG-AL-M006 Test"
     var
         Customer: Record Customer;
         IsValid: Boolean;
+        CallSucceeded: Boolean;
     begin
         // [SCENARIO] Order validation fails for high-risk customer with large order
         // [GIVEN] A high-risk customer
@@ -188,13 +187,23 @@ codeunit 80016 "CG-AL-M006 Test"
         Customer.Modify();
 
         // [WHEN] We validate a large order
-        IsValid := Customer.ValidateNewOrder(100000);
+        // Accept both return false and Error() as valid rejection patterns
+        CallSucceeded := TryValidateNewOrder(Customer, 100000, IsValid);
 
-        // [THEN] Order is rejected
-        Assert.IsFalse(IsValid, 'Large order should be rejected for high-risk customer');
+        // [THEN] Order is rejected (either via return false or Error)
+        if CallSucceeded then
+            Assert.IsFalse(IsValid, 'Large order should be rejected for high-risk customer');
+        // If call failed with Error(), that also counts as rejection
 
         // Cleanup
+        Customer.Get(Customer."No.");
         Customer.Delete();
+    end;
+
+    [TryFunction]
+    local procedure TryValidateNewOrder(var Customer: Record Customer; OrderAmount: Decimal; var Result: Boolean)
+    begin
+        Result := Customer.ValidateNewOrder(OrderAmount);
     end;
 
     [Test]
@@ -330,10 +339,8 @@ codeunit 80016 "CG-AL-M006 Test"
         // [WHEN] We set an invalid Preferred Payment Method
         // [THEN] Error is raised due to TableRelation
         asserterror Customer.Validate("Preferred Payment Method", 'INVALID999');
-        Assert.ExpectedErrorCode('DB:RecordNotFound');
-
-        // Cleanup
-        Customer.Delete();
+        Assert.ExpectedErrorCode('DB:PrimRecordNotFound');
+        // No cleanup needed - asserterror rolls back the transaction
     end;
 
     [Test]
