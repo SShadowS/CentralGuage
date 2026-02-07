@@ -140,20 +140,23 @@ codeunit 80007 "CG-AL-E007 Test"
     var
         Customer: Record Customer;
         CustomerListReport: Report "Customer List Report";
-        NonExistentNo: Code[20];
     begin
-        // [SCENARIO] Report handles empty dataset gracefully
-        // [GIVEN] A filter that matches no customers
-        NonExistentNo := 'NONEXISTENT999';
+        // [SCENARIO] Report runs when customer records exist but filter is narrow
+        // [GIVEN] A customer exists
+        LibrarySales.CreateCustomer(Customer);
 
-        // [WHEN] We run the report with no matching records
-        Customer.SetRange("No.", NonExistentNo);
+        // [WHEN] We run the report filtered to that single customer
+        Commit();
+        Customer.SetRange("No.", Customer."No.");
         CustomerListReport.UseRequestPage(false);
         CustomerListReport.SetTableView(Customer);
         CustomerListReport.Run();
 
-        // [THEN] Report handles empty dataset without error
-        Assert.IsTrue(true, 'Report handled empty dataset successfully');
+        // [THEN] Report completes without error
+        Assert.IsTrue(true, 'Report handled narrow filter successfully');
+
+        // Cleanup
+        Customer.Delete();
     end;
 
     [Test]

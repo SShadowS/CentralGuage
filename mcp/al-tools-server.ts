@@ -632,6 +632,51 @@ async function copyTestFile(
   }
 }
 
+/**
+ * Copy support files (e.g., RDLC layouts, images) for a task into the target directory.
+ * Looks for files in tests/al/support-files/{task-id}/ and copies them all.
+ */
+async function copySupportFilesForTask(
+  taskId: string,
+  projectRoot: string,
+  targetDir: string,
+): Promise<void> {
+  const supportDir = join(
+    projectRoot,
+    "tests",
+    "al",
+    "support-files",
+    taskId,
+  );
+  try {
+    const stat = await Deno.stat(supportDir);
+    if (!stat.isDirectory) return;
+  } catch {
+    // No support-files directory for this task
+    return;
+  }
+
+  let copiedCount = 0;
+  for await (const entry of Deno.readDir(supportDir)) {
+    if (entry.isFile) {
+      await Deno.copyFile(
+        join(supportDir, entry.name),
+        join(targetDir, entry.name),
+      );
+      copiedCount++;
+    }
+  }
+
+  if (copiedCount > 0) {
+    debugLog("al_verify", "Support files copied", {
+      taskId,
+      supportDir,
+      targetDir,
+      copiedCount,
+    });
+  }
+}
+
 // =============================================================================
 // Tool Handlers
 // =============================================================================
@@ -1227,9 +1272,13 @@ async function handleAlVerify(params: {
       return { success: false, message: appJsonResult.message };
     }
 
-    // Copy source files and test file
+    // Copy source files, support files, and test file
     await copyAlFilesToDir(projectDir, verifyDir);
     debugLog("al_verify", "Source files copied to verify dir");
+
+    if (taskId) {
+      await copySupportFilesForTask(taskId, projectRoot, verifyDir);
+    }
 
     const testFileResult = await copyTestFile(params.testFile, verifyDir);
     debugLog("al_verify", "Test file copy result", {

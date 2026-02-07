@@ -13,6 +13,7 @@ description: >-
   Include proper dataset structure with a single data item named "Customer".
   Use the naming convention column({FieldName}_{DataItemName}; SourceField) for dataset columns.
   Include basic report properties like UsageCategory = ReportsAndAnalysis and ApplicationArea = All.
+  The report uses the provided RDLC layout file 'CustomerListReport.rdl'.
 expected:
   compile: true
   testApp: tests/al/easy/CG-AL-E007.Test.al
